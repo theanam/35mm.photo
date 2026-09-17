@@ -1,0 +1,119 @@
+import { describe, expect, it } from 'vitest'
+import { defaultEdits } from './defaults'
+import { DEFAULT_SYNC_GROUPS, SYNC_GROUPS, applySyncScope, resetSyncScope } from './sync'
+import type { EditState } from './types'
+
+/** A source photo with something set in every group. */
+function edited(): EditState {
+  const e = defaultEdits()
+  e.temperature = 7200
+  e.tint = 15
+  e.exposure = 1.25
+  e.contrast = 30
+  e.vibrance = 20
+  e.curves.rgb = [{ x: 0, y: 0.1 }, { x: 1, y: 1 }]
+  e.hsl.red = { hue: 10, sat: -20, lum: 5 }
+  e.colorGrade.shadows = { hue: 210, sat: 30, lum: 0 }
+  e.perspective.vertical = 40
+  e.lens.distortion = -25
+  e.clarity = 18
+  e.texture = 22
+  e.dehaze = 12
+  e.halation = 35
+  e.grain = 40
+  e.vignette = -30
+  e.look = { id: 'chrome', strength: 80 }
+  e.crop = { ...e.crop, x: 0.1, y: 0.2, w: 0.5, h: 0.5, angle: 3 }
+  return e
+}
+
+describe('applySyncScope', () => {
+  it('copies nothing when no groups are chosen', () => {
+    const target = defaultEdits()
+    expect(applySyncScope(target, edited(), [])).toEqual(target)
+  })
+
+  it('copies only the chosen group', () => {
+    const out = applySyncScope(defaultEdits(), edited(), ['light'])
+    expect(out.exposure).toBe(1.25)
+    expect(out.contrast).toBe(30)
+    // Not chosen, so untouched.
+    expect(out.temperature).toBe(defaultEdits().temperature)
+    expect(out.look.id).toBeNull()
+    expect(out.crop.w).toBe(1)
+  })
+
+  it('leaves the crop alone by default, which is the whole point', () => {
+    const target = defaultEdits()
+    target.crop = { ...target.crop, x: 0.4, w: 0.3 }
+    const out = applySyncScope(target, edited(), DEFAULT_SYNC_GROUPS)
+    expect(out.crop.x).toBe(0.4)
+    expect(out.crop.w).toBe(0.3)
+    // Everything else did come across.
+    expect(out.exposure).toBe(1.25)
+    expect(out.look.id).toBe('chrome')
+  })
+
+  it('copies the crop when explicitly asked', () => {
+    const out = applySyncScope(defaultEdits(), edited(), ['crop'])
+    expect(out.crop.w).toBe(0.5)
+    expect(out.crop.angle).toBe(3)
+  })
+
+  it('carries white balance separately from the rest of light', () => {
+    const wb = applySyncScope(defaultEdits(), edited(), ['whiteBalance'])
+    expect(wb.temperature).toBe(7200)
+    expect(wb.exposure).toBe(0)
+
+    const light = applySyncScope(defaultEdits(), edited(), ['light'])
+    expect(light.temperature).toBe(defaultEdits().temperature)
+    expect(light.exposure).toBe(1.25)
+  })
+
+  it('deep-copies, so editing one photo cannot reach into another', () => {
+    const source = edited()
+    const a = applySyncScope(defaultEdits(), source, SYNC_GROUPS)
+    const b = applySyncScope(defaultEdits(), source, SYNC_GROUPS)
+
+    a.hsl.red.hue = 99
+    a.curves.rgb[0].y = 0.9
+    a.colorGrade.shadows.sat = 1
+    a.crop.x = 0.7
+
+    expect(b.hsl.red.hue).toBe(10)
+    expect(b.curves.rgb[0].y).toBeCloseTo(0.1, 6)
+    expect(b.colorGrade.shadows.sat).toBe(30)
+    expect(source.hsl.red.hue).toBe(10)
+    expect(source.crop.x).toBe(0.1)
+  })
+
+  it('reproduces the source exactly when every group is chosen', () => {
+    expect(applySyncScope(defaultEdits(), edited(), SYNC_GROUPS)).toEqual(edited())
+  })
+
+  it('covers every field of EditState across the groups', () => {
+    // Guards against a new edit field being added without a home in a group,
+    // which would silently never sync.
+    const out = applySyncScope(defaultEdits(), edited(), SYNC_GROUPS)
+    for (const key of Object.keys(defaultEdits()) as (keyof EditState)[]) {
+      expect(out[key], `field "${key}" is in no sync group`).toEqual(edited()[key])
+    }
+  })
+})
+
+describe('resetSyncScope', () => {
+  it('returns the chosen groups to their defaults', () => {
+    const out = resetSyncScope(edited(), ['light', 'finish'])
+    expect(out.exposure).toBe(0)
+    expect(out.contrast).toBe(0)
+    expect(out.grain).toBe(0)
+    expect(out.halation).toBe(0)
+    // Outside the chosen groups, the edit survives.
+    expect(out.temperature).toBe(7200)
+    expect(out.look.id).toBe('chrome')
+  })
+
+  it('clears everything back to default when all groups are chosen', () => {
+    expect(resetSyncScope(edited(), SYNC_GROUPS)).toEqual(defaultEdits())
+  })
+})

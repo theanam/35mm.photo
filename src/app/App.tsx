@@ -11,6 +11,8 @@ import { EmptyState } from './EmptyState'
 import { LoadingOverlay } from './LoadingOverlay'
 import { ExportDialog } from './ExportDialog'
 import { AboutDialog } from './AboutDialog'
+import { SyncDialog } from './SyncDialog'
+import { BatchBar } from './BatchBar'
 import { Toasts } from './Toasts'
 import { useKeyboard } from './useKeyboard'
 import { useDropTarget } from './useDropTarget'
@@ -87,6 +89,8 @@ export function App() {
       <LoadingOverlay />
       <ExportDialog />
       <AboutDialog />
+      <SyncDialog />
+      <BatchBar />
       <Toasts />
     </div>
   )

@@ -372,6 +372,7 @@
 }
 
 .filmstrip__header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1367,6 +1368,10 @@
 .filmstrip__tab[data-active] { color: var(--text); background: var(--surface); }
 
 /*
+ * A 35mm perforation, at the proportions of the real thing: a KS hole is wider
+ * than it is tall with heavily rounded corners, which is what separates it from
+ * a plain rectangle at this size.
+ *
  * Paper, not the safelight: the brand sheet keeps amber for "this is active",
  * and the active frame already spends it on its border. An edited frame is a
  * state of the file, not a selection, so it gets the quieter mark — top-right,
@@ -1376,11 +1381,8 @@
   position: absolute;
   top: 5px;
   right: 5px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+  display: block;
+  line-height: 0;
 }
 
 /* ──────────────────────── help / about ──────────────────────── */
@@ -1464,4 +1466,258 @@ kbd {
   background: var(--bg-app);
   border: 1px solid var(--line-strong);
   border-radius: 4px;
+}
+
+/* ──────────────────────── batch selection ──────────────────────── */
+
+/* Selection is a different thing from "this is the photo on screen", so it has
+   to look different. Paper rather than any amber: --link is a lighter gold and
+   sat close enough to the accent border of the active frame that the two were
+   not tellable apart. */
+.thumb[data-selected] { outline: 2px solid var(--text); outline-offset: -2px; }
+
+.button--full { width: 100%; }
+/* The rail is 148px wide, so a label has to be allowed to fall onto a second
+   line rather than being cut off mid-word. */
+.filmstrip .button--full {
+  padding-inline: 8px;
+  font-size: 13px;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.sync__groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+}
+.sync__group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.sync__group input { accent-color: var(--accent); cursor: pointer; }
+
+@media (max-width: 560px) {
+  .sync__groups { grid-template-columns: 1fr; }
+}
+
+/* ──────────────────────── batch export ──────────────────────── */
+
+/*
+ * A pending photo dims; the one being worked on dims further and spins. No
+ * animated progress *within* a photo: export stalls the main thread at
+ * gl.finish() while the GPU drains, so anything animating smoothly would
+ * visibly stutter at exactly those moments. A spinner that hitches reads as
+ * "busy"; a progress bar that hitches reads as "stuck".
+ */
+.thumb[data-batch='pending'] { opacity: 0.45; }
+.thumb[data-batch='working'] { opacity: 0.75; }
+.thumb[data-batch='working']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 10, 8, 0.45);
+}
+.thumb[data-batch='failed'] { outline: 2px solid #8a4a44; outline-offset: -2px; }
+
+.thumb__spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border: 2px solid rgba(242, 234, 220, 0.25);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: thumb-spin 700ms linear infinite;
+  z-index: 1;
+}
+@keyframes thumb-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Below the edited mark, not over it: a photo that has been edited and then
+   exported has to be able to say both things at once. */
+.thumb__check {
+  position: absolute;
+  right: 5px;
+  top: 22px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg-app);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
+
+.batchbar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  min-width: min(440px, calc(100vw - 32px));
+  background: var(--bg-panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+}
+.batchbar__text { display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }
+.batchbar__stage { font-size: 11px; color: var(--text-muted); }
+.batchbar__track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+.batchbar__track span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb__spinner { animation-duration: 1800ms; }
+  .batchbar__track span { transition: none; }
+}
+
+
+/* ──────────────────────── filmstrip frames ──────────────────────── */
+
+.frame { position: relative; }
+
+/*
+ * Hidden until the frame is hovered or the control itself is focused, so the
+ * strip stays a wall of pictures rather than a wall of buttons. It removes the
+ * photo from the strip and nothing else — the file and its saved edits both
+ * survive, which is why this is not styled as a destructive action.
+ */
+.frame__remove {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text);
+  background: rgba(11, 10, 8, 0.72);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+.frame:hover .frame__remove,
+.frame__remove:focus-visible { opacity: 1; }
+.frame__remove:hover { color: #e8b6ae; border-color: #8a4a44; background: #2a1e1c; }
+.frame__remove:disabled { display: none; }
+
+/* A coarse pointer has no hover, so the control cannot hide behind one. */
+@media (pointer: coarse) {
+  .frame__remove { opacity: 1; }
+}
+
+
+/* ──────────────────── edited filter & export menu ──────────────────── */
+
+.filmstrip__edited-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 14px 10px;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.filmstrip__edited-filter:hover { color: var(--text); border-color: var(--line-strong); }
+.filmstrip__edited-filter[data-active] {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--accent);
+}
+.filmstrip__edited-filter span:first-of-type { flex: 1; text-align: left; }
+.filmstrip__edited-filter svg { flex: none; }
+
+.export-split { position: relative; display: flex; }
+/*
+ * One control split in two: square off the inner edges so it reads as a single
+ * button with a handle rather than as two buttons that happen to touch. Only
+ * when the handle is actually there — the caret appears only once a second
+ * export target exists, and without this guard the button kept a flat right
+ * edge against nothing.
+ */
+.export-split[data-split] .export-split__main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.export-split__more {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: 1px;
+  padding-inline: 9px;
+  font-size: 11px;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 210px;
+  padding: 5px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+}
+.menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.menu__item:hover { background: var(--surface-hover); }
+.menu__item .mono { color: var(--text-muted); font-size: 12px; }
+
+
+/*
+ * The rail is 148px wide and the menu is wider than that, so it cannot sit
+ * inside it: anchored to the right edge it ran off the left of the window.
+ * It opens rightward instead, over the viewport, which has the room.
+ */
+.menu--strip {
+  top: calc(100% - 4px);
+  left: 10px;
+  right: auto;
+  min-width: 190px;
 }

@@ -60,6 +60,28 @@ export const IconLens = ({ size = 16 }: Props) => (
   </svg>
 )
 
+/**
+ * The "this photo has edits" mark: a length of film in the safelight amber.
+ *
+ * Filled rather than stroked, and carrying its own dark plate, because it sits
+ * on top of a thumbnail whose colours are anyone's guess — an outline icon
+ * would vanish against half the photos in a folder.
+ */
+export const MarkEdited = () => (
+  <svg width="16" height="12" viewBox="0 0 16 12" aria-hidden>
+    <rect width="16" height="12" rx="2.5" fill="#0b0a08" fillOpacity="0.78" />
+    <rect x="2" y="2" width="12" height="8" rx="1" fill="#c9a227" />
+    <g fill="#0b0a08">
+      <rect x="3" y="2.9" width="1.7" height="1.3" rx="0.45" />
+      <rect x="6.15" y="2.9" width="1.7" height="1.3" rx="0.45" />
+      <rect x="9.3" y="2.9" width="1.7" height="1.3" rx="0.45" />
+      <rect x="3" y="7.8" width="1.7" height="1.3" rx="0.45" />
+      <rect x="6.15" y="7.8" width="1.7" height="1.3" rx="0.45" />
+      <rect x="9.3" y="7.8" width="1.7" height="1.3" rx="0.45" />
+    </g>
+  </svg>
+)
+
 export const IconHelp = ({ size = 16 }: Props) => (
   <svg {...base(size)}>
     <circle cx="8" cy="8" r="6.4" />

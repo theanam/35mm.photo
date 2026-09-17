@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { cloneEdits, defaultEdits, editsEqual } from './defaults'
 import { emptyHistory, pushHistory, shouldPush, touchHistory, type History } from './history'
 import { countEdits, type PanelId } from './summary'
+import { applySyncScope, type SyncGroup } from './sync'
 import type { EditState, Frame, ImageMeta } from './types'
 import type { Orientation } from '../../io/exif'
 import { MAX_PREVIEW_EDGE, decodeFile, makeThumbnail, previewBitmap } from '../../io/decode'
@@ -9,6 +10,12 @@ import type { DecodeStage } from '../../io/decode'
 import { extensionOf, isRawFile } from '../../io/formats'
 import type { OpenedFile } from '../../io/file-system'
 import { DEFAULT_EXPORT, type ExportSettings } from '../../io/export'
+import {
+  canBatchExport,
+  pickExportDirectory,
+  runBatchExport,
+  type BatchStatus,
+} from '../../io/batch-export'
 import { getLook, setCustomPresets } from '../presets/catalogue'
 import { forgetLut } from '../presets/lutCache'
 import { importPresetFiles } from '../presets/import'
@@ -40,6 +47,11 @@ interface EditorState {
   /* Library */
   frames: Frame[]
   activeFrameId: string | null
+  /** Frames picked out for a batch action. The active frame is not implicitly
+   *  part of it — selecting is a separate gesture from opening. */
+  selection: string[]
+  /** Where a shift-click measures from — the last frame picked deliberately. */
+  selectionAnchor: string | null
   photo: OpenPhoto | null
   recents: db.StoredEdit[]
 
@@ -73,6 +85,8 @@ interface EditorState {
   cropping: boolean
   exportOpen: boolean
   aboutOpen: boolean
+  batch: BatchState
+  syncOpen: boolean
   exportSettings: ExportSettings
   histogram: HistogramData | null
   /** Published by the viewport so the bottom bar can show the zoom level. */
@@ -90,6 +104,20 @@ interface EditorState {
   /* Actions */
   openFiles: (files: OpenedFile[], options?: { replace?: boolean }) => Promise<void>
   selectFrame: (id: string) => Promise<void>
+  toggleFrameSelected: (id: string) => void
+  /** Shift-click: the contiguous run from the anchor to `id`. `within` is the
+   *  ids currently on screen, so a range never reaches through a filter. */
+  selectRangeTo: (id: string, within?: string[]) => void
+  setSelection: (ids: string[]) => void
+  clearSelection: () => void
+  /** Copy the open photo's chosen groups onto every selected frame. */
+  syncToSelection: (groups: SyncGroup[]) => Promise<number>
+  /** Render photos into a folder chosen once, up front. Defaults to the
+   *  selection; pass ids to export a different set, such as every edited one. */
+  exportSelection: (ids?: string[]) => Promise<void>
+  /** Take photos out of the filmstrip. The files and their saved edits stay. */
+  removeFrames: (ids: string[]) => void
+  cancelBatchExport: () => void
   closePhoto: () => void
   /** Record that the open photo's edits have been written to a sidecar. */
   markSidecarSaved: () => void
@@ -123,12 +151,35 @@ interface EditorState {
   setCropping: (on: boolean) => void
   setExportOpen: (open: boolean) => void
   setAboutOpen: (open: boolean) => void
+  setSyncOpen: (open: boolean) => void
   setExportSettings: (patch: Partial<ExportSettings>) => void
   setHistogram: (data: HistogramData) => void
   setViewScale: (scale: number, fit: number) => void
   toast: (message: string, tone?: Toast['tone']) => void
   dismissToast: (id: string) => void
 }
+
+export interface BatchState {
+  running: boolean
+  total: number
+  saved: number
+  failed: number
+  /** Per-frame state, so each thumbnail can show where it is in the run. */
+  statuses: Record<string, BatchStatus>
+  /** What the current photo is doing, for the docked readout. */
+  stage: string
+}
+
+const IDLE_BATCH: BatchState = {
+  running: false,
+  total: 0,
+  saved: 0,
+  failed: 0,
+  statuses: {},
+  stage: '',
+}
+
+let batchAbort: AbortController | null = null
 
 /** Rebuilt never: the comparison target for "has this photo been touched?". */
 const PRISTINE = defaultEdits()
@@ -146,6 +197,8 @@ let autosaveTimer: ReturnType<typeof setTimeout> | null = null
 export const useEditor = create<EditorState>((set, get) => ({
   frames: [],
   activeFrameId: null,
+  selection: [],
+  selectionAnchor: null,
   photo: null,
   recents: [],
 
@@ -167,6 +220,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   cropping: false,
   exportOpen: false,
   aboutOpen: false,
+  syncOpen: false,
+  batch: { ...IDLE_BATCH },
   exportSettings: { ...DEFAULT_EXPORT },
   histogram: null,
   viewScale: 1,
@@ -219,7 +274,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       openedFiles.set(frame.id, files[i])
     }
 
-    set({ frames: merged })
+    set({ frames: merged, selection: get().selection.filter((id) => merged.some((f) => f.id === id)) })
     await get().selectFrame(added[0].id)
 
     // Thumbnails for the rest of the strip, after the first photo is up.
@@ -235,6 +290,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       loadingLabel: isRawFile(opened.file.name) ? STAGE_LABELS.reading : 'Opening',
       loadingName: opened.file.name,
       activeFrameId: id,
+      selectionAnchor: id,
       cropping: false,
     })
 
@@ -292,6 +348,208 @@ export const useEditor = create<EditorState>((set, get) => ({
       })
       get().toast(message, 'error')
     }
+  },
+
+  toggleFrameSelected(id) {
+    const selection = get().selection
+    set({
+      selection: selection.includes(id)
+        ? selection.filter((s) => s !== id)
+        : [...selection, id],
+      // Picking one out re-anchors, so a shift-click after it measures from
+      // here rather than from wherever the last range happened to end.
+      selectionAnchor: id,
+    })
+  },
+
+  /**
+   * Extend the selection to `id`, anchored on whatever was picked last — or on
+   * the open photo when nothing is selected yet, which is what a bare
+   * shift-click after opening a frame is asking for.
+   */
+  selectRangeTo(id, within) {
+    const { frames, selection, selectionAnchor, activeFrameId } = get()
+    const order = within ?? frames.map((f) => f.id)
+
+    const to = order.indexOf(id)
+    if (to === -1) return
+
+    // Shift-clicking something already in the selection takes it out. Ranging
+    // from the anchor instead would drop everything *except* it, which is the
+    // opposite of what clicking a selected thing asks for.
+    if (selection.includes(id)) {
+      const next = selection.filter((s) => s !== id)
+      set({
+        selection: next,
+        selectionAnchor: selectionAnchor === id ? (next.at(-1) ?? null) : selectionAnchor,
+      })
+      return
+    }
+
+    const anchorId = selectionAnchor ?? activeFrameId
+    const from = anchorId ? order.indexOf(anchorId) : -1
+    const start = from === -1 ? to : from
+
+    const [lo, hi] = start <= to ? [start, to] : [to, start]
+    set({ selection: order.slice(lo, hi + 1), selectionAnchor: anchorId ?? id })
+  },
+
+  setSelection(ids) {
+    set({ selection: ids })
+  },
+
+  clearSelection() {
+    set({ selection: [], selectionAnchor: null })
+  },
+
+  async syncToSelection(groups) {
+    const { selection, frames, photo, edits } = get()
+    if (!photo || !selection.length || !groups.length) return 0
+
+    let applied = 0
+    for (const id of selection) {
+      const frame = frames.find((f) => f.id === id)
+      if (!frame) continue
+
+      // The open photo is handled through the edit stack so its history and
+      // the viewport both follow; everything else is a stored record, which
+      // needs no decode at all.
+      if (id === photo.frameId) {
+        get().replaceEdits(applySyncScope(edits, edits, groups), 'sync')
+        applied++
+        continue
+      }
+
+      const saved = await db.loadEdits(id)
+      const base = saved?.edits ? migrate(saved.edits) : defaultEdits()
+      const next = applySyncScope(base, edits, groups)
+      const editCount = countEdits(next)
+
+      await db.saveEdits({
+        key: id,
+        meta: frame.meta,
+        edits: next,
+        editCount,
+        updatedAt: Date.now(),
+      })
+      set({
+        frames: get().frames.map((f) =>
+          f.id === id ? { ...f, editCount, unsaved: editCount > 0 } : f,
+        ),
+      })
+      applied++
+    }
+
+    void get().refreshRecents()
+    return applied
+  },
+
+  removeFrames(ids) {
+    const drop = new Set(ids)
+    if (!drop.size) return
+
+    const { frames, activeFrameId, selection } = get()
+    const removedAt = activeFrameId ? frames.findIndex((f) => f.id === activeFrameId) : -1
+
+    for (const frame of frames) {
+      if (!drop.has(frame.id)) continue
+      // The strip is the only holder of these, so let them go with it. The
+      // file on disk and anything saved about it in IndexedDB are untouched —
+      // reopening the photo brings its edits back.
+      if (frame.thumbUrl) URL.revokeObjectURL(frame.thumbUrl)
+      openedFiles.delete(frame.id)
+    }
+
+    const remaining = frames.filter((f) => !drop.has(f.id))
+    set({
+      frames: remaining,
+      selection: selection.filter((id) => !drop.has(id)),
+    })
+
+    if (!activeFrameId || !drop.has(activeFrameId)) return
+    // Land on whatever took the removed photo's place, so the strip does not
+    // jump to the top every time one is taken out.
+    const next = remaining[Math.min(Math.max(removedAt, 0), remaining.length - 1)]
+    if (next) void get().selectFrame(next.id)
+    else get().closePhoto()
+  },
+
+  async exportSelection(ids) {
+    const { selection, frames, batch } = get()
+    const targets = ids ?? selection
+    if (batch.running || !targets.length) return
+
+    if (!canBatchExport()) {
+      get().toast(
+        'This browser cannot write a folder, so photos have to be exported one at a time',
+        'error',
+      )
+      return
+    }
+
+    const directory = await pickExportDirectory()
+    if (!directory) return
+
+    // Snapshot the edits now. The run takes minutes on a folder of raws, and a
+    // photo half-exported with settings from two different moments would be
+    // worse than one exported with settings the user has since changed.
+    const items = []
+    for (const id of targets) {
+      const frame = frames.find((f) => f.id === id)
+      const file = openedFiles.get(id)
+      if (!frame || !file) continue
+      const saved = await db.loadEdits(id)
+      items.push({
+        frameId: id,
+        file,
+        meta: frame.meta,
+        edits: saved?.edits ? migrate(saved.edits) : defaultEdits(),
+      })
+    }
+    if (!items.length) return
+
+    batchAbort = new AbortController()
+    set({
+      batch: {
+        ...IDLE_BATCH,
+        running: true,
+        total: items.length,
+        statuses: Object.fromEntries(items.map((i) => [i.frameId, 'pending' as BatchStatus])),
+      },
+    })
+
+    const result = await runBatchExport({
+      items,
+      settings: get().exportSettings,
+      directory,
+      signal: batchAbort.signal,
+      onProgress: (update) => {
+        const current = get().batch
+        set({
+          batch: {
+            ...current,
+            stage: update.status === 'working' ? (update.stage ?? '') : current.stage,
+            statuses: { ...current.statuses, [update.frameId]: update.status },
+          },
+        })
+      },
+    })
+
+    batchAbort = null
+    set({ batch: { ...get().batch, running: false, saved: result.saved, failed: result.failed } })
+
+    if (result.cancelled) {
+      get().toast(`Export stopped — ${result.saved} saved`)
+    } else if (result.failed) {
+      get().toast(`${result.saved} exported, ${result.failed} could not be`, 'warn')
+    } else {
+      get().toast(`${result.saved} photo${result.saved === 1 ? '' : 's'} exported`)
+    }
+  },
+
+  cancelBatchExport() {
+    batchAbort?.abort()
+    set({ batch: { ...get().batch, stage: 'Stopping' } })
   },
 
   markSidecarSaved() {
@@ -564,6 +822,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   setCropping(on) { set({ cropping: on, splitCompare: on ? false : get().splitCompare }) },
   setAboutOpen(open) {
     set({ aboutOpen: open })
+  },
+
+  setSyncOpen(open) {
+    set({ syncOpen: open })
   },
 
   setExportOpen(open) { set({ exportOpen: open }) },
