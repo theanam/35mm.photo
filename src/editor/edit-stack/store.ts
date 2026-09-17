@@ -87,9 +87,11 @@ interface EditorState {
   toolChanged: () => boolean
 
   /* Actions */
-  openFiles: (files: OpenedFile[]) => Promise<void>
+  openFiles: (files: OpenedFile[], options?: { replace?: boolean }) => Promise<void>
   selectFrame: (id: string) => Promise<void>
   closePhoto: () => void
+  /** Record that the open photo's edits have been written to a sidecar. */
+  markSidecarSaved: () => void
   refreshRecents: () => Promise<void>
   clearRecents: () => Promise<void>
 
@@ -178,10 +180,21 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   /* ─────────────────────────── library ─────────────────────────── */
 
-  async openFiles(files) {
+  async openFiles(files, options) {
     if (!files.length) return
 
-    const existing = get().frames
+    // Opening a folder makes the strip that folder. The rail is labelled FOLDER
+    // and reads as one place, so leaving the odd file someone opened earlier
+    // sitting inside it describes something that is not on disk. Adding files
+    // is still additive — that is the gesture asking for more, not for a
+    // different folder.
+    const existing = options?.replace ? [] : get().frames
+    if (options?.replace) {
+      for (const frame of get().frames) {
+        if (!files.some((f) => db.fileKey(f.file) === frame.id)) openedFiles.delete(frame.id)
+        if (frame.thumbUrl) URL.revokeObjectURL(frame.thumbUrl)
+      }
+    }
     const added: Frame[] = files.map((f) => ({
       id: db.fileKey(f.file),
       meta: {
@@ -249,7 +262,17 @@ export const useEditor = create<EditorState>((set, get) => ({
         loadingLabel: '',
         loadingName: '',
         frames: get().frames.map((f) =>
-          f.id === id ? { ...f, meta: decoded.meta, error: undefined } : f,
+          f.id === id
+            ? {
+                ...f,
+                meta: decoded.meta,
+                error: undefined,
+                editCount: countEdits(edits),
+                // A sidecar is a file on disk, and nothing here can see one, so
+                // remembered edits count as unwritten until this session writes.
+                unsaved: countEdits(edits) > 0,
+              }
+            : f,
         ),
       })
 
@@ -266,6 +289,12 @@ export const useEditor = create<EditorState>((set, get) => ({
       })
       get().toast(message, 'error')
     }
+  },
+
+  markSidecarSaved() {
+    const id = get().activeFrameId
+    if (!id) return
+    set({ frames: get().frames.map((f) => (f.id === id ? { ...f, unsaved: false } : f)) })
   },
 
   closePhoto() {
@@ -367,7 +396,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       : touchHistory(history, coalesceKey ?? null, now)
 
     set({ edits: next, history: nextHistory })
-    scheduleAutosave(get)
+    scheduleAutosave(get, set)
   },
 
   updateCrop(patch, coalesceKey) {
@@ -416,7 +445,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       edits: cloneEdits(edits),
       history: pushHistory(get().history, cloneEdits(current), coalesceKey ?? null, now),
     })
-    scheduleAutosave(get)
+    scheduleAutosave(get, set)
   },
 
   undo() {
@@ -432,7 +461,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         coalesceAt: 0,
       },
     })
-    scheduleAutosave(get)
+    scheduleAutosave(get, set)
   },
 
   redo() {
@@ -448,7 +477,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         coalesceAt: 0,
       },
     })
-    scheduleAutosave(get)
+    scheduleAutosave(get, set)
   },
 
   resetAll() {
@@ -515,7 +544,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     // The parameters are already live in the preview; applying just settles them.
     const tool = get().activeTool
     get().closeTool()
-    if (tool) scheduleAutosave(get)
+    if (tool) scheduleAutosave(get, set)
   },
 
   discardTool() {
@@ -648,17 +677,26 @@ async function hydrateThumbnails(ids: string[], set: Setter, get: Getter) {
   }
 }
 
-function scheduleAutosave(get: Getter) {
+function scheduleAutosave(get: Getter, set: Setter) {
   if (autosaveTimer) clearTimeout(autosaveTimer)
   autosaveTimer = setTimeout(() => {
     const { photo, edits } = get()
     if (!photo) return
+    const editCount = countEdits(edits)
     void db.saveEdits({
       key: photo.key,
       meta: photo.meta,
       edits,
-      editCount: countEdits(edits),
+      editCount,
       updatedAt: Date.now(),
+    })
+    // Debounced with the save rather than run on every slider tick: the marker
+    // is a state, not an animation, and re-rendering the strip per frame of a
+    // drag would cost more than it tells anyone.
+    set({
+      frames: get().frames.map((f) =>
+        f.id === photo.frameId ? { ...f, editCount, unsaved: editCount > 0 } : f,
+      ),
     })
     void get().refreshRecents()
   }, AUTOSAVE_DELAY)

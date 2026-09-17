@@ -1326,3 +1326,51 @@
   border: 1px solid var(--line-strong);
 }
 .grade-zone[data-touched] .grade-zone__dot { border-color: transparent; }
+
+/* ──────────────────── filmstrip tabs and edited marker ──────────────────── */
+
+.filmstrip__tabs {
+  display: flex;
+  gap: 2px;
+  margin: 0 14px 10px;
+  padding: 2px;
+  background: var(--bg-app);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.filmstrip__tab {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filmstrip__tab:hover { color: var(--text); }
+.filmstrip__tab[data-active] { color: var(--text); background: var(--surface); }
+
+/*
+ * Paper, not the safelight: the brand sheet keeps amber for "this is active",
+ * and the active frame already spends it on its border. An edited frame is a
+ * state of the file, not a selection, so it gets the quieter mark — top-right,
+ * clear of the error badge in the opposite corner.
+ */
+.thumb__edited {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+}

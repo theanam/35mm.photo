@@ -8,6 +8,7 @@ export function TopBar() {
   const setExportOpen = useEditor((s) => s.setExportOpen)
   const closePhoto = useEditor((s) => s.closePhoto)
   const toast = useEditor((s) => s.toast)
+  const markSidecarSaved = useEditor((s) => s.markSidecarSaved)
   const loading = useEditor((s) => s.loading)
   const loadingLabel = useEditor((s) => s.loadingLabel)
 
@@ -17,6 +18,7 @@ export function TopBar() {
     if (!meta) return
     const outcome = await saveSidecar(meta, edits)
     if (outcome === 'cancelled') return
+    markSidecarSaved()
     toast(
       outcome === 'saved'
         ? 'Edit sidecar saved next to your photo'

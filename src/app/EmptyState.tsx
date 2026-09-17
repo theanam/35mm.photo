@@ -80,7 +80,7 @@ export function EmptyState({ dragging }: { dragging: boolean }) {
           </button>
           <button
             className="button button--lg"
-            onClick={() => void pickDirectory().then(openFiles)}
+            onClick={() => void pickDirectory().then((files) => openFiles(files, { replace: true }))}
             title={canOpenDirectories() ? undefined : 'Your browser will ask for the files instead'}
           >
             Open a folder

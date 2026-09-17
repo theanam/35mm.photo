@@ -167,6 +167,15 @@ export interface Frame {
   meta: ImageMeta
   /** Object URL of a small preview, for the filmstrip and recents grid. */
   thumbUrl?: string
+  /** Parameter groups away from default, for the filmstrip's edited marker. */
+  editCount?: number
+  /**
+   * True when those edits exist only inside 35mm. Cleared by writing a sidecar,
+   * which is the only step that puts them somewhere another program can read.
+   * Edits always survive in IndexedDB regardless — this is about the file on
+   * disk, not about losing work.
+   */
+  unsaved?: boolean
   /** Set when the file could not be decoded in this browser. */
   error?: string
 }
