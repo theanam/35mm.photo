@@ -52,6 +52,14 @@ photograph". Amber is a safelight, not a paint: it marks what is active and
 nothing else. Sources, lockups, minimum sizes and the render step for the
 social card live in [`brand/`](brand/).
 
+## Analytics
+
+Google Analytics ships on the published site only. `vite.config.ts` injects the
+tag at build time when `GA_MEASUREMENT_ID` is set, and the deploy workflow is
+the only thing that sets it — `npm run build` on a laptop, a `BASE_PATH` subpath
+build and any fork all produce an untagged page, and the dev server never
+injects it at all.
+
 ## Metadata
 
 `index.html` carries the search and sharing tags: title, description, canonical,

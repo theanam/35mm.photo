@@ -34,12 +34,51 @@ function sitemap(): Plugin {
   }
 }
 
+/**
+ * Google Analytics, injected at build time and only when GA_MEASUREMENT_ID is
+ * set. The Pages deploy workflow sets it; nothing else does, so `npm run build`
+ * on a laptop, a BASE_PATH subpath build and any fork all stay untagged. The
+ * `apply: 'build'` keeps it out of the dev server regardless.
+ */
+function analytics(id: string | undefined): Plugin {
+  if (id && !/^G-[A-Z0-9]+$/.test(id)) {
+    throw new Error(`GA_MEASUREMENT_ID is not a measurement id: ${id}`)
+  }
+
+  return {
+    name: '35mm:analytics',
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'post',
+      handler: () =>
+        id
+          ? [
+              {
+                tag: 'script',
+                attrs: { async: true, src: `https://www.googletagmanager.com/gtag/js?id=${id}` },
+                injectTo: 'head' as const,
+              },
+              {
+                tag: 'script',
+                children:
+                  'window.dataLayer = window.dataLayer || [];\n' +
+                  'function gtag(){dataLayer.push(arguments);}\n' +
+                  "gtag('js', new Date());\n" +
+                  `gtag('config', '${id}');`,
+                injectTo: 'head' as const,
+              },
+            ]
+          : [],
+    },
+  }
+}
+
 // The site lives at its own apex domain, so the built bundle is served from the
 // root. Override with BASE_PATH (e.g. '/35mm/') to publish under a subpath
 // instead, such as a GitHub Pages project site. Dev always serves from the root.
 export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/' : (process.env.BASE_PATH ?? '/'),
-  plugins: [react(), sitemap()],
+  plugins: [react(), sitemap(), analytics(process.env.GA_MEASUREMENT_ID)],
   worker: { format: 'es' },
   build: { target: 'es2022', assetsInlineLimit: 0 },
 }))

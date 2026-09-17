@@ -30,6 +30,10 @@ jobs:
       # CNAME file is ignored when publishing from Actions), so vite's default
       # base of "/" is right; set BASE_PATH=/<repo>/ if that domain goes away.
       - run: npm run build
+        env:
+          # Analytics ships on the published site only — see the analytics()
+          # plugin in vite.config.ts. Local and fork builds stay untagged.
+          GA_MEASUREMENT_ID: G-GDZ2BFDREX
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
