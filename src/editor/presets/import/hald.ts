@@ -63,6 +63,15 @@ export function unpackLutImage(
   return { lut: best.lut, layout: best.layout.kind }
 }
 
+/**
+ * Whether these dimensions could hold a cube at all. A dropped .png or .jpg is
+ * equally plausibly a photo or a LUT image, and this is the difference: the
+ * layouts are exact, so a photo will almost never satisfy one by accident.
+ */
+export function couldBeLutImage(width: number, height: number): boolean {
+  return layoutsFor(width, height).length > 0
+}
+
 function layoutsFor(width: number, height: number): Layout[] {
   const out: Layout[] = []
 

@@ -32,6 +32,15 @@ export const PRESET_ACCEPT = '.cube,.xmp,.lrtemplate,.png,.jpg,.jpeg,.webp'
 
 export const PRESET_EXTENSIONS = Object.keys(FORMATS)
 
+/** Extensions that could be either a photo or a LUT image. */
+const AMBIGUOUS = new Set(['png', 'jpg', 'jpeg', 'webp'])
+
+export function isAmbiguousImage(name: string): boolean {
+  return AMBIGUOUS.has(extensionOf(name))
+}
+
+export { couldBeLutImage } from './hald'
+
 export function isPresetFile(name: string): boolean {
   return extensionOf(name) in FORMATS
 }
