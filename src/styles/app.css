@@ -427,7 +427,16 @@
 
 /* ───────────────────────────── viewport ───────────────────────────── */
 
-.viewport { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.viewport {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  /* Both axes: a flex item's automatic minimum size is its content, so a frame
+     zoomed to 8x would otherwise widen the whole column instead of scrolling. */
+  min-height: 0;
+  min-width: 0;
+}
 
 .viewport__stage {
   flex: 1;
@@ -436,9 +445,26 @@
   justify-content: center;
   padding: 36px;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
+  /* The stage handles its own pan and pinch through pointer events, so the
+     browser must not claim the gesture for scrolling or page zoom first. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .viewport__stage[data-zoomed] { overflow: auto; align-items: safe center; justify-content: safe center; }
+
+/* Wheel zoom replaces scrolling here, so dragging is how you reach the edges. */
+.viewport__stage[data-pannable] { cursor: grab; }
+.viewport__stage[data-panning] { cursor: grabbing; }
+/* The crop box and the split handle keep their own cursors while dragging. */
+.viewport__stage[data-pannable] .crop__box,
+.viewport__stage[data-pannable] .crop__handle,
+.viewport__stage[data-pannable] .viewport__split-handle { cursor: inherit; }
+.viewport__stage[data-pannable] .crop__box { cursor: move; }
+.viewport__stage[data-pannable] .viewport__split-handle { cursor: ew-resize; }
 
 .viewport__frame {
   position: relative;
@@ -608,7 +634,10 @@
 .rail .tool { gap: 14px; }
 .rail .tool__columns { grid-template-columns: 1fr; gap: 14px; }
 .rail .tool__group--curve { max-width: none; }
+/* Stacking the footer row turns the main axis vertical, so the row layout's
+   `flex: 1 1 320px` would read as a 320px-tall slider. Size to content instead. */
 .rail .tool__footer-row { flex-direction: column; align-items: stretch; gap: 10px; }
+.rail .tool__footer-row > * { flex: 0 0 auto; }
 .rail .tool__hint--inline { min-width: 0; }
 
 /* ───────────────────────────── histogram ───────────────────────────── */
@@ -722,9 +751,86 @@
     var(--surface);
 }
 .look:hover .look__swatch { border-color: var(--text-muted); }
-.look__name { font-size: 13px; color: var(--text); }
+.look__name { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
 .look[data-active] .look__swatch { border: 2px solid var(--accent); }
 .look[data-active] .look__name { font-weight: 700; color: var(--accent-text); }
+
+/* An imported preset carries a remove button, so its tile is a container with
+   a button inside rather than a button itself. */
+.look--custom { position: relative; }
+.look__pick {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.look--custom:hover .look__swatch { border-color: var(--text-muted); }
+
+.look__badge {
+  position: absolute;
+  left: 5px;
+  bottom: 28px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  background: rgb(0 0 0 / 0.6);
+  pointer-events: none;
+}
+
+.look__remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text);
+  background: rgb(0 0 0 / 0.66);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.look--custom:hover .look__remove,
+.look__remove:focus-visible { opacity: 1; }
+.look__remove:hover { background: #8a4a44; }
+
+.looks__custom { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+.looks__custom .tool__group-head { margin: 0; }
+
+/* Paired label + control for the footer row; the input-space picker is the
+   only place a select appears in a tool. */
+.field { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.field__label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.field__select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  cursor: pointer;
+}
+.field__select:hover { border-color: var(--line-soft); }
+.field__select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ───────────────────────────── chips, segments, bands ───────────────────────────── */
 
@@ -1005,6 +1111,11 @@
 }
 .toast[data-tone='error'] { border-color: #8a4a44; color: #e8b6ae; }
 
+/* Deliberately not --accent. The brand sheet reserves the safelight amber for
+   "this is active", so a warning borrows the hue but not the chroma: muted
+   gold, which cannot be mistaken for a control that is switched on. */
+.toast[data-tone='warn'] { border-color: #8a7a3a; color: #e8d9a6; }
+
 /* ───────────────────────────── narrow screens ───────────────────────────── */
 
 @media (max-width: 1240px) {
@@ -1018,7 +1129,26 @@
   .tool__columns--curves { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 760px) {
+/* Coarse pointers need larger targets than a mouse does. */
+@media (pointer: coarse) {
+  .crop__handle { width: 22px; height: 22px; }
+  .crop__handle--nw, .crop__handle--sw { left: -11px; }
+  .crop__handle--ne, .crop__handle--se { right: -11px; }
+  .crop__handle--nw, .crop__handle--ne { top: -11px; }
+  .crop__handle--sw, .crop__handle--se { bottom: -11px; }
+  .crop__handle--n { top: -11px; margin-left: -11px; }
+  .crop__handle--s { bottom: -11px; margin-left: -11px; }
+  .crop__handle--w { left: -11px; margin-top: -11px; }
+  .crop__handle--e { right: -11px; margin-top: -11px; }
+  .viewport__split-handle { width: 34px; height: 34px; margin: -17px 0 0 -17px; }
+  .slider__input { inset: -14px 0; height: 31px; }
+  .icon-button { width: 38px; height: 38px; }
+  .band { width: 34px; height: 34px; }
+  .chip { padding: 8px 14px; }
+}
+
+/* iPad portrait is 768pt wide: stack rather than squeeze three columns. */
+@media (max-width: 900px) {
   /* Wraps to more rows rather than shrinking — clear space around the lockup
      survives at phone width. */
   .topbar {
@@ -1042,3 +1172,157 @@
   .empty { padding: 28px 16px; gap: 28px; }
   .dropzone { padding: 44px 24px; }
 }
+
+/* ──────────────────────── loading overlay ──────────────────────── */
+
+/*
+ * Covers the whole app rather than just the viewport: the slow case is the
+ * first open, when there is no viewport yet — only the empty state — and a
+ * spinner tucked into the top bar there is too quiet to answer "is this
+ * working?". `LoadingOverlay` holds it back 350ms so quick opens never see it.
+ */
+.loading {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-app) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.loading__card {
+  min-width: 260px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 20px 22px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+/* Indeterminate: a sliver travelling the track, since LibRaw reports no
+   progress and a percentage here would be invented. */
+.loading__bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+.loading__bar span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: loading-slide 1150ms ease-in-out infinite;
+}
+@keyframes loading-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(363%); }
+}
+
+.loading__label { margin: 14px 0 0; font-size: 14px; color: var(--text); }
+.loading__name {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading__bar span { animation-duration: 2400ms; }
+}
+
+/* ──────────────────────── filmstrip sections ──────────────────────── */
+
+.filmstrip__count { display: flex; align-items: center; gap: 6px; }
+
+/* Compact twin of the row button below, for when the list is long enough that
+   the row has scrolled out of reach. */
+.filmstrip__add {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.filmstrip__add:hover { color: var(--text); border-color: var(--line-soft); }
+
+.filmstrip__groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.filmstrip__group + .filmstrip__group { margin-top: 4px; }
+
+.filmstrip__group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: 4px 14px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.filmstrip__group-title .mono { font-weight: 400; letter-spacing: 0; }
+
+/* The scroll belongs to the groups wrapper once the list is split, so the two
+   sections scroll as one column rather than each getting its own bar. */
+.filmstrip__list--grouped { overflow-y: visible; flex: none; }
+
+.filmstrip__add-row {
+  margin: 0 14px 14px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.filmstrip__add-row:hover { color: var(--text); border-color: var(--line-soft); }
+
+/* ──────────────────────── colour grading ──────────────────────── */
+
+.grade-zones { display: flex; flex-direction: column; gap: 4px; }
+
+.grade-zone {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.grade-zone:hover { color: var(--text); background: var(--surface); }
+.grade-zone[data-active] {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+
+/* Hollow until the zone carries a tint, so the row reads as a state at a
+   glance rather than needing every swatch to be interpreted. */
+.grade-zone__dot {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+}
+.grade-zone[data-touched] .grade-zone__dot { border-color: transparent; }

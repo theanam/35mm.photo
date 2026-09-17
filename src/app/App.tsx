@@ -8,6 +8,7 @@ import { BottomBar } from './BottomBar'
 import { RightRail } from './RightRail'
 import { IdleRail } from './IdleRail'
 import { EmptyState } from './EmptyState'
+import { LoadingOverlay } from './LoadingOverlay'
 import { ExportDialog } from './ExportDialog'
 import { Toasts } from './Toasts'
 import { useKeyboard } from './useKeyboard'
@@ -24,8 +25,13 @@ export function App() {
   useKeyboard()
 
   // Build the LUTs up front; the first click on a look should not wait for one.
+  // Imported presets come out of IndexedDB first, so their swatches fill in at
+  // the same time as the built-ins rather than a beat later.
   useEffect(() => {
     warmLuts(LOOKS.map((l) => l.id))
+    void useEditor.getState().loadPresets().then(() => {
+      warmLuts(useEditor.getState().presets.map((p) => p.id))
+    })
   }, [])
 
   // Nothing leaves the machine, but unsaved work is still worth a prompt.
@@ -77,6 +83,7 @@ export function App() {
         </div>
       )}
 
+      <LoadingOverlay />
       <ExportDialog />
       <Toasts />
     </div>
