@@ -12,7 +12,7 @@ export const RAW_EXTENSIONS = [
 ] as const
 
 /** What the file picker and the empty state advertise, in the design's order. */
-export const ADVERTISED_FORMATS = 'JPEG · PNG · WEBP · TIFF · RAF · CR3 · NEF · ARW · DNG'
+export const ADVERTISED_FORMATS = 'JPEG · PNG · WEBP · AVIF · GIF · BMP'
 
 export function extensionOf(name: string): string {
   const dot = name.lastIndexOf('.')

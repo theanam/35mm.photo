@@ -1,8 +1,9 @@
 # 35mm
 
 **[35mm.photo](https://35mm.photo)** — a full-featured photo editor in your
-browser. Raw decode, GPU colour grading, curves, an HSL mixer, crop and export
-all happen in the browser tab: nothing to install, no account to make.
+browser. GPU colour grading, curves, an HSL mixer, crop and export all happen in
+the browser tab: nothing to install, no account to make. Raw decode is [not yet
+implemented](#scope).
 
 The published site loads Google Analytics; see [Analytics](#analytics). Nothing
 about a photo is sent anywhere, and a local build has no analytics at all.
