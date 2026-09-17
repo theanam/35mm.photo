@@ -48,9 +48,9 @@ export function TopBar() {
 
       {loading && <span className="topbar__loading">{loadingLabel || 'Working'}…</span>}
 
-      <div className="topbar__privacy">
+      <div className="topbar__status">
         <span className="dot" />
-        <span>{meta ? 'Saved locally · nothing uploaded' : 'Works offline · your photos never leave this computer'}</span>
+        <span>{meta ? 'Edits saved locally · non-destructive' : 'Works offline · nothing to install'}</span>
       </div>
 
       {meta && (

@@ -1,7 +1,7 @@
 {
-  "name": "35mm — a photo editor that never uploads",
+  "name": "35mm — a full-featured photo editor in your browser",
   "short_name": "35mm",
-  "description": "A local, no-upload photo editor. Your photos never leave this computer.",
+  "description": "A full-featured photo editor in your browser. Raw decode, GPU colour grading, crop and export, with nothing to install.",
   "lang": "en",
   "dir": "ltr",
   "start_url": ".",

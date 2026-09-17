@@ -1,8 +1,8 @@
 # 35mm
 
-**[35mm.photo](https://35mm.photo)** — a local, no-upload photo editor. Everything
-— decode, grading, export — happens in the browser tab. No backend, no accounts,
-and your photos are never uploaded.
+**[35mm.photo](https://35mm.photo)** — a full-featured photo editor in your
+browser. Raw decode, GPU colour grading, curves, an HSL mixer, crop and export
+all happen in the browser tab: nothing to install, no account to make.
 
 The published site loads Google Analytics; see [Analytics](#analytics). Nothing
 about a photo is sent anywhere, and a local build has no analytics at all.

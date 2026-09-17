@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A local, no-upload photo editor. Everything runs in the browser tab.",
+  "description": "A full-featured photo editor in your browser. Everything runs in the browser tab.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

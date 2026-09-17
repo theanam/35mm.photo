@@ -76,7 +76,7 @@
 .topbar__spacer { flex: 1; }
 .topbar__loading { font-size: 14px; color: var(--link); }
 
-.topbar__privacy {
+.topbar__status {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1028,7 +1028,7 @@
     row-gap: 12px;
     padding: 12px var(--frame-h);
   }
-  .topbar__privacy { display: none; }
+  .topbar__status { display: none; }
   .toolbar { height: auto; flex-wrap: wrap; padding: 10px 12px; gap: 10px; }
   .toolbar__tools { flex-wrap: wrap; }
   .drawer { max-height: 56vh; }

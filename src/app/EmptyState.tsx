@@ -72,7 +72,7 @@ export function EmptyState({ dragging }: { dragging: boolean }) {
         </div>
         <div className="dropzone__copy">
           <h1>Drop a photo to start</h1>
-          <p>Everything happens in this browser tab. No account, no upload, no waiting.</p>
+          <p>Raw decode, GPU colour grading and export, right in this browser tab. Nothing to install.</p>
         </div>
         <div className="dropzone__actions">
           <button className="button button--accent button--lg" onClick={() => void pickFiles().then(openFiles)}>
