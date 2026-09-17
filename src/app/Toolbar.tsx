@@ -1,0 +1,92 @@
+import { useMemo } from 'react'
+import { useEditor } from '../editor/edit-stack/store'
+import { isToolbarTool, toolbarTools } from '../editor/tools/registry'
+import { buildStack } from '../editor/edit-stack/summary'
+import { IconCopy, IconPaste, IconRedo, IconReset, IconUndo } from './ui/icons'
+
+/**
+ * Geometry tools live here. Picking one opens its drawer directly underneath;
+ * colour and contrast stay in the right rail, where they are always to hand.
+ */
+export function Toolbar() {
+  const edits = useEditor((s) => s.edits)
+  const meta = useEditor((s) => s.photo?.meta ?? null)
+  const activeTool = useEditor((s) => s.activeTool)
+  const openTool = useEditor((s) => s.openTool)
+  const focusPanel = useEditor((s) => s.focusPanel)
+  const undo = useEditor((s) => s.undo)
+  const redo = useEditor((s) => s.redo)
+  const canUndo = useEditor((s) => s.canUndo())
+  const canRedo = useEditor((s) => s.canRedo())
+  const resetAll = useEditor((s) => s.resetAll)
+  const copyLook = useEditor((s) => s.copyLook)
+  const pasteLook = useEditor((s) => s.pasteLook)
+  const hasClipboard = useEditor((s) => s.clipboard !== null)
+  const dirty = useEditor((s) => s.dirty())
+
+  const tools = useMemo(() => toolbarTools(meta), [meta])
+  const stack = useMemo(() => buildStack(edits, meta), [edits, meta])
+
+  return (
+    <div className="toolbar" role="toolbar" aria-label="Tools">
+      <div className="toolbar__tools">
+        {tools.map((tool) => {
+          const isOpen = activeTool === tool.id
+          return (
+            <button
+              key={tool.id}
+              className="tool-button"
+              data-open={isOpen || undefined}
+              aria-pressed={isOpen}
+              aria-expanded={isOpen}
+              disabled={!meta}
+              onClick={() => openTool(tool.id)}
+              title={tool.hint}
+            >
+              <tool.Icon size={17} />
+              <span className="tool-button__label">{tool.label}</span>
+              {tool.isDirty(edits) && <span className="tool-button__dot" aria-label="has edits" />}
+            </button>
+          )
+        })}
+      </div>
+
+      <span className="toolbar__divider" />
+
+      <div className="toolbar__stack" aria-label="Applied edits">
+        {stack.map((chip) => (
+          <button
+            key={chip.id}
+            className="stack-chip"
+            data-accent={chip.accent || undefined}
+            // A chip jumps to wherever its control actually lives.
+            onClick={() => (isToolbarTool(chip.panel) ? openTool(chip.panel) : focusPanel(chip.panel))}
+            title={`${chip.label} — open this control`}
+          >
+            <span>{chip.label}</span>
+            <span className="mono stack-chip__value">{chip.value}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="toolbar__actions">
+        <button className="icon-button" onClick={undo} disabled={!canUndo} title="Undo (⌘Z)" aria-label="Undo">
+          <IconUndo />
+        </button>
+        <button className="icon-button" onClick={redo} disabled={!canRedo} title="Redo (⌘⇧Z)" aria-label="Redo">
+          <IconRedo />
+        </button>
+        <span className="toolbar__divider" />
+        <button className="icon-button" onClick={copyLook} disabled={!dirty} title="Copy look (⌘C)" aria-label="Copy look">
+          <IconCopy />
+        </button>
+        <button className="icon-button" onClick={pasteLook} disabled={!hasClipboard} title="Paste look (⌘V)" aria-label="Paste look">
+          <IconPaste />
+        </button>
+        <button className="icon-button" onClick={resetAll} disabled={!dirty} title="Reset everything" aria-label="Reset all edits">
+          <IconReset />
+        </button>
+      </div>
+    </div>
+  )
+}

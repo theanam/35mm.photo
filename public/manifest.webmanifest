@@ -1,0 +1,32 @@
+{
+  "name": "35mm — a photo editor that never uploads",
+  "short_name": "35mm",
+  "description": "A local, no-upload photo editor. Your photos never leave this computer.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#070706",
+  "theme_color": "#141312",
+  "orientation": "any",
+  "categories": [
+    "photo",
+    "graphics",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

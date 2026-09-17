@@ -1,0 +1,59 @@
+import { Panel } from './ui/Panel'
+import { Histogram } from '../editor/tools/Histogram'
+import { LooksTool } from '../editor/tools/LooksTool'
+import { LightTool } from '../editor/tools/LightTool'
+import { CurvesTool } from '../editor/tools/CurvesTool'
+import { MixerTool } from '../editor/tools/MixerTool'
+import { DetailTool } from '../editor/tools/DetailTool'
+import { GrainTool } from '../editor/tools/GrainTool'
+import { RawTool } from '../editor/tools/RawTool'
+import { useEditor } from '../editor/edit-stack/store'
+import { getTool } from '../editor/tools/registry'
+
+/**
+ * Colour and contrast live here, where they always have. Only the geometry
+ * tools move to the top toolbar — those need the whole viewport and a
+ * commit/cancel gesture; these are continuous adjustments you leave open.
+ */
+export function RightRail() {
+  const edits = useEditor((s) => s.edits)
+  const isRaw = useEditor((s) => s.photo?.meta.isRaw ?? false)
+
+  const dirty = (id: string) => getTool(id as never)?.isDirty(edits) ?? false
+
+  return (
+    <aside className="rail" aria-label="Adjustments">
+      <Histogram />
+
+      {isRaw && (
+        <Panel id="raw" title="RAW develop" note="as shot" collapsible>
+          <RawTool />
+        </Panel>
+      )}
+
+      <Panel id="looks" title="Looks" note="previewed on your photo" active={dirty('looks')}>
+        <LooksTool />
+      </Panel>
+
+      <Panel id="light" title="Light & colour" active={dirty('light')}>
+        <LightTool />
+      </Panel>
+
+      <Panel id="curves" title="Curves" collapsible active={dirty('curves')}>
+        <CurvesTool />
+      </Panel>
+
+      <Panel id="mixer" title="Colour mixer" collapsible active={dirty('mixer')}>
+        <MixerTool />
+      </Panel>
+
+      <Panel id="detail" title="Detail & noise" collapsible active={dirty('detail')}>
+        <DetailTool />
+      </Panel>
+
+      <Panel id="grain" title="Grain & vignette" collapsible active={dirty('grain')}>
+        <GrainTool />
+      </Panel>
+    </aside>
+  )
+}

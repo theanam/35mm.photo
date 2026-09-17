@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="35mm">
+  <!-- Full bleed; the frame and dot sit inside the 80% maskable safe zone
+       (12.8 – 115.2), so no launcher shape can clip the aperture. -->
+  <rect width="128" height="128" fill="#C9A227"/>
+  <rect x="27.5" y="39.5" width="73" height="49" rx="3" fill="none" stroke="#0D0C0B" stroke-width="4.6"/>
+  <circle cx="64" cy="64" r="6.9" fill="#0D0C0B"/>
+</svg>

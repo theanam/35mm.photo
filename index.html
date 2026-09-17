@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>35mm — a photo editor that never uploads</title>
+    <meta
+      name="description"
+      content="A local, no-upload photo editor. Raw decode, grading and export all happen inside the browser tab — no backend, no accounts, no network calls after load."
+    />
+    <link rel="canonical" href="https://35mm.photo/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+
+    <!-- Installed-app chrome. apple-mobile-web-app-capable is the deprecated
+         spelling of mobile-web-app-capable, but iOS still only reads its own. -->
+    <meta name="theme-color" content="#141312" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="application-name" content="35mm" />
+    <meta name="apple-mobile-web-app-title" content="35mm" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
+    <link rel="manifest" href="manifest.webmanifest" />
+
+    <!-- Open Graph. Absolute URLs: crawlers do not resolve these against base. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="35mm" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="35mm — a photo editor that never uploads" />
+    <meta
+      property="og:description"
+      content="Raw decode, grading and export, all inside the browser tab. No backend, no accounts, no network calls after load."
+    />
+    <meta property="og:url" content="https://35mm.photo/" />
+    <meta property="og:image" content="https://35mm.photo/og.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="The 35mm.photo lockup on a dark ground, above the line: a photo editor that never uploads."
+    />
+
+    <!-- X/Twitter falls back to og:* for most of these, but Slack, Discord and
+         iMessage read the explicit ones. No site/creator handle to claim. -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="35mm — a photo editor that never uploads" />
+    <meta
+      name="twitter:description"
+      content="Raw decode, grading and export, all inside the browser tab. No backend, no accounts, no network calls after load."
+    />
+    <meta name="twitter:image" content="https://35mm.photo/og.png" />
+    <meta
+      name="twitter:image:alt"
+      content="The 35mm.photo lockup on a dark ground, above the line: a photo editor that never uploads."
+    />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "35mm",
+        "alternateName": "35mm.photo",
+        "url": "https://35mm.photo/",
+        "description": "A local, no-upload photo editor. Raw decode, grading and export all happen inside the browser tab \u2014 no backend, no accounts, no network calls after load.",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Any, in a modern web browser",
+        "browserRequirements": "Requires JavaScript and WebGL2",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "screenshot": "https://35mm.photo/og.png",
+        "featureList": [
+          "Opens JPEG, PNG, WEBP, TIFF and raw RAF, CR3, NEF, ARW and DNG",
+          "GPU colour grading: light, curves, HSL mixer, detail and grain",
+          "Nine looks",
+          "Crop and straighten",
+          "Non-destructive edit stack, saved to a sidecar beside the photo",
+          "Live histogram and RGB parade",
+          "Installs as a PWA and works offline"
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

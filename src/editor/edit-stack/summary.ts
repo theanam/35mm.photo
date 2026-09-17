@@ -1,0 +1,151 @@
+import { NEUTRAL_TEMPERATURE } from './defaults'
+import { isIdentityCurve } from '../presets/curve'
+import { getLook } from '../presets/looks'
+import { HSL_BANDS, type EditState, type ImageMeta } from './types'
+
+/** Panels the chips can jump to — matches the right-rail group ids. */
+export type PanelId =
+  | 'light'
+  | 'crop'
+  | 'looks'
+  | 'curves'
+  | 'mixer'
+  | 'detail'
+  | 'grain'
+  | 'raw'
+
+export interface StackChip {
+  id: string
+  label: string
+  /** Right-hand value, rendered in the mono face. */
+  value: string
+  panel: PanelId
+  /** The look chip is tinted in the design. */
+  accent?: boolean
+}
+
+const signed = (v: number, digits = 0) =>
+  `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(digits)}`
+
+export function hasCropEdits(edits: EditState): boolean {
+  const c = edits.crop
+  return (
+    c.x !== 0 || c.y !== 0 || c.w !== 1 || c.h !== 1 ||
+    c.angle !== 0 || c.rotate90 !== 0 || c.flipH || c.flipV
+  )
+}
+
+export function hasCurveEdits(edits: EditState): boolean {
+  const { rgb, r, g, b } = edits.curves
+  return !(isIdentityCurve(rgb) && isIdentityCurve(r) && isIdentityCurve(g) && isIdentityCurve(b))
+}
+
+export function hasMixerEdits(edits: EditState): boolean {
+  return HSL_BANDS.some((band) => {
+    const a = edits.hsl[band]
+    return a.hue !== 0 || a.sat !== 0 || a.lum !== 0
+  })
+}
+
+export function hasToneEdits(edits: EditState): boolean {
+  return (
+    edits.contrast !== 0 || edits.highlights !== 0 || edits.shadows !== 0 ||
+    edits.whites !== 0 || edits.blacks !== 0
+  )
+}
+
+export function hasDetailEdits(edits: EditState): boolean {
+  return (
+    edits.clarity !== 0 || edits.sharpen !== 0 ||
+    edits.denoiseLuma !== 0 || edits.denoiseChroma !== 0
+  )
+}
+
+export function hasFinishEdits(edits: EditState): boolean {
+  return edits.grain !== 0 || edits.vignette !== 0
+}
+
+/**
+ * The "YOUR EDITS" strip. The chips are derived from the edit state in pipeline
+ * order rather than stored separately — the parameters are the source of truth,
+ * so the strip cannot drift out of sync with what the photo actually shows.
+ */
+export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[] {
+  const chips: StackChip[] = []
+
+  if (meta?.isRaw) {
+    chips.push({ id: 'raw', label: 'RAW develop', value: 'auto', panel: 'raw' })
+  }
+
+  if (edits.temperature !== NEUTRAL_TEMPERATURE || edits.tint !== 0) {
+    const value =
+      edits.temperature !== NEUTRAL_TEMPERATURE
+        ? `${Math.round(edits.temperature)}K`
+        : `tint ${signed(edits.tint)}`
+    chips.push({ id: 'wb', label: 'White balance', value, panel: 'light' })
+  }
+
+  if (edits.exposure !== 0) {
+    chips.push({ id: 'exposure', label: 'Exposure', value: signed(edits.exposure, 2), panel: 'light' })
+  }
+
+  if (hasToneEdits(edits)) {
+    const value = edits.contrast !== 0 ? signed(edits.contrast) : 'shaped'
+    chips.push({ id: 'tone', label: 'Tone', value, panel: 'light' })
+  }
+
+  if (edits.vibrance !== 0 || edits.saturation !== 0) {
+    const value = edits.vibrance !== 0 ? signed(edits.vibrance) : signed(edits.saturation)
+    chips.push({ id: 'colour', label: 'Colour', value, panel: 'light' })
+  }
+
+  if (hasCurveEdits(edits)) {
+    chips.push({ id: 'curves', label: 'Curves', value: 'custom', panel: 'curves' })
+  }
+
+  if (hasMixerEdits(edits)) {
+    const count = HSL_BANDS.filter((b) => {
+      const a = edits.hsl[b]
+      return a.hue || a.sat || a.lum
+    }).length
+    chips.push({ id: 'mixer', label: 'Colour mixer', value: `${count} band${count === 1 ? '' : 's'}`, panel: 'mixer' })
+  }
+
+  if (hasCropEdits(edits)) {
+    const value =
+      edits.crop.aspect && edits.crop.aspect !== 'original' && edits.crop.aspect !== 'free'
+        ? edits.crop.aspect
+        : edits.crop.angle !== 0
+          ? `${signed(edits.crop.angle, 1)}°`
+          : 'custom'
+    chips.push({ id: 'crop', label: 'Crop', value, panel: 'crop' })
+  }
+
+  if (hasDetailEdits(edits)) {
+    const value = edits.sharpen !== 0 ? `sharpen ${Math.round(edits.sharpen)}` : `clarity ${signed(edits.clarity)}`
+    chips.push({ id: 'detail', label: 'Detail', value, panel: 'detail' })
+  }
+
+  const look = getLook(edits.look.id)
+  if (look) {
+    chips.push({
+      id: 'look',
+      label: `${look.name} look`,
+      value: String(Math.round(edits.look.strength)),
+      panel: 'looks',
+      accent: true,
+    })
+  }
+
+  if (hasFinishEdits(edits)) {
+    const value = edits.grain !== 0 ? `grain ${Math.round(edits.grain)}` : `vignette ${signed(edits.vignette)}`
+    chips.push({ id: 'grain', label: 'Grain & vignette', value, panel: 'grain' })
+  }
+
+  return chips
+}
+
+/** Count used in the recents grid ("5 edits · yesterday"). */
+export function countEdits(edits: EditState): number {
+  return buildStack(edits, null).length
+}

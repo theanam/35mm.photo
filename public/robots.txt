@@ -1,0 +1,6 @@
+# 35mm is a single static page. Everything is safe to crawl, including the JS
+# and CSS under /assets/ — Google needs those to render the page it indexes.
+User-agent: *
+Allow: /
+
+Sitemap: https://35mm.photo/sitemap.xml

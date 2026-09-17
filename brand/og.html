@@ -1,0 +1,55 @@
+<!doctype html>
+<html><head><meta charset="utf-8"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { width: 1200px; height: 630px; background: #141312; color: #F2EADC;
+         font-family: 'Alegreya Sans', system-ui, sans-serif; overflow: hidden;
+         -webkit-font-smoothing: antialiased; }
+  .card { width: 1200px; height: 630px; padding: 84px 96px; display: flex;
+          flex-direction: column; justify-content: space-between;
+          border-bottom: 6px solid #C9A227; }
+
+  /* Primary lockup. The gap is one frame-height, which is also the clear
+     space rule — nothing else comes closer to the mark than this. */
+  .top { display: flex; align-items: center; gap: 30px; }
+  .word { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  .word .name { font-size: 76px; font-weight: 800; letter-spacing: -0.03em; line-height: 0.95; }
+  .word .tld { font-size: 23px; font-weight: 500; letter-spacing: 0.34em;
+               text-transform: uppercase; color: #C9A227; }
+
+  h1 { font-size: 64px; font-weight: 400; line-height: 1.1; letter-spacing: -0.02em;
+       max-width: 900px; }
+  h1 b { font-weight: 800; color: #C9A227; }
+
+  .foot { display: flex; align-items: center; justify-content: space-between;
+          font-family: 'IBM Plex Mono', monospace; font-size: 23px; color: #8C857A; }
+  .foot .dom { color: #E0C558; }
+  .chips { display: flex; gap: 12px; }
+  .chip { border: 1px solid #46423B; border-radius: 5px; padding: 7px 14px;
+          font-size: 19px; color: #B5AFA5; }
+</style></head>
+<body>
+  <div class="card">
+    <div class="top">
+      <!-- 3:2 frame, centred aperture dot. Same construction as public/icon.svg. -->
+      <svg width="96" height="64" viewBox="0 0 96 64">
+        <rect x="2" y="2" width="92" height="60" rx="4" fill="none" stroke="#C9A227" stroke-width="4"/>
+        <circle cx="48" cy="32" r="7.8" fill="#C9A227"/>
+      </svg>
+      <span class="word">
+        <span class="name">35mm</span>
+        <span class="tld">photo</span>
+      </span>
+    </div>
+    <h1>A photo editor that <b>never uploads</b>.</h1>
+    <div class="foot">
+      <div class="chips">
+        <span class="chip">RAW</span><span class="chip">GPU grading</span><span class="chip">Works offline</span>
+      </div>
+      <span class="dom">35mm.photo</span>
+    </div>
+  </div>
+</body></html>

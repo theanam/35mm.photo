@@ -1,0 +1,103 @@
+/* Design tokens — brand direction 1b "Full Frame".
+ *
+ * Six values, each with exactly one job (brand sheet §04). Everything else in
+ * this file is a ramp step between them; nothing outside it invents a colour.
+ *
+ *   Ground     #0A0A09  behind the image — never a text colour
+ *   Chrome     #141312  bars, rails, panels
+ *   Edge       #272523  dividers, borders, slider tracks
+ *   Safelight  #C9A227  active state, primary button — a safelight, not a paint
+ *   Paper      #F2EADC  text
+ *   Muted      #9B948A  secondary text
+ *
+ * The grounds run darker and far closer to neutral than the sheet's warm-black
+ * swatches. That is the tradeoff the direction card calls out on 1b itself —
+ * "the most darkroom of the three, least neutral for judging colour" — and an
+ * editor has to be a neutral surround, or every photo picks up the room's cast.
+ * The safelight keeps all the chroma, which is the point of it: amber is the
+ * only saturated thing on screen, so it can only ever mean "this is active".
+ */
+:root {
+  --bg-deep: #070706;
+  --bg-app: #0d0c0b;
+  --bg-canvas: #0a0a09;   /* Ground */
+  --bg-panel: #141312;    /* Chrome */
+  --bg-rail: #111110;
+  --bg-sunken: #0f0f0e;
+
+  /* The top bar sits a step off the panels — it is the one piece of chrome the
+     brand signs. */
+  --bg-topbar: #171614;
+  --line-topbar: #2a2724;
+
+  --surface: #1b1a18;
+  --surface-alt: #1e1c19;
+  --surface-hover: #242220;
+  --surface-hover-alt: #272521;
+  --surface-row-hover: #171614;
+
+  --line: #272523;        /* Edge */
+  --line-strong: #37342f;
+  --line-hair: #1d1c1b;
+  --line-soft: #46423b;
+  --track: #272523;       /* Edge */
+
+  --text: #f2eadc;        /* Paper */
+  --text-muted: #9b948a;  /* Muted */
+  --text-warm: #b5afa5;
+  --text-dim: #8c857a;  /* clears 4.5:1 on Ground, Chrome and the top bar */
+  --text-faint: #454039;
+
+  --accent: #c9a227;      /* Safelight */
+  --accent-hover: #dcb43a;
+  --accent-tint: #262014;
+  --accent-text: #e8d493;
+  --link: #e0c558;
+  --link-hover: #efd884;
+
+  --radius-sm: 3px;
+  --radius: 5px;
+  --radius-lg: 6px;
+
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'Alegreya Sans', system-ui, -apple-system, sans-serif;
+
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button { font-family: inherit; }
+
+::selection { background: var(--accent); color: var(--bg-app); }
+
+/* Scrollbars, tuned to the dark rails rather than the OS default. */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: #46423b; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

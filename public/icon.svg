@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="35mm">
+  <!-- Installed app / apple-touch: the safelight tile, with the 3:2 frame and
+       its aperture dot knocked out of it. Geometry only — an icon renders
+       outside the page, where no webfont exists. -->
+  <rect width="128" height="128" rx="27" fill="#C9A227"/>
+  <rect x="27.5" y="39.5" width="73" height="49" rx="3" fill="none" stroke="#0D0C0B" stroke-width="4.6"/>
+  <circle cx="64" cy="64" r="6.9" fill="#0D0C0B"/>
+</svg>

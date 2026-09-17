@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="32" height="32" role="img" aria-label="35mm">
+  <!-- Tab size. Below 24px the aperture dot silts up, so this cut is the solid
+       safelight tile with a bare frame — the brand sheet's 16px minimum. -->
+  <rect width="128" height="128" rx="24" fill="#C9A227"/>
+  <rect x="28" y="40" width="72" height="48" rx="2" fill="none" stroke="#0D0C0B" stroke-width="8"/>
+</svg>
