@@ -1,6 +1,7 @@
 node_modules/
 dist/
 testing/
+.vscode/
 *.tsbuildinfo
 .DS_Store
 .vite/
