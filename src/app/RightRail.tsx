@@ -33,11 +33,21 @@ export function RightRail() {
         </Panel>
       )}
 
-      <Panel id="looks" title="Looks" note="previewed on your photo" active={dirty('looks')}>
+      {/* Collapsible like the rest. Both of these open by default — see
+          openPanels in the store — so the rail still reads the same on arrival;
+          the difference is that the two panels taking the most vertical space
+          can now be folded away like every other one. */}
+      <Panel
+        id="looks"
+        title="Looks"
+        note="previewed on your photo"
+        collapsible
+        active={dirty('looks')}
+      >
         <LooksTool />
       </Panel>
 
-      <Panel id="light" title="Light & colour" active={dirty('light')}>
+      <Panel id="light" title="Light & colour" collapsible active={dirty('light')}>
         <LightTool />
       </Panel>
 
