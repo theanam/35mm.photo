@@ -4,6 +4,7 @@ import { LooksTool } from '../editor/tools/LooksTool'
 import { LightTool } from '../editor/tools/LightTool'
 import { CurvesTool } from '../editor/tools/CurvesTool'
 import { MixerTool } from '../editor/tools/MixerTool'
+import { ColorGradeTool } from '../editor/tools/ColorGradeTool'
 import { DetailTool } from '../editor/tools/DetailTool'
 import { GrainTool } from '../editor/tools/GrainTool'
 import { RawTool } from '../editor/tools/RawTool'
@@ -45,6 +46,12 @@ export function RightRail() {
 
       <Panel id="mixer" title="Colour mixer" collapsible active={dirty('mixer')}>
         <MixerTool />
+      </Panel>
+
+      {/* After the mixer and before detail, matching the order the colour pass
+          applies them in — the rail reads top to bottom as the pipeline runs. */}
+      <Panel id="grade" title="Colour grading" collapsible active={dirty('grade')}>
+        <ColorGradeTool />
       </Panel>
 
       <Panel id="detail" title="Detail & noise" collapsible active={dirty('detail')}>

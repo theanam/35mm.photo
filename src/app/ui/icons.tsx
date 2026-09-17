@@ -43,6 +43,15 @@ export const IconMixer = ({ size = 16 }: Props) => (
   </svg>
 )
 
+/** Three overlapping discs: the shadow, midtone and highlight wheels. */
+export const IconGrade = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <circle cx="5.6" cy="6" r="4" />
+    <circle cx="10.4" cy="6" r="4" />
+    <circle cx="8" cy="10.4" r="4" />
+  </svg>
+)
+
 export const IconCrop = ({ size = 16 }: Props) => (
   <svg {...base(size)}>
     <path d="M4.2 1v10.8H15" />

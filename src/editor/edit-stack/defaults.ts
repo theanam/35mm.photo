@@ -1,4 +1,12 @@
-import { HSL_BANDS, type Curves, type EditState, type HslBand, type HslAdjustment } from './types'
+import {
+  GRADE_ZONES,
+  HSL_BANDS,
+  type ColorGrade,
+  type Curves,
+  type EditState,
+  type HslBand,
+  type HslAdjustment,
+} from './types'
 
 /** A straight line — the curve that changes nothing. */
 export const IDENTITY_CURVE = [
@@ -21,6 +29,20 @@ export function neutralHsl(): Record<HslBand, HslAdjustment> {
   ) as Record<HslBand, HslAdjustment>
 }
 
+/**
+ * Blending sits at 50 and balance at 0 — the same neutral Lightroom ships, so
+ * a preset that omits them lands where its author expected.
+ */
+export function neutralColorGrade(): ColorGrade {
+  return {
+    ...(Object.fromEntries(
+      GRADE_ZONES.map((zone) => [zone, { hue: 0, sat: 0, lum: 0 }]),
+    ) as Pick<ColorGrade, 'shadows' | 'midtones' | 'highlights' | 'global'>),
+    balance: 0,
+    blending: 50,
+  }
+}
+
 /** Daylight. Temperatures are absolute Kelvin, so the neutral point is a value, not zero. */
 export const NEUTRAL_TEMPERATURE = 5500
 
@@ -40,6 +62,7 @@ export function defaultEdits(): EditState {
 
     curves: identityCurves(),
     hsl: neutralHsl(),
+    colorGrade: neutralColorGrade(),
 
     look: { id: null, strength: 100 },
 

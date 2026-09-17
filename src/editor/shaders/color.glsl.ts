@@ -36,6 +36,15 @@ uniform float uHslS[8];
 uniform float uHslL[8];
 uniform bool  uHasHsl;
 
+// Colour grading. Each zone is packed hue(0..1), sat(0..1), lum(-1..1).
+uniform vec3  uGradeShadows;
+uniform vec3  uGradeMidtones;
+uniform vec3  uGradeHighlights;
+uniform vec3  uGradeGlobal;
+uniform float uGradeBalance;   // -1..1
+uniform float uGradeBlending;  // 0..1
+uniform bool  uHasGrade;
+
 ${GLSL_COMMON}
 
 /** Hue centres of the 8 mixer bands, normalised to 0..1. */
@@ -112,6 +121,47 @@ vec3 applyHsl(vec3 c) {
   return hsv2rgb(hsv);
 }
 
+/**
+ * Tint one zone. The shift is a pure chroma direction — the tint hue with its
+ * own luma subtracted — so pushing colour into a zone does not also brighten or
+ * darken it. That separation is why lum is a distinct control rather than
+ * something the hue smuggles in.
+ */
+vec3 gradeZone(vec3 c, vec3 zone, float w) {
+  if (w <= 0.0) return c;
+
+  if (zone.y > 0.0) {
+    vec3 tint = hsv2rgb(vec3(zone.x, 1.0, 1.0));
+    vec3 dir = tint - vec3(luma(tint));
+    c += dir * zone.y * w * 0.5;
+  }
+  if (zone.z != 0.0) c *= 1.0 + zone.z * w * 0.5;
+  return c;
+}
+
+/**
+ * Three luminance zones plus a global one. Balance slides the crossover between
+ * shadows and highlights; blending widens the ramp so the zones overlap rather
+ * than meeting at a hard edge. Shadow and highlight weights always sum to one,
+ * which is what lets the midtone weight simply be whatever neither end claims.
+ */
+vec3 applyGrade(vec3 c) {
+  float y = luma(clamp(c, 0.0, 1.0));
+
+  float pivot = clamp(0.5 - uGradeBalance * 0.3, 0.08, 0.92);
+  float feather = mix(0.10, 0.45, uGradeBlending);
+
+  float shadowW = 1.0 - smoothstep(pivot - feather, pivot + feather, y);
+  float highW = 1.0 - shadowW;
+  float midW = 1.0 - abs(shadowW - highW);
+
+  c = gradeZone(c, uGradeShadows, shadowW);
+  c = gradeZone(c, uGradeMidtones, midW);
+  c = gradeZone(c, uGradeHighlights, highW);
+  c = gradeZone(c, uGradeGlobal, 1.0);
+  return c;
+}
+
 vec3 applySaturation(vec3 c) {
   float y = luma(c);
   if (uVibrance != 0.0) {
@@ -148,6 +198,10 @@ void main() {
 
   if (uHasHsl) c = applyHsl(c);
   c = clamp(applySaturation(c), 0.0, 1.0);
+
+  // Camera Raw grades after the basic, curve and HSL block but before the
+  // profile look, so this sits between saturation and the LUT.
+  if (uHasGrade) c = clamp(applyGrade(c), 0.0, 1.0);
 
   if (uHasLut && uLookStrength > 0.0) {
     // Half-texel inset: sampling the 3D texture at exactly 0 or 1 straddles the

@@ -1,7 +1,7 @@
 import { NEUTRAL_TEMPERATURE } from './defaults'
 import { isIdentityCurve } from '../presets/curve'
-import { getLook } from '../presets/looks'
-import { HSL_BANDS, type EditState, type ImageMeta } from './types'
+import { getLook } from '../presets/catalogue'
+import { GRADE_ZONES, HSL_BANDS, type EditState, type ImageMeta } from './types'
 
 /** Panels the chips can jump to — matches the right-rail group ids. */
 export type PanelId =
@@ -10,6 +10,7 @@ export type PanelId =
   | 'looks'
   | 'curves'
   | 'mixer'
+  | 'grade'
   | 'detail'
   | 'grain'
   | 'raw'
@@ -44,6 +45,15 @@ export function hasMixerEdits(edits: EditState): boolean {
   return HSL_BANDS.some((band) => {
     const a = edits.hsl[band]
     return a.hue !== 0 || a.sat !== 0 || a.lum !== 0
+  })
+}
+
+export function hasGradeEdits(edits: EditState): boolean {
+  // Balance and blending only shape zones that are already tinting something,
+  // so on their own they are not an edit.
+  return GRADE_ZONES.some((zone) => {
+    const z = edits.colorGrade[zone]
+    return z.sat !== 0 || z.lum !== 0
   })
 }
 
@@ -109,6 +119,19 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
       return a.hue || a.sat || a.lum
     }).length
     chips.push({ id: 'mixer', label: 'Colour mixer', value: `${count} band${count === 1 ? '' : 's'}`, panel: 'mixer' })
+  }
+
+  if (hasGradeEdits(edits)) {
+    const count = GRADE_ZONES.filter((z) => {
+      const v = edits.colorGrade[z]
+      return v.sat !== 0 || v.lum !== 0
+    }).length
+    chips.push({
+      id: 'grade',
+      label: 'Colour grading',
+      value: `${count} zone${count === 1 ? '' : 's'}`,
+      panel: 'grade',
+    })
   }
 
   if (hasCropEdits(edits)) {

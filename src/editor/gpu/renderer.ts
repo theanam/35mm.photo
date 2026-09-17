@@ -289,6 +289,19 @@ export class Renderer {
     this.colorU.fv('uHslL', lum)
     this.colorU.b('uHasHsl', hasHsl)
 
+    const grade = edits.colorGrade
+    let hasGrade = grade.global.sat > 0 || grade.global.lum !== 0
+    for (const zone of ['shadows', 'midtones', 'highlights'] as const) {
+      const z = grade[zone]
+      // Hue alone paints nothing — a zone only bites once it has saturation.
+      if (z.sat > 0 || z.lum !== 0) hasGrade = true
+      this.colorU.v3(`uGrade${zone[0].toUpperCase()}${zone.slice(1)}`, z.hue / 360, z.sat / 100, z.lum / 100)
+    }
+    this.colorU.v3('uGradeGlobal', grade.global.hue / 360, grade.global.sat / 100, grade.global.lum / 100)
+    this.colorU.f('uGradeBalance', grade.balance / 100)
+    this.colorU.f('uGradeBlending', grade.blending / 100)
+    this.colorU.b('uHasGrade', hasGrade)
+
     const lookActive = Boolean(look && this.lutTexture && this.lutSize > 0)
     this.colorU.b('uHasLut', lookActive)
     this.colorU.f('uLookStrength', lookActive ? edits.look.strength / 100 : 0)

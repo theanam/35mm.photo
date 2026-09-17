@@ -1,22 +1,25 @@
 import type { ComponentType } from 'react'
 import type { EditState, ImageMeta } from '../edit-stack/types'
-import { NEUTRAL_TEMPERATURE } from '../edit-stack/defaults'
+import { NEUTRAL_TEMPERATURE, neutralColorGrade } from '../edit-stack/defaults'
 import {
   hasCropEdits,
   hasCurveEdits,
   hasDetailEdits,
   hasFinishEdits,
+  hasGradeEdits,
   hasMixerEdits,
   hasToneEdits,
   type PanelId,
 } from '../edit-stack/summary'
 import {
-  IconCrop, IconCurves, IconDetail, IconGrain, IconLight, IconLooks, IconMixer, IconRaw,
+  IconCrop, IconCurves, IconDetail, IconGrade, IconGrain, IconLight, IconLooks, IconMixer,
+  IconRaw,
 } from '../../app/ui/icons'
 import { LooksTool } from './LooksTool'
 import { LightTool } from './LightTool'
 import { CurvesTool } from './CurvesTool'
 import { MixerTool } from './MixerTool'
+import { ColorGradeTool } from './ColorGradeTool'
 import { CropTool } from './CropTool'
 import { DetailTool } from './DetailTool'
 import { GrainTool } from './GrainTool'
@@ -95,6 +98,15 @@ export const TOOLS: ToolDef[] = [
         Object.keys(e.hsl).map((band) => [band, { hue: 0, sat: 0, lum: 0 }]),
       ) as EditState['hsl'],
     }),
+  },
+  {
+    id: 'grade',
+    label: 'Grading',
+    hint: 'split toning across shadows, midtones and highlights',
+    Icon: IconGrade,
+    Content: ColorGradeTool,
+    isDirty: hasGradeEdits,
+    reset: () => ({ colorGrade: neutralColorGrade() }),
   },
   {
     id: 'crop',

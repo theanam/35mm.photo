@@ -63,6 +63,40 @@ export interface LookState {
   strength: number
 }
 
+/**
+ * One zone of the colour grader. Hue is a full turn in degrees rather than a
+ * −100..100 nudge, because a grading zone names an absolute colour — "warm
+ * highlights at 40°" — where the mixer only ever bends a hue that is already
+ * there.
+ */
+export interface GradeZone {
+  hue: number // 0..360
+  sat: number // 0..100
+  lum: number // −100..100
+}
+
+/**
+ * Split toning and colour grading (spec §6). Lightroom's legacy Split Toning
+ * and its newer Color Grading are the same control with a different face: the
+ * old one is shadows and highlights alone, the new one adds midtones and a
+ * global wheel. Modelling the new shape covers both, and an imported legacy
+ * preset simply leaves midtones and global neutral.
+ */
+export interface ColorGrade {
+  shadows: GradeZone
+  midtones: GradeZone
+  highlights: GradeZone
+  /** Applied everywhere, on top of the three zones. */
+  global: GradeZone
+  /** Slides the shadow/highlight crossover, −100..100. */
+  balance: number
+  /** How far neighbouring zones overlap, 0..100. */
+  blending: number
+}
+
+export const GRADE_ZONES = ['shadows', 'midtones', 'highlights', 'global'] as const
+export type GradeZoneId = (typeof GRADE_ZONES)[number]
+
 export interface EditState {
   /* Light */
   exposure: number // −5..5 EV
@@ -81,6 +115,7 @@ export interface EditState {
   /* Tone shaping */
   curves: Curves
   hsl: Record<HslBand, HslAdjustment>
+  colorGrade: ColorGrade
 
   /* Look */
   look: LookState
