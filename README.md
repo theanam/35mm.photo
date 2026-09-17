@@ -1,9 +1,9 @@
 # 35mm
 
 **[35mm.photo](https://35mm.photo)** — a full-featured photo editor in your
-browser. GPU colour grading, curves, an HSL mixer, crop and export all happen in
-the browser tab: nothing to install, no account to make. Raw decode is [not yet
-implemented](#scope).
+browser. Camera raw development, GPU colour grading, curves, an HSL mixer, crop
+and export all happen in the browser tab: nothing to install, no account to
+make.
 
 The published site loads Google Analytics; see [Analytics](#analytics). Nothing
 about a photo is sent anywhere, and a local build has no analytics at all.
@@ -86,9 +86,10 @@ src/
     gpu/               WebGL2 context, render graph, transforms, white balance
     shaders/           GLSL ES 3.00 passes, one file per stage
     tools/             the adjustment panels
-    presets/           look catalogue, 3D LUT synthesis, .cube parser, curves
+    presets/           look catalogue, 3D LUT synthesis, curves
+      import/          .cube, LUT images, .xmp and .lrtemplate readers
     edit-stack/        edit state, history, derived edit summary
-  raw/                 raw decode worker and its libraw seam
+  raw/                 LibRaw development and the preview conversion worker
   io/                  file pickers, decode, export, sidecars
   storage/             IndexedDB persistence
   pwa/                 service worker registration
@@ -162,11 +163,115 @@ The nine built-ins are synthesised from parameters at runtime, so the repo ships
 no third-party LUT data. `public/luts/README.md` covers dropping in real `.cube`
 files.
 
+### Importing LUTs and presets
+
+Your own presets sit in the Looks panel beside the built-ins. Pick **Import…**,
+or drop the files anywhere on the window — a drop can carry a preset pack and
+the photo to try it on at once. Files are parsed in the tab and kept in
+IndexedDB; nothing is uploaded, which is the point of being able to open a
+bought preset pack in a browser at all.
+
+Two kinds of thing get called a filter, and they land in different places:
+
+| Format | Kind | Becomes |
+| --- | --- | --- |
+| `.cube` (3D, and 1D as three channel curves) | LUT | a look with a strength slider |
+| LUT images — HALD or tiled strip `.png`/`.jpg`/`.webp` | LUT | the same |
+| `.xmp` — Lightroom Classic / Camera Raw, 2018→now | parametric | slider values on the edit stack |
+| `.lrtemplate` — Lightroom before 2018 | parametric | the same |
+
+A **LUT** is a baked cube: blendable, but not otherwise editable. A
+**parametric** preset is slider values, so once applied every one of them stays
+adjustable in the panels where it belongs. Camera Raw's field names line up
+closely with `EditState` — `Exposure2012` is already EV, and the tone controls
+and the eight HSL bands are already −100..100 in the same order — so most of
+`presets/import/crs.ts` is range conversion rather than translation. Both
+readers share it, because `.xmp` and `.lrtemplate` disagree only about the
+container: XML/RDF on one side, a Lua table on the other.
+
+**Split toning and colour grading** both land in the Colour grading panel.
+Lightroom's legacy `SplitToning*` keys and its newer `ColorGrade*` set are the
+same control with a different face, so they share one destination and the modern
+keys win where a preset carries both. A wheel with no saturation is how
+Lightroom stores "untouched", so hue alone imports as nothing.
+
+**The parametric curve** has no counterpart here — this pipeline has one curve,
+Lightroom has two stacked. Rather than drop it, the four region sliders are
+evaluated over their split points and composed onto the point curve, so the
+single curve that results does what both did. It is anchored in the corners the
+way Camera Raw anchors its own: a shadow lift raises near-black without moving
+black itself. The falloff is a raised cosine rather than Adobe's exact
+undocumented curve — right in direction and rough magnitude, which is what makes
+an imported preset still look like itself.
+
+Anything Lightroom can do that this pipeline still cannot — masks, profiles,
+texture, dehaze, calibration, lens and perspective corrections — is collected as
+it is read and reported on import. A preset that half-applied without saying so
+would be worse than one that refused.
+
+**Input space.** A large share of `.cube` files sold as cinematic looks are
+built for log footage rather than for display-referred pixels, and feeding sRGB
+into a log LUT is what produces the familiar milky result. Each imported LUT
+carries the space it expects — sRGB, Rec.709, S-Log3, V-Log, C-Log3 or LogC3 —
+guessed from its filename and changeable from the picker beside the strength
+slider. Changing it resamples the cube through that curve into an ordinary
+sRGB-in LUT, so the shader never learns about input spaces and the lookup stays
+one texture fetch.
+
+**LUT images** carry no header saying how they are packed, and a 512×512 file is
+equally plausibly a HALD CLUT or an 8×8 grid of blue slices. Ambiguous images
+are unpacked both ways and scored on smoothness along each axis: a correctly
+read cube is smooth, a mis-read one is an order of magnitude rougher.
+
+### Camera raw
+
+Raw files are developed by [LibRaw](https://www.libraw.org/) compiled to
+WebAssembly, via `libraw-wasm`. The binary is 1.4 MB and sits behind a dynamic
+import, so it is fetched the first time someone opens a raw file and never for
+anyone who only edits JPEGs.
+
+Development settings are deliberately plain, because they decide what a file
+looks like before the edit stack has touched it: the camera's own white balance,
+AHD demosaic (LibRaw routes X-Trans past that to Markesteijn on its own), and
+**no auto-brightening** — that last one is a per-file histogram guess, and the
+Light tool is where the decision belongs. Expect files to open darker than a
+converter that does brighten, and flatter than the camera's own JPEG.
+
+LibRaw is left to apply the camera's rotation rather than `io/exif.ts`. Every
+vendor records orientation somewhere different and RAF is not a TIFF container
+at all, so the pixels arrive upright and `orientation` is reported as 1.
+
+Verified against CC0 sample files from [raw.pixls.us](https://raw.pixls.us):
+
+| Works | RAF (X-Trans), RW2, CR2, CR3, CRW, NEF, ARW, SR2, DNG, ORF, PEF, SRW, MRW, ERF, DCR, 3FR, MOS |
+| --- | --- |
+| **Does not** | **GPR** (GoPro's VC-5 needs a separate SDK), **X3F** (Sigma Foveon), and **plain RGB TIFF** — LibRaw is a raw library, so an ordinary TIFF is not something it develops |
+
+The extensions that do not work are still routed to the decoder rather than
+rejected up front, so they fail with `RawDecodeError` and a message naming the
+file, instead of being turned away as an unknown format.
+
+`libraw-wasm` never rejects when its worker fails to load — the call simply
+never settles, and because it serialises every later call behind that one, a
+decoder that cannot start would wedge the app silently for the rest of the
+session. `decode-raw.ts` therefore races each call against a timeout and
+disposes the instance if it wins. Relatedly, `optimizeDeps.exclude` in
+`vite.config.ts` keeps the package unbundled: pre-bundling moves it into
+`.vite/deps` without its sibling `worker.js`, which 404s the worker in dev while
+leaving the production build working.
+
 ### Off the main thread
 
 Histogram binning and raw decoding both run in workers. The histogram is
 throttled behind the preview and rendered at 192px, so dragging a slider never
 waits on it.
+
+Raw costs two workers rather than one. `libraw-wasm` brings its own, which is
+where the decode happens; `raw/preview-worker.ts` is ours, and does nothing but
+rewrite LibRaw's packed 16-bit output into the 8-bit RGBA an `ImageBitmap`
+wants. That rewrite is one pass over every pixel — 81 megapixels for a
+high-res Panasonic frame — and on the main thread it stalled the tab outright.
+Both the buffer in and the bitmap out are transferred, so neither hop copies.
 
 ## Layout
 
@@ -183,15 +288,45 @@ waits on it.
   while you work rather than being committed and dismissed.
 - **Bottom bar** — zoom and the before/after split, nothing else.
 
-The chip strip in the tool bar lists what is currently applied, in pipeline
-order; clicking a chip jumps to whichever control owns it, drawer or rail.
+### Navigating the viewport
 
-### Button states
+**Zoom** is `ctrl`/`cmd` + scroll, the same gesture every other editor uses.
+Scrolling up zooms in. Plain scroll is deliberately left alone so it pans the
+stage — binding zoom to the bare wheel makes a photo lurch whenever someone
+means to scroll. A trackpad pinch already arrives as `ctrl`+wheel, so laptops
+get pinch-to-zoom from the same path.
 
-Toggles have three visually distinct states, and *off must never read as
-disabled*: off is a normal surface with full-contrast text, on is filled with
-the accent tint and outlined in the accent colour, and disabled is dimmed to
-35%. The same rule applies to the aspect and preset chips.
+Zoom is anchored on the point under the cursor: that point stays put as the
+picture grows around it. Zooming out stops at fit rather than going smaller, and
+returns the viewport to `fit` so it keeps tracking window resizes.
+
+**Touch** is handled directly rather than left to the browser: one finger pans
+when the image is larger than the stage, two fingers pinch to zoom and drag to
+pan together, and lifting one finger of a pinch hands the gesture to the other
+without a jump. The stage sets `touch-action: none` so the browser cannot claim
+the gesture for scrolling or page zoom first.
+
+Panning is suppressed while the crop tool is open so it cannot fight the crop
+box, though zooming still works there.
+
+The zoom anchor is held for the whole wheel gesture rather than re-derived each
+notch. While the image still fits the stage there is no scroll range to correct
+with, so the early notches cannot hold the point; keeping the original target
+means the correction snaps back to the point you aimed at as soon as scrolling
+becomes possible. Re-deriving each notch instead leaves a permanent drift —
+about 200px at 8x in testing.
+
+### Tablets
+
+The layout stacks below 900px so iPad portrait (768pt) gets a full-width
+viewport with the rail beneath it rather than three squeezed columns. Coarse
+pointers get larger hit targets — crop handles, the split handle, slider tracks,
+icon buttons and colour bands all grow under `@media (pointer: coarse)`.
+
+iOS has no File System Access API, so opening and saving fall back to the file
+input and a download; that path is feature-detected, not sniffed. Heights use
+`dvh` where supported, since Safari's collapsing toolbar makes percentage
+heights jump.
 
 ## Keyboard
 
@@ -212,18 +347,18 @@ Sliders reset on double-click or alt-click.
 ## Scope
 
 Phase 1 of the spec, in full: import and export of browser-decodable formats,
+camera raw development,
 the light/colour/curves/mixer/detail/grain toolset, crop and straighten, nine
-looks, the non-destructive edit stack with local save and load, live histogram
-and RGB parade, and the PWA offline shell.
+looks plus import of `.cube`, LUT image, `.xmp` and `.lrtemplate` presets, the
+non-destructive edit stack with local save and load, live histogram and RGB
+parade, and the PWA offline shell.
 
 **Not yet implemented — Phase 2 in the spec:**
 
-- **RAW decode.** `src/raw/decoder-worker.ts` is wired end to end and waits on a
-  libraw WASM build under `src/raw/wasm/` exporting `decodeRawBuffer()`. Until
-  one is vendored, opening a raw file reports the format as undecodable rather
-  than silently editing its embedded JPEG preview, which the spec rules out
-  (§5.4). TIFF goes through the same path for the same reason: no browser
-  decodes it reliably.
 - **WebGPU backend.** Capability detection is in `src/editor/gpu/caps.ts`;
   WebGL2 is the only implemented backend.
 - **Halation, perspective correction, batch editing.** Phase 2/3 in the spec.
+- **More preset formats.** `.3dl` and ASC CDL are small additions to
+  `presets/import/`; `.dcp`/`.dng` camera profiles — what film-emulation
+  *profiles* actually are — are a much larger one, being binary TIFF with
+  HueSatMap and LookTable interpolation.

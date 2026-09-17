@@ -1,7 +1,7 @@
 {
   "name": "35mm — a full-featured photo editor in your browser",
   "short_name": "35mm",
-  "description": "A full-featured photo editor in your browser. GPU colour grading, curves, crop and export, with nothing to install.",
+  "description": "A full-featured photo editor in your browser. Camera raw development, GPU colour grading, curves, crop and export, with nothing to install.",
   "lang": "en",
   "dir": "ltr",
   "start_url": ".",
