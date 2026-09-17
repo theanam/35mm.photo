@@ -11,6 +11,7 @@ export type PanelId =
   | 'curves'
   | 'mixer'
   | 'grade'
+  | 'lens'
   | 'detail'
   | 'grain'
   | 'raw'
@@ -57,6 +58,15 @@ export function hasGradeEdits(edits: EditState): boolean {
   })
 }
 
+export function hasLensEdits(edits: EditState): boolean {
+  const p = edits.perspective
+  const l = edits.lens
+  return (
+    p.vertical !== 0 || p.horizontal !== 0 || p.aspect !== 0 || p.scale !== 100 ||
+    l.distortion !== 0 || l.ca !== 0
+  )
+}
+
 export function hasToneEdits(edits: EditState): boolean {
   return (
     edits.contrast !== 0 || edits.highlights !== 0 || edits.shadows !== 0 ||
@@ -66,13 +76,13 @@ export function hasToneEdits(edits: EditState): boolean {
 
 export function hasDetailEdits(edits: EditState): boolean {
   return (
-    edits.clarity !== 0 || edits.sharpen !== 0 ||
-    edits.denoiseLuma !== 0 || edits.denoiseChroma !== 0
+    edits.clarity !== 0 || edits.texture !== 0 || edits.dehaze !== 0 ||
+    edits.sharpen !== 0 || edits.denoiseLuma !== 0 || edits.denoiseChroma !== 0
   )
 }
 
 export function hasFinishEdits(edits: EditState): boolean {
-  return edits.grain !== 0 || edits.vignette !== 0
+  return edits.grain !== 0 || edits.vignette !== 0 || edits.halation !== 0
 }
 
 /**
@@ -144,8 +154,28 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
     chips.push({ id: 'crop', label: 'Crop', value, panel: 'crop' })
   }
 
+  if (hasLensEdits(edits)) {
+    const p = edits.perspective
+    const value =
+      p.vertical !== 0
+        ? `vertical ${signed(p.vertical)}`
+        : p.horizontal !== 0
+          ? `horizontal ${signed(p.horizontal)}`
+          : edits.lens.distortion !== 0
+            ? `distortion ${signed(edits.lens.distortion)}`
+            : 'corrected'
+    chips.push({ id: 'lens', label: 'Optics', value, panel: 'lens' })
+  }
+
   if (hasDetailEdits(edits)) {
-    const value = edits.sharpen !== 0 ? `sharpen ${Math.round(edits.sharpen)}` : `clarity ${signed(edits.clarity)}`
+    const value =
+      edits.dehaze !== 0
+        ? `dehaze ${signed(edits.dehaze)}`
+        : edits.texture !== 0
+          ? `texture ${signed(edits.texture)}`
+          : edits.sharpen !== 0
+            ? `sharpen ${Math.round(edits.sharpen)}`
+            : `clarity ${signed(edits.clarity)}`
     chips.push({ id: 'detail', label: 'Detail', value, panel: 'detail' })
   }
 
@@ -161,7 +191,12 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
   }
 
   if (hasFinishEdits(edits)) {
-    const value = edits.grain !== 0 ? `grain ${Math.round(edits.grain)}` : `vignette ${signed(edits.vignette)}`
+    const value =
+      edits.grain !== 0
+        ? `grain ${Math.round(edits.grain)}`
+        : edits.halation !== 0
+          ? `halation ${Math.round(edits.halation)}`
+          : `vignette ${signed(edits.vignette)}`
     chips.push({ id: 'grain', label: 'Grain & vignette', value, panel: 'grain' })
   }
 

@@ -3,6 +3,8 @@ import {
   HSL_BANDS,
   type ColorGrade,
   type Curves,
+  type LensState,
+  type PerspectiveState,
   type EditState,
   type HslBand,
   type HslAdjustment,
@@ -43,6 +45,14 @@ export function neutralColorGrade(): ColorGrade {
   }
 }
 
+export function neutralPerspective(): PerspectiveState {
+  return { vertical: 0, horizontal: 0, aspect: 0, scale: 100 }
+}
+
+export function neutralLens(): LensState {
+  return { distortion: 0, ca: 0 }
+}
+
 /** Daylight. Temperatures are absolute Kelvin, so the neutral point is a value, not zero. */
 export const NEUTRAL_TEMPERATURE = 5500
 
@@ -67,13 +77,19 @@ export function defaultEdits(): EditState {
     look: { id: null, strength: 100 },
 
     clarity: 0,
+    texture: 0,
+    dehaze: 0,
     sharpen: 0,
     denoiseLuma: 0,
     denoiseChroma: 0,
 
+    halation: 0,
     grain: 0,
     grainSize: 50,
     vignette: 0,
+
+    perspective: neutralPerspective(),
+    lens: neutralLens(),
 
     crop: {
       x: 0,

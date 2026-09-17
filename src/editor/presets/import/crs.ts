@@ -3,6 +3,8 @@ import {
   identityCurves,
   neutralColorGrade,
   neutralHsl,
+  neutralLens,
+  neutralPerspective,
 } from '../../edit-stack/defaults'
 import { HSL_BANDS, type CurvePoint, type EditState, type HslBand } from '../../edit-stack/types'
 import { evalSampled, sampleCurve } from '../curve'
@@ -113,6 +115,12 @@ export function mapCrsSettings(settings: CrsSettings): CrsResult {
   const chromaNr = num(settings, 'ColorNoiseReduction')
   if (chromaNr != null) edits.denoiseChroma = clamp(chromaNr, 0, 100)
 
+  const texture = num(settings, 'Texture')
+  if (texture != null) edits.texture = clamp(texture, -100, 100)
+
+  const dehaze = num(settings, 'Dehaze')
+  if (dehaze != null) edits.dehaze = clamp(dehaze, -100, 100)
+
   const grain = num(settings, 'GrainAmount')
   if (grain != null) edits.grain = clamp(grain, 0, 100)
 
@@ -199,6 +207,45 @@ export function mapCrsSettings(settings: CrsSettings): CrsResult {
 
   const grade = mapColorGrade(settings)
   if (grade) edits.colorGrade = grade
+
+  /* ── geometry and optics ─────────────────────────────────────────── */
+
+  const perspective = neutralPerspective()
+  let anyPerspective = false
+  for (const [key, field, gain] of [
+    ['PerspectiveVertical', 'vertical', 1],
+    ['PerspectiveHorizontal', 'horizontal', 1],
+    ['PerspectiveAspect', 'aspect', 1],
+  ] as const) {
+    const v = num(settings, key)
+    if (v != null && v !== 0) {
+      perspective[field] = clamp(v * gain, -100, 100)
+      anyPerspective = true
+    }
+  }
+  // Camera Raw writes Scale as a percentage with 100 meaning untouched.
+  const pScale = num(settings, 'PerspectiveScale')
+  if (pScale != null && pScale !== 100) {
+    perspective.scale = clamp(pScale, 50, 150)
+    anyPerspective = true
+  }
+  if (anyPerspective) edits.perspective = perspective
+
+  // Upright's rotation is the same in-plane turn straighten already owns, so it
+  // lands on the crop angle rather than becoming a second control for it.
+  const pRotate = num(settings, 'PerspectiveRotate')
+  if (pRotate != null && pRotate !== 0) {
+    edits.crop = { ...(edits.crop ?? {}), angle: clamp(pRotate, -45, 45) } as EditState['crop']
+  }
+
+  const lens = neutralLens()
+  let anyLens = false
+  const manualDistortion = num(settings, 'LensManualDistortionAmount')
+  if (manualDistortion != null && manualDistortion !== 0) {
+    lens.distortion = clamp(manualDistortion, -100, 100)
+    anyLens = true
+  }
+  if (anyLens) edits.lens = lens
 
   /* ── what could not come across ──────────────────────────────────── */
 
@@ -363,8 +410,6 @@ function collectDropped(settings: CrsSettings, dropped: string[]) {
   if (settings.Look != null || settings.LookName != null || settings.LookTable != null) {
     dropped.push('the profile this preset is built on')
   }
-  if (set(settings, 'Texture')) dropped.push('texture')
-  if (set(settings, 'Dehaze')) dropped.push('dehaze')
   if (
     set(settings, 'RedHue') || set(settings, 'RedSaturation') ||
     set(settings, 'GreenHue') || set(settings, 'GreenSaturation') ||
@@ -374,17 +419,16 @@ function collectDropped(settings: CrsSettings, dropped: string[]) {
     dropped.push('camera calibration')
   }
   if (settings.LensProfileName != null || bool(settings, 'LensProfileEnable')) {
-    dropped.push('lens corrections')
+    dropped.push('the lens profile correction')
   }
   if (set(settings, 'DefringePurpleAmount') || set(settings, 'DefringeGreenAmount')) {
     dropped.push('defringe')
   }
-  if (
-    set(settings, 'PerspectiveVertical') || set(settings, 'PerspectiveHorizontal') ||
-    set(settings, 'PerspectiveRotate')
-  ) {
-    dropped.push('perspective / upright')
-  }
+  // Upright's automatic modes are a solve against detected lines, stored as a
+  // transform this pipeline has no way to reproduce; the manual sliders beside
+  // them do import.
+  const upright = num(settings, 'PerspectiveUpright')
+  if (upright != null && upright !== 0) dropped.push('the automatic Upright correction')
   if (Array.isArray(settings.RetouchAreas) && settings.RetouchAreas.length) {
     dropped.push('healing and retouch spots')
   }

@@ -1,25 +1,32 @@
 import type { ComponentType } from 'react'
 import type { EditState, ImageMeta } from '../edit-stack/types'
-import { NEUTRAL_TEMPERATURE, neutralColorGrade } from '../edit-stack/defaults'
+import {
+  NEUTRAL_TEMPERATURE,
+  neutralColorGrade,
+  neutralLens,
+  neutralPerspective,
+} from '../edit-stack/defaults'
 import {
   hasCropEdits,
   hasCurveEdits,
   hasDetailEdits,
   hasFinishEdits,
   hasGradeEdits,
+  hasLensEdits,
   hasMixerEdits,
   hasToneEdits,
   type PanelId,
 } from '../edit-stack/summary'
 import {
-  IconCrop, IconCurves, IconDetail, IconGrade, IconGrain, IconLight, IconLooks, IconMixer,
-  IconRaw,
+  IconCrop, IconCurves, IconDetail, IconGrade, IconGrain, IconLens, IconLight, IconLooks,
+  IconMixer, IconRaw,
 } from '../../app/ui/icons'
 import { LooksTool } from './LooksTool'
 import { LightTool } from './LightTool'
 import { CurvesTool } from './CurvesTool'
 import { MixerTool } from './MixerTool'
 import { ColorGradeTool } from './ColorGradeTool'
+import { LensTool } from './LensTool'
 import { CropTool } from './CropTool'
 import { DetailTool } from './DetailTool'
 import { GrainTool } from './GrainTool'
@@ -124,22 +131,33 @@ export const TOOLS: ToolDef[] = [
     }),
   },
   {
+    id: 'lens',
+    label: 'Optics',
+    hint: 'perspective, distortion and chromatic aberration',
+    Icon: IconLens,
+    Content: LensTool,
+    isDirty: hasLensEdits,
+    reset: () => ({ perspective: neutralPerspective(), lens: neutralLens() }),
+  },
+  {
     id: 'detail',
     label: 'Detail',
-    hint: 'clarity, sharpening and noise',
+    hint: 'texture, clarity, dehaze, sharpening and noise',
     Icon: IconDetail,
     Content: DetailTool,
     isDirty: hasDetailEdits,
-    reset: () => ({ clarity: 0, sharpen: 0, denoiseLuma: 0, denoiseChroma: 0 }),
+    reset: () => ({
+      clarity: 0, texture: 0, dehaze: 0, sharpen: 0, denoiseLuma: 0, denoiseChroma: 0,
+    }),
   },
   {
     id: 'grain',
     label: 'Grain',
-    hint: 'grain and vignette',
+    hint: 'halation, grain and vignette',
     Icon: IconGrain,
     Content: GrainTool,
     isDirty: hasFinishEdits,
-    reset: () => ({ grain: 0, grainSize: 50, vignette: 0 }),
+    reset: () => ({ grain: 0, grainSize: 50, vignette: 0, halation: 0 }),
   },
   {
     id: 'raw',

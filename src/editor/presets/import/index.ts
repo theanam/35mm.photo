@@ -3,6 +3,7 @@ import { cubeToLut3d } from '../lut3d'
 import { guessInputSpace } from '../inputSpace'
 import type { CustomPreset, PresetFormat } from '../types'
 import { parseLutImage } from './hald'
+import { dcpToLut3D, parseDcp } from './dcp'
 import { parseXmpPreset } from './xmp'
 import { parseLrTemplate } from './lrtemplate'
 
@@ -26,9 +27,10 @@ const FORMATS: Record<string, PresetFormat> = {
   webp: 'hald',
   xmp: 'xmp',
   lrtemplate: 'lrtemplate',
+  dcp: 'dcp',
 }
 
-export const PRESET_ACCEPT = '.cube,.xmp,.lrtemplate,.png,.jpg,.jpeg,.webp'
+export const PRESET_ACCEPT = '.cube,.xmp,.lrtemplate,.dcp,.png,.jpg,.jpeg,.webp'
 
 export const PRESET_EXTENSIONS = Object.keys(FORMATS)
 
@@ -89,6 +91,19 @@ async function read(file: File, format: PresetFormat): Promise<CustomPreset> {
       name: cube.title?.trim() || stem(filename),
       lut: cubeToLut3d(cube),
       inputSpace: guessInputSpace(filename, cube.title),
+    }
+  }
+
+  if (format === 'dcp') {
+    // A camera profile becomes a look: its hue/saturation warps and tone curve
+    // baked into a cube, blendable like any other.
+    const profile = parseDcp(new Uint8Array(await file.arrayBuffer()))
+    return {
+      ...base,
+      kind: 'lut',
+      name: profile.name || stem(filename),
+      lut: dcpToLut3D(profile),
+      inputSpace: 'srgb',
     }
   }
 

@@ -1,0 +1,34 @@
+{
+  // Peacock, set to the brand safelight (--accent in src/styles/tokens.css).
+  // peacock.color is what the extension reads; the block below is the same
+  // thing already expanded, so the window is tinted without running a command.
+  "peacock.color": "#c9a227",
+  "workbench.colorCustomizations": {
+    "activityBar.activeBackground": "#dbb848",
+    "activityBar.background": "#dbb848",
+    "activityBar.foreground": "#15202b",
+    "activityBar.inactiveForeground": "#15202b99",
+    "activityBarBadge.background": "#1a856c",
+    "activityBarBadge.foreground": "#e7e7e7",
+    "commandCenter.border": "#15202b99",
+    "sash.hoverBorder": "#dbb848",
+    "statusBar.background": "#c9a227",
+    "statusBar.foreground": "#15202b",
+    "statusBarItem.hoverBackground": "#9e801f",
+    "statusBarItem.remoteBackground": "#caf5ea",
+    "statusBarItem.remoteForeground": "#15202b",
+    "titleBar.activeBackground": "#c9a227",
+    "titleBar.activeForeground": "#15202b",
+    "titleBar.inactiveBackground": "#c9a22799",
+    "titleBar.inactiveForeground": "#15202b99",
+    "activityBar.activeBorder": "#15202b",
+    "activityBarTop.activeBackground": "#dbb848",
+    "activityBarTop.activeBorder": "#15202b",
+    "activityBarTop.background": "#dbb848",
+    "activityBarTop.foreground": "#15202b",
+    "activityBarTop.inactiveForeground": "#15202b99",
+    "commandCenter.foreground": "#15202b",
+    "statusBar.debuggingBackground": "#c9a227",
+    "statusBar.debuggingForeground": "#15202b"
+  }
+}

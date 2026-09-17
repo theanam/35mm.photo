@@ -97,6 +97,34 @@ export interface ColorGrade {
 export const GRADE_ZONES = ['shadows', 'midtones', 'highlights', 'global'] as const
 export type GradeZoneId = (typeof GRADE_ZONES)[number]
 
+/**
+ * Keystone correction. There is no rotate here on purpose — straighten already
+ * owns in-plane rotation on `crop.angle`, and two controls for one turn is a
+ * way to end up fighting yourself.
+ */
+export interface PerspectiveState {
+  /** Converge or diverge the verticals, −100..100. */
+  vertical: number
+  /** The same across the frame, −100..100. */
+  horizontal: number
+  /** Stretch one axis against the other, −100..100. */
+  aspect: number
+  /** Zoom, 50..150. Keystoning pulls the frame in; this pushes it back out. */
+  scale: number
+}
+
+/**
+ * Manual optical corrections. Profile-driven correction is not possible here —
+ * that needs Adobe's lens profile database, which is not redistributable — so
+ * these are the two a photographer can dial in by eye.
+ */
+export interface LensState {
+  /** Barrel (negative) through pincushion (positive), −100..100. */
+  distortion: number
+  /** Lateral chromatic aberration: red and blue scaled apart, −100..100. */
+  ca: number
+}
+
 export interface EditState {
   /* Light */
   exposure: number // −5..5 EV
@@ -122,17 +150,25 @@ export interface EditState {
 
   /* Detail */
   clarity: number // −100..100
+  /** Mid-frequency contrast: finer than clarity, coarser than sharpening. */
+  texture: number // −100..100
+  /** Veil removal, positive; negative adds atmosphere back. */
+  dehaze: number // −100..100
   sharpen: number // 0..100
   denoiseLuma: number // 0..100
   denoiseChroma: number // 0..100
 
   /* Finishing */
+  /** Warm bloom of bright areas into their surroundings, as film does. */
+  halation: number // 0..100
   grain: number // 0..100
   grainSize: number // 0..100
   vignette: number // −100..100
 
   /* Geometry */
   crop: CropState
+  perspective: PerspectiveState
+  lens: LensState
 }
 
 /** Metadata about the opened file. Never edited, only displayed. */

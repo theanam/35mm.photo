@@ -1,4 +1,4 @@
-import type { CropState } from '../edit-stack/types'
+import type { CropState, PerspectiveState } from '../edit-stack/types'
 import { swapsAxes, type Orientation } from '../../io/exif'
 
 /** Column-major 3×3, the layout `uniformMatrix3fv` wants with transpose=false. */
@@ -63,6 +63,41 @@ export function uprightSize(
 }
 
 /**
+ * Keystone, stretch and zoom as one projective matrix, in output → source
+ * direction.
+ *
+ * The third row is what makes it projective: w varies across the frame, so the
+ * divide the fragment shader does at the end shifts samples by an amount that
+ * depends on where they are. That is the whole difference between leaning a
+ * building upright and merely skewing it — a skew moves the top sideways, a
+ * keystone also changes how much of the source each output row covers.
+ *
+ * Built in centred, aspect-corrected coordinates so the effect is symmetric
+ * about the middle of the picture and does not depend on the frame's shape.
+ */
+export function buildPerspective(p: PerspectiveState, aspect: number): Mat3 {
+  const neutral = p.vertical === 0 && p.horizontal === 0 && p.aspect === 0 && p.scale === 100
+  if (neutral) return mat3Identity()
+
+  const kx = (p.horizontal / 100) * 0.45
+  const ky = (p.vertical / 100) * 0.45
+  const stretch = (p.aspect / 100) * 0.3
+  // Output → source, so a larger zoom samples a smaller piece of the source.
+  const z = 100 / Math.max(p.scale, 1)
+
+  const sx = z * (1 - stretch)
+  const sy = z * (1 + stretch)
+
+  // Column-major. Row three carries the keystone terms.
+  const k = new Float32Array([sx, 0, kx, 0, sy, ky, 0, 0, 1])
+
+  return mat3Mul(
+    translate(0.5, 0.5),
+    mat3Mul(scale(1 / aspect, 1), mat3Mul(k, mat3Mul(scale(aspect, 1), translate(-0.5, -0.5)))),
+  )
+}
+
+/**
  * Builds the output-UV → source-UV matrix. Reading right to left: place the
  * output inside the crop rect, undo the straighten rotation, undo the flips,
  * undo the 90° steps, then undo the EXIF orientation to land in the stored
@@ -75,6 +110,7 @@ export function buildUvTransform(
   imgH: number,
   crop: CropState,
   orientation: Orientation = 1,
+  perspective?: PerspectiveState,
 ): Mat3 {
   const d = displaySize(imgW, imgH, crop.rotate90)
   const aspect = d.width / d.height
@@ -97,6 +133,11 @@ export function buildUvTransform(
     )
     m = mat3Mul(unstraighten, m)
   }
+
+  // Perspective corrects the whole frame, so it belongs on display coordinates —
+  // after the crop rectangle has placed the output inside the frame, before the
+  // flips and quarter turns that only relabel the axes.
+  if (perspective) m = mat3Mul(buildPerspective(perspective, aspect), m)
 
   if (crop.flipH) m = mat3Mul(mat3Mul(translate(1, 0), scale(-1, 1)), m)
   if (crop.flipV) m = mat3Mul(mat3Mul(translate(0, 1), scale(1, -1)), m)

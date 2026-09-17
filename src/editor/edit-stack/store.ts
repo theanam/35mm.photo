@@ -72,6 +72,7 @@ interface EditorState {
   toolSnapshot: EditState | null
   cropping: boolean
   exportOpen: boolean
+  aboutOpen: boolean
   exportSettings: ExportSettings
   histogram: HistogramData | null
   /** Published by the viewport so the bottom bar can show the zoom level. */
@@ -121,6 +122,7 @@ interface EditorState {
   discardTool: () => void
   setCropping: (on: boolean) => void
   setExportOpen: (open: boolean) => void
+  setAboutOpen: (open: boolean) => void
   setExportSettings: (patch: Partial<ExportSettings>) => void
   setHistogram: (data: HistogramData) => void
   setViewScale: (scale: number, fit: number) => void
@@ -158,12 +160,13 @@ export const useEditor = create<EditorState>((set, get) => ({
   splitCompare: false,
   splitAt: 0.38,
   zoom: 'fit',
-  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, detail: false, grain: false, raw: false },
+  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, lens: false, detail: false, grain: false, raw: false },
   focusedPanel: null,
   activeTool: null,
   toolSnapshot: null,
   cropping: false,
   exportOpen: false,
+  aboutOpen: false,
   exportSettings: { ...DEFAULT_EXPORT },
   histogram: null,
   viewScale: 1,
@@ -328,7 +331,12 @@ export const useEditor = create<EditorState>((set, get) => ({
     const outcomes = await importPresetFiles(files)
     const added = outcomes.map((o) => o.preset).filter((p): p is CustomPreset => Boolean(p))
     for (const preset of added) await db.savePreset(preset)
-    if (added.length) publishPresets([...added, ...get().presets], set)
+    if (added.length) {
+      publishPresets([...added, ...get().presets], set)
+      // The first import is the point at which this origin holds something the
+      // user cannot re-create from a file they still have open.
+      void ensureDurableStorage()
+    }
 
     for (const { error } of outcomes) if (error) get().toast(error, 'error')
 
@@ -554,6 +562,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   setCropping(on) { set({ cropping: on, splitCompare: on ? false : get().splitCompare }) },
+  setAboutOpen(open) {
+    set({ aboutOpen: open })
+  },
+
   setExportOpen(open) { set({ exportOpen: open }) },
   setExportSettings(patch) { set({ exportSettings: { ...get().exportSettings, ...patch } }) },
   setHistogram(data) { set({ histogram: data }) },
@@ -587,6 +599,14 @@ export function getOpenedFile(id: string): OpenedFile | undefined {
 
 export function registerOpenedFile(id: string, file: OpenedFile) {
   openedFiles.set(id, file)
+}
+
+/** Asked once per session; the answer cannot change under us. */
+let durableRequested = false
+function ensureDurableStorage() {
+  if (durableRequested) return
+  durableRequested = true
+  return db.requestPersistentStorage()
 }
 
 /**
@@ -710,6 +730,8 @@ function migrate(edits: Partial<EditState>): EditState {
     ...edits,
     curves: { ...base.curves, ...(edits.curves ?? {}) },
     hsl: { ...base.hsl, ...(edits.hsl ?? {}) },
+    perspective: { ...base.perspective, ...(edits.perspective ?? {}) },
+    lens: { ...base.lens, ...(edits.lens ?? {}) },
     colorGrade: { ...base.colorGrade, ...(edits.colorGrade ?? {}) },
     look: { ...base.look, ...(edits.look ?? {}) },
     crop: { ...base.crop, ...(edits.crop ?? {}) },

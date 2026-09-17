@@ -9,7 +9,7 @@ import { DETAIL_FRAG } from '../shaders/detail.glsl'
 import { FINISH_FRAG } from '../shaders/finish.glsl'
 import { PASSTHROUGH_VERT, QUAD_VERT } from '../shaders/quad.glsl'
 import { RenderTarget, SCRATCH_UNIT, Uniforms, createProgram, createQuad } from './gl'
-import { buildUvTransform, mat3Identity, uprightSize } from './transform'
+import { buildUvTransform, displaySize, mat3Identity, uprightSize } from './transform'
 import type { Orientation } from '../../io/exif'
 import { whiteBalanceGain } from './whitebalance'
 
@@ -45,7 +45,9 @@ export class Renderer {
   private rtColor: RenderTarget
   private rtPing: RenderTarget
   private rtWide: RenderTarget
+  private rtMid: RenderTarget
   private rtTight: RenderTarget
+  private rtHalo: RenderTarget
   private rtDetail: RenderTarget
   private rtRead: RenderTarget
 
@@ -95,7 +97,9 @@ export class Renderer {
     this.rtColor = mk()
     this.rtPing = mk()
     this.rtWide = mk()
+    this.rtMid = mk()
     this.rtTight = mk()
+    this.rtHalo = mk()
     this.rtDetail = mk()
     this.rtRead = mk()
 
@@ -257,9 +261,26 @@ export class Renderer {
     this.colorU.mat3(
       'uUvTransform',
       this.uprightWidth
-        ? buildUvTransform(this.uprightWidth, this.uprightHeight, edits.crop, this.orientation)
+        ? buildUvTransform(
+            this.uprightWidth,
+            this.uprightHeight,
+            edits.crop,
+            this.orientation,
+            edits.perspective,
+          )
         : mat3Identity(),
     )
+
+    // Lens corrections work on the frame as displayed, so the aspect they use
+    // is the one after the quarter turns, not the stored one.
+    const display = displaySize(
+      this.uprightWidth || 1,
+      this.uprightHeight || 1,
+      edits.crop.rotate90,
+    )
+    this.colorU.f('uFrameAspect', display.width / Math.max(display.height, 1))
+    this.colorU.f('uDistortion', edits.lens.distortion / 100)
+    this.colorU.f('uCa', edits.lens.ca / 100)
 
     const [gr, gg, gb] = whiteBalanceGain(edits.temperature, edits.tint)
     this.colorU.v3('uWbGain', gr, gg, gb)
@@ -336,16 +357,20 @@ export class Renderer {
   }
 
   private detailPass(width: number, height: number, edits: EditState): RenderTarget {
-    const needsDetail =
-      edits.clarity !== 0 || edits.sharpen > 0 || edits.denoiseLuma > 0 || edits.denoiseChroma > 0
-    if (!needsDetail) return this.rtColor
+    const needsWide = edits.clarity !== 0 || edits.dehaze !== 0
+    const needsMid = edits.texture !== 0
+    const needsTight = edits.sharpen > 0 || edits.denoiseLuma > 0 || edits.denoiseChroma > 0
+    if (!needsWide && !needsMid && !needsTight) return this.rtColor
 
     const gl = this.gl
-    // Clarity works on a wide radius that scales with the image; sharpening and
-    // denoise want a radius near one pixel regardless of size.
+    // Clarity and the dehaze veil estimate both want a radius that scales with
+    // the image; texture sits a few pixels out; sharpening and denoise want a
+    // radius near one pixel whatever the size. Each blur is skipped unless
+    // something downstream reads it — they are two passes apiece.
     const wideRadius = Math.max(3, Math.min(width, height) / 90)
-    this.blurInto(this.rtWide, this.rtColor.texture, width, height, wideRadius)
-    this.blurInto(this.rtTight, this.rtColor.texture, width, height, 1.1)
+    if (needsWide) this.blurInto(this.rtWide, this.rtColor.texture, width, height, wideRadius)
+    if (needsMid) this.blurInto(this.rtMid, this.rtColor.texture, width, height, 3.2)
+    if (needsTight) this.blurInto(this.rtTight, this.rtColor.texture, width, height, 1.1)
 
     this.rtDetail.resize(width, height)
     this.rtDetail.bind()
@@ -354,10 +379,14 @@ export class Renderer {
     this.bindTexture(0, gl.TEXTURE_2D, this.rtColor.texture)
     this.bindTexture(1, gl.TEXTURE_2D, this.rtWide.texture)
     this.bindTexture(2, gl.TEXTURE_2D, this.rtTight.texture)
+    this.bindTexture(3, gl.TEXTURE_2D, this.rtMid.texture)
     this.detailU.i('uImage', 0)
     this.detailU.i('uWideBlur', 1)
     this.detailU.i('uTightBlur', 2)
+    this.detailU.i('uMidBlur', 3)
     this.detailU.f('uClarity', edits.clarity / 100)
+    this.detailU.f('uTexture', edits.texture / 100)
+    this.detailU.f('uDehaze', edits.dehaze / 100)
     this.detailU.f('uSharpen', edits.sharpen / 100)
     this.detailU.f('uDenoiseLuma', edits.denoiseLuma / 100)
     this.detailU.f('uDenoiseChroma', edits.denoiseChroma / 100)
@@ -376,6 +405,19 @@ export class Renderer {
     scissor?: { x: number; y: number; width: number; height: number },
   ) {
     const gl = this.gl
+
+    // The bloom that halation spreads is a wide blur of what finishing is about
+    // to draw, so it has to be built before the destination is bound.
+    if (edits.halation > 0) {
+      this.blurInto(
+        this.rtHalo,
+        source.texture,
+        width,
+        height,
+        Math.max(6, Math.min(width, height) / 45),
+      )
+    }
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, destFramebuffer)
     if (scissor) {
       gl.enable(gl.SCISSOR_TEST)
@@ -385,8 +427,11 @@ export class Renderer {
     gl.useProgram(this.finishProgram)
 
     this.bindTexture(0, gl.TEXTURE_2D, source.texture)
+    this.bindTexture(1, gl.TEXTURE_2D, this.rtHalo.texture)
     this.finishU.i('uImage', 0)
+    this.finishU.i('uHaloBlur', 1)
     this.finishU.v2('uResolution', width, height)
+    this.finishU.f('uHalation', edits.halation / 100)
     this.finishU.f('uGrain', edits.grain / 100)
     // Grain size is in output pixels, scaled so 0..100 spans fine to chunky.
     this.finishU.f('uGrainSize', 1 + (edits.grainSize / 100) * 5)

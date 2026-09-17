@@ -25,6 +25,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Tests gate the deploy: the CPU side of the pipeline — geometry maths,
+      # the camera-profile parser, LUT construction — is where a silent
+      # regression would otherwise reach the site looking fine.
+      - run: npm test
       # `build` runs tsc first, so a type error fails the deploy. The site is
       # served from an apex domain set in the repo's Pages settings (an artifact
       # CNAME file is ignored when publishing from Actions), so vite's default

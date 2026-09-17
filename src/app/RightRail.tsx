@@ -5,6 +5,7 @@ import { LightTool } from '../editor/tools/LightTool'
 import { CurvesTool } from '../editor/tools/CurvesTool'
 import { MixerTool } from '../editor/tools/MixerTool'
 import { ColorGradeTool } from '../editor/tools/ColorGradeTool'
+import { LensTool } from '../editor/tools/LensTool'
 import { DetailTool } from '../editor/tools/DetailTool'
 import { GrainTool } from '../editor/tools/GrainTool'
 import { RawTool } from '../editor/tools/RawTool'
@@ -52,6 +53,10 @@ export function RightRail() {
           applies them in — the rail reads top to bottom as the pipeline runs. */}
       <Panel id="grade" title="Colour grading" collapsible active={dirty('grade')}>
         <ColorGradeTool />
+      </Panel>
+
+      <Panel id="lens" title="Optics & perspective" collapsible active={dirty('lens')}>
+        <LensTool />
       </Panel>
 
       <Panel id="detail" title="Detail & noise" collapsible active={dirty('detail')}>

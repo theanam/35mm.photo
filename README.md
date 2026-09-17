@@ -27,10 +27,13 @@ original file is never rewritten unless you export.
 - **Tone curves**, RGB and per-channel
 - **Colour mixer** — hue, saturation and luminance across eight bands
 - **Colour grading** — split toning across shadows, midtones and highlights
-- **Detail** — clarity, sharpening, luminance and chroma noise reduction
+- **Detail** — texture, clarity, dehaze, sharpening, luminance and chroma
+  noise reduction
 - **Looks** — nine built-ins, plus your own imported LUTs and presets
 - **Crop and straighten**, with aspect presets and rotation
-- **Grain and vignette**
+- **Perspective and optics** — keystone correction, plus manual distortion and
+  chromatic aberration
+- **Halation, grain and vignette**
 - **Live histogram and RGB parade**
 - **Installs as a PWA** and works offline
 
@@ -42,6 +45,7 @@ original file is never rewritten unless you export.
 | **Camera raw** | RAF, RW2, CR2, CR3, CRW, NEF, ARW, SR2, DNG, ORF, PEF, SRW, MRW, ERF, DCR, 3FR, MOS and others LibRaw supports |
 | **Looks** | `.cube`, HALD and tiled LUT images |
 | **Presets** | `.xmp` and `.lrtemplate` from Lightroom Classic / Camera Raw |
+| **Camera profiles** | `.dcp` — the hue/saturation warps and tone curve are baked into a look |
 
 A Lightroom preset imports as slider values rather than a baked cube, so
 everything it sets stays editable afterwards. Whatever it uses that this
@@ -59,9 +63,14 @@ npm install
 npm run dev        # http://localhost:5173
 npm run build      # static bundle in dist/
 npm run preview    # serve the built bundle
+npm test           # unit tests
 ```
 
-`npm run build` type-checks first, so a build failure is a real failure.
+`npm run build` type-checks first, so a build failure is a real failure. Tests
+cover the CPU side of the pipeline — the geometry matrices, the camera-profile
+parser and the LUT it bakes — and run in CI before a deploy. The GPU passes are
+checked by driving the real app in a browser instead; a shader is not something
+a unit test can meaningfully assert about.
 
 ## Keyboard
 
@@ -125,7 +134,12 @@ about a photo is sent anywhere.
 
 ## Not implemented
 
-Masks and local adjustments, camera profiles (`.dcp` / DNG `LookTable`), lens
-corrections, texture, dehaze, perspective correction, halation, batch editing,
-and a WebGPU backend — capability detection exists, but WebGL2 is the only
-implemented one.
+Masks and local adjustments, batch editing, and a WebGPU backend — capability
+detection exists, but WebGL2 is the only implemented one.
+
+Lens correction is manual only. Profile-driven correction needs Adobe's lens
+profile database, which cannot be shipped with a web app, so a preset that
+relies on one says so on import rather than pretending. Camera profiles are
+applied as a look rather than colorimetrically: raw development has already
+mapped the sensor to sRGB by the time the profile is reached, so its hue,
+saturation and tone rendering carry over but its absolute colour does not.

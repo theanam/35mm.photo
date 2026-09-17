@@ -12,7 +12,7 @@ precision highp float;
 precision highp sampler2D;
 precision highp sampler3D;
 
-in vec2 vUv;
+in vec3 vUvH;
 out vec4 fragColor;
 
 uniform sampler2D uImage;
@@ -35,6 +35,10 @@ uniform float uHslH[8];
 uniform float uHslS[8];
 uniform float uHslL[8];
 uniform bool  uHasHsl;
+
+uniform float uFrameAspect;   // width / height of the frame being corrected
+uniform float uDistortion;    // -1..1, barrel through pincushion
+uniform float uCa;            // -1..1, lateral chromatic aberration
 
 // Colour grading. Each zone is packed hue(0..1), sat(0..1), lum(-1..1).
 uniform vec3  uGradeShadows;
@@ -177,9 +181,42 @@ vec3 applySaturation(vec3 c) {
   return c;
 }
 
+/**
+ * Radial remap about the frame centre, measured in aspect-corrected space so
+ * the correction stays circular on a non-square frame. The factor scales radius by
+ * a factor that grows with r², which is the first term of the usual polynomial
+ * lens model — enough to straighten the bowed edges of a wide zoom.
+ */
+vec2 lensRemap(vec2 uv, float amount) {
+  if (amount == 0.0) return uv;
+  vec2 d = (uv - 0.5) * vec2(uFrameAspect, 1.0);
+  float k = 1.0 + amount * 0.35 * dot(d, d);
+  return 0.5 + (d * k) / vec2(uFrameAspect, 1.0);
+}
+
 void main() {
-  vec2 uv = clamp(vUv, vec2(0.0), vec2(1.0));
-  vec4 src = texture(uImage, uv);
+  // The divide the vertex shader deliberately did not do. Without a keystone
+  // vUvH.z is 1 and this costs nothing.
+  vec2 uv = clamp(vUvH.xy / vUvH.z, vec2(0.0), vec2(1.0));
+
+  uv = clamp(lensRemap(uv, uDistortion), vec2(0.0), vec2(1.0));
+
+  vec4 src;
+  if (uCa != 0.0) {
+    // Lateral CA is a per-channel magnification error, so it is undone by
+    // sampling red and blue at slightly different radii and leaving green —
+    // the channel the lens was focused for — where it is.
+    vec2 uvR = clamp(lensRemap(uv, uCa * 0.06), vec2(0.0), vec2(1.0));
+    vec2 uvB = clamp(lensRemap(uv, -uCa * 0.06), vec2(0.0), vec2(1.0));
+    src = vec4(
+      texture(uImage, uvR).r,
+      texture(uImage, uv).g,
+      texture(uImage, uvB).b,
+      texture(uImage, uv).a
+    );
+  } else {
+    src = texture(uImage, uv);
+  }
 
   // White balance and exposure are scene-referred operations — do them in
   // linear light, where they mean what they say.

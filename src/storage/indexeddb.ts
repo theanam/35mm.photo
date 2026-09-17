@@ -162,3 +162,25 @@ export async function loadPresets(): Promise<CustomPreset[]> {
 export async function deletePreset(id: string): Promise<void> {
   await tx(STORE_PRESETS, 'readwrite', (s) => s.delete(id))
 }
+
+/**
+ * Ask the browser to treat this origin's storage as durable rather than as
+ * evictable cache.
+ *
+ * Without this, IndexedDB is best-effort: Chrome may clear it when the disk
+ * runs low and Safari expires it after a stretch of no visits. That is fine for
+ * a thumbnail cache, which rebuilds itself, and not fine for a preset the user
+ * imported and cannot get back — the file it came from is long closed. Granting
+ * is at the browser's discretion and needs no prompt in Chrome or Safari, so a
+ * refusal is not worth reporting; it only means the old best-effort behaviour.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !navigator.storage?.persist) return false
+  try {
+    if (await navigator.storage.persisted?.()) return true
+    return await navigator.storage.persist()
+  } catch (err) {
+    console.warn('[35mm] could not request persistent storage', err)
+    return false
+  }
+}
