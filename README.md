@@ -19,10 +19,17 @@ npm run preview    # serve the built bundle
 
 ## Deploying
 
-The site is served from the apex domain in `public/CNAME`, so `vite.config.ts`
-defaults `base` to `/`. To publish under a subpath instead — a GitHub Pages
-project site, say — build with `BASE_PATH=/35mm/ npm run build` and delete the
-CNAME.
+The site is served from an apex domain, so `vite.config.ts` defaults `base` to
+`/`. To publish under a subpath instead — a GitHub Pages project site, say —
+build with `BASE_PATH=/35mm/ npm run build`.
+
+**The custom domain is set in the repo's Pages settings, not by `public/CNAME`.**
+Publishing from a GitHub Actions workflow ignores a `CNAME` file in the uploaded
+artifact ("no `CNAME` file is created, and any existing `CNAME` file is ignored
+and is not required" — GitHub's docs). The file is kept only so a fallback to
+branch-based publishing would still carry the domain. If the site answers 404
+over plain HTTP and serves a `*.github.io` certificate, the Custom domain field
+is empty, whatever DNS says.
 
 The workflow in `.github/workflows/deploy.yml` builds and publishes `dist/` on
 every push to `main`. Enable Pages for the repo with "GitHub Actions" as the

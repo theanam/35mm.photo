@@ -26,8 +26,9 @@ jobs:
           cache: npm
       - run: npm ci
       # `build` runs tsc first, so a type error fails the deploy. The site is
-      # served from the apex domain in public/CNAME, so vite's default base of
-      # "/" is right; set BASE_PATH=/<repo>/ if the custom domain ever goes away.
+      # served from an apex domain set in the repo's Pages settings (an artifact
+      # CNAME file is ignored when publishing from Actions), so vite's default
+      # base of "/" is right; set BASE_PATH=/<repo>/ if that domain goes away.
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
