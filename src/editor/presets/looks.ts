@@ -178,7 +178,5 @@ export const LOOKS: LookConfig[] = [
 
 export const LOOKS_BY_ID = new Map(LOOKS.map((l) => [l.id, l]))
 
-export function getLook(id: string | null | undefined): LookConfig | null {
-  if (!id) return null
-  return LOOKS_BY_ID.get(id) ?? null
-}
+// Resolution by id lives in `catalogue.ts`, which merges these with whatever
+// the user has imported.

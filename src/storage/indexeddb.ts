@@ -1,16 +1,19 @@
 import type { EditState, ImageMeta } from '../editor/edit-stack/types'
+import type { CustomPreset } from '../editor/presets/types'
 
 /**
- * Local persistence (spec §4.4). Three stores: the edit state per photo, a
- * cached thumbnail so recents render instantly, and the directory/file handles
- * needed to reopen a photo without a second picker prompt.
+ * Local persistence (spec §4.4). Four stores: the edit state per photo, a
+ * cached thumbnail so recents render instantly, the directory/file handles
+ * needed to reopen a photo without a second picker prompt, and the presets the
+ * user has imported.
  */
 
 const DB_NAME = '35mm'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE_EDITS = 'edits'
 const STORE_THUMBS = 'thumbs'
 const STORE_HANDLES = 'handles'
+const STORE_PRESETS = 'presets'
 
 export interface StoredEdit {
   /** Stable key derived from the file identity, not the object URL. */
@@ -43,6 +46,9 @@ function openDb(): Promise<IDBDatabase | null> {
       }
       if (!db.objectStoreNames.contains(STORE_THUMBS)) db.createObjectStore(STORE_THUMBS)
       if (!db.objectStoreNames.contains(STORE_HANDLES)) db.createObjectStore(STORE_HANDLES)
+      if (!db.objectStoreNames.contains(STORE_PRESETS)) {
+        db.createObjectStore(STORE_PRESETS, { keyPath: 'id' })
+      }
     }
 
     request.onsuccess = () => resolve(request.result)
@@ -134,4 +140,25 @@ export async function saveHandle(key: string, handle: FileSystemFileHandle): Pro
 
 export async function loadHandle(key: string): Promise<FileSystemFileHandle | null> {
   return (await tx<FileSystemFileHandle>(STORE_HANDLES, 'readonly', (s) => s.get(key))) ?? null
+}
+
+/* ─────────────────────────── imported presets ─────────────────────────── */
+
+/**
+ * Imported LUTs and presets. The records go in whole: a `CustomPreset` holds a
+ * `Float32Array`, which is structured-cloneable, so a 64³ cube round-trips
+ * without a serialiser and without ever being turned into text.
+ */
+export async function savePreset(preset: CustomPreset): Promise<void> {
+  await tx(STORE_PRESETS, 'readwrite', (s) => s.put(preset))
+}
+
+export async function loadPresets(): Promise<CustomPreset[]> {
+  const all = await tx<CustomPreset[]>(STORE_PRESETS, 'readonly', (s) => s.getAll())
+  if (!all) return []
+  return all.sort((a, b) => b.createdAt - a.createdAt)
+}
+
+export async function deletePreset(id: string): Promise<void> {
+  await tx(STORE_PRESETS, 'readwrite', (s) => s.delete(id))
 }

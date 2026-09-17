@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
 import { filesFromDataTransfer } from '../io/file-system'
+import { isSupportedFile } from '../io/formats'
+import { isPresetFile } from '../editor/presets/import'
 
 /**
  * Window-level drag and drop. Counting enter/leave events is the only reliable
@@ -8,6 +10,7 @@ import { filesFromDataTransfer } from '../io/file-system'
  */
 export function useDropTarget() {
   const openFiles = useEditor((s) => s.openFiles)
+  const importPresets = useEditor((s) => s.importPresets)
   const toast = useEditor((s) => s.toast)
   const [dragging, setDragging] = useState(false)
 
@@ -37,12 +40,17 @@ export function useDropTarget() {
       depth = 0
       setDragging(false)
 
-      const files = await filesFromDataTransfer(event.dataTransfer)
-      if (!files.length) {
-        toast('No photos 35mm can read in what you dropped', 'error')
+      // One drop can carry both: a preset pack and the photo to try it on.
+      const dropped = await filesFromDataTransfer(event.dataTransfer)
+      const photos = dropped.filter((f) => isSupportedFile(f.file.name))
+      const presets = dropped.filter((f) => isPresetFile(f.file.name)).map((f) => f.file)
+
+      if (!photos.length && !presets.length) {
+        toast('Nothing 35mm can read in what you dropped', 'error')
         return
       }
-      await openFiles(files)
+      if (presets.length) await importPresets(presets)
+      if (photos.length) await openFiles(photos)
     }
 
     window.addEventListener('dragenter', onEnter)
@@ -56,7 +64,7 @@ export function useDropTarget() {
       window.removeEventListener('dragleave', onLeave)
       window.removeEventListener('drop', onDrop)
     }
-  }, [openFiles, toast])
+  }, [openFiles, importPresets, toast])
 
   return dragging
 }

@@ -1,7 +1,7 @@
 import { Renderer } from '../editor/gpu/renderer'
 import { outputSize } from '../editor/gpu/transform'
-import { resolveLookLut } from '../editor/presets/lut3d'
-import { getLook } from '../editor/presets/looks'
+import { getLut } from '../editor/presets/lutCache'
+import { getLook } from '../editor/presets/catalogue'
 import type { EditState, ImageMeta } from '../editor/edit-stack/types'
 import { saveBlob, writeToHandle } from './file-system'
 
@@ -70,8 +70,10 @@ export async function exportImage(request: ExportRequest): Promise<ExportResult>
     onProgress?.('Rendering')
     renderer.setImage(source, meta.orientation)
 
+    // Through the cache, so the export reuses the cube the viewport already
+    // built rather than resampling an imported LUT a second time.
     const look = getLook(edits.look.id)
-    if (look) renderer.setLut(await resolveLookLut(look, document.baseURI))
+    renderer.setLut(await getLut(edits.look.id))
 
     renderer.render(width, height, { edits, look })
     // The drawing buffer is only guaranteed until the next composite; encode

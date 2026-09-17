@@ -1,15 +1,22 @@
 import { clamp01, evalSampled, sampleCurve } from './curve'
-import { parseCube } from './cube'
-import type { ColorTransform, LookConfig, MonoConfig } from './types'
+import { parseCube, type ParsedCube } from './cube'
+import { inputSpaceDef, srgbDecode, type InputSpace } from './inputSpace'
+import type { ColorTransform, LookConfig, Lut3D, MonoConfig } from './types'
+
+export type { Lut3D }
 
 /** Grid resolution of synthesised LUTs. 33 is the `.cube` convention. */
 export const LUT_SIZE = 33
 
-export interface Lut3D {
-  size: number
-  /** size³ RGB triples, row order r fastest → b slowest, matching `.cube`. */
-  data: Float32Array
-}
+/**
+ * Grid resolution used when a LUT is resampled out of a log input space. The
+ * log curve is steep in the shadows, so a 33³ destination bands there; 64³ is
+ * still only 2 MB of RGBA16F and WebGL2 guarantees at least 256³.
+ */
+export const REDOMAIN_SIZE = 64
+
+/** Largest grid accepted from an imported file, before any resampling. */
+export const MAX_IMPORT_LUT_SIZE = 64
 
 /** sRGB transfer, used to move in and out of linear light for the matrix step. */
 function toLinear(c: number): number {
@@ -160,29 +167,132 @@ function applyMono(
   ]
 }
 
+/** Trilinear sample of a LUT at an arbitrary 0..1 coordinate. */
+export function sampleLut(lut: Lut3D, r: number, g: number, b: number): [number, number, number] {
+  const n = lut.size
+  const max = n - 1
+  const fr = clamp01(r) * max
+  const fg = clamp01(g) * max
+  const fb = clamp01(b) * max
+
+  const r0 = Math.floor(fr)
+  const g0 = Math.floor(fg)
+  const b0 = Math.floor(fb)
+  const r1 = Math.min(r0 + 1, max)
+  const g1 = Math.min(g0 + 1, max)
+  const b1 = Math.min(b0 + 1, max)
+  const dr = fr - r0
+  const dg = fg - g0
+  const db = fb - b0
+
+  const out: [number, number, number] = [0, 0, 0]
+  const at = (ri: number, gi: number, bi: number) => (ri + gi * n + bi * n * n) * 3
+
+  for (let c = 0; c < 3; c++) {
+    const c000 = lut.data[at(r0, g0, b0) + c]
+    const c100 = lut.data[at(r1, g0, b0) + c]
+    const c010 = lut.data[at(r0, g1, b0) + c]
+    const c110 = lut.data[at(r1, g1, b0) + c]
+    const c001 = lut.data[at(r0, g0, b1) + c]
+    const c101 = lut.data[at(r1, g0, b1) + c]
+    const c011 = lut.data[at(r0, g1, b1) + c]
+    const c111 = lut.data[at(r1, g1, b1) + c]
+
+    const c00 = c000 + (c100 - c000) * dr
+    const c10 = c010 + (c110 - c010) * dr
+    const c01 = c001 + (c101 - c001) * dr
+    const c11 = c011 + (c111 - c011) * dr
+    const c0 = c00 + (c10 - c00) * dg
+    const c1 = c01 + (c11 - c01) * dg
+    out[c] = c0 + (c1 - c0) * db
+  }
+  return out
+}
+
+/**
+ * Rebuild a LUT so it can be indexed by this pipeline's sRGB pixels.
+ *
+ * For each sRGB grid point: linearise it to scene light, re-encode that with
+ * the curve the LUT was authored against, and read the source LUT there. The
+ * result is an ordinary sRGB-in cube, so the shader needs no notion of input
+ * spaces at all — there is still exactly one texture fetch per pixel.
+ */
+export function redomainLut(lut: Lut3D, space: InputSpace, size = REDOMAIN_SIZE): Lut3D {
+  if (space === 'srgb') return lut
+
+  const { encode } = inputSpaceDef(space)
+  // The encode curve is per-channel and identical for each, so build it once.
+  const map = new Float32Array(size)
+  for (let i = 0; i < size; i++) map[i] = clamp01(encode(srgbDecode(i / (size - 1))))
+
+  const data = new Float32Array(size * size * size * 3)
+  let i = 0
+  for (let b = 0; b < size; b++) {
+    for (let g = 0; g < size; g++) {
+      for (let r = 0; r < size; r++) {
+        const [cr, cg, cb] = sampleLut(lut, map[r], map[g], map[b])
+        data[i++] = clamp01(cr)
+        data[i++] = clamp01(cg)
+        data[i++] = clamp01(cb)
+      }
+    }
+  }
+  return { size, data }
+}
+
+/** Expand three 1D channel curves into the 3D cube the renderer wants. */
+export function lut1dTo3d(samples: Float32Array, count: number, size = LUT_SIZE): Lut3D {
+  const curve = (c: number, x: number) => {
+    const f = clamp01(x) * (count - 1)
+    const i = Math.floor(f)
+    const j = Math.min(i + 1, count - 1)
+    const a = samples[i * 3 + c]
+    return a + (samples[j * 3 + c] - a) * (f - i)
+  }
+
+  const lut = identityLut(size)
+  for (let i = 0; i < lut.data.length; i += 3) {
+    lut.data[i] = clamp01(curve(0, lut.data[i]))
+    lut.data[i + 1] = clamp01(curve(1, lut.data[i + 1]))
+    lut.data[i + 2] = clamp01(curve(2, lut.data[i + 2]))
+  }
+  return lut
+}
+
+/** Normalise a parsed `.cube` — 1D or 3D, any domain — into a plain `Lut3D`. */
+export function cubeToLut3d(cube: ParsedCube): Lut3D {
+  if (cube.size > MAX_IMPORT_LUT_SIZE && cube.kind === '3d') {
+    throw new Error(
+      `grid is ${cube.size}³; 35mm accepts up to ${MAX_IMPORT_LUT_SIZE}³`,
+    )
+  }
+  if (cube.kind === '1d') return lut1dTo3d(cube.data, cube.size)
+
+  // A non-unit domain means the file indexes on something other than 0..1.
+  // Rescaling the *values* is wrong for that — the domain describes the input —
+  // but a 3D `.cube` with DOMAIN_MAX above 1 is always a log LUT whose author
+  // expected the grid to span its own range, which is exactly what sampling a
+  // 0..1-normalised grid does. Leave the values alone.
+  return { size: cube.size, data: cube.data }
+}
+
 /** Load and normalise a `.cube` file into the same shape as a synthesised LUT. */
 export async function loadCubeLut(url: string): Promise<Lut3D> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Could not load LUT ${url}: ${res.status}`)
-  const cube = parseCube(await res.text())
-
-  // Normalise a non-unit domain so the shader can always sample in 0..1.
-  const { domainMin: lo, domainMax: hi } = cube
-  const unit = lo[0] === 0 && lo[1] === 0 && lo[2] === 0 && hi[0] === 1 && hi[1] === 1 && hi[2] === 1
-  if (unit) return { size: cube.size, data: cube.data }
-
-  const data = new Float32Array(cube.data.length)
-  for (let i = 0; i < data.length; i += 3) {
-    for (let c = 0; c < 3; c++) {
-      const span = hi[c] - lo[c] || 1
-      data[i + c] = clamp01((cube.data[i + c] - lo[c]) / span)
-    }
-  }
-  return { size: cube.size, data }
+  return cubeToLut3d(parseCube(await res.text()))
 }
 
 /** Resolve a look to its LUT, preferring a shipped `.cube` over the synthesised one. */
-export async function resolveLookLut(look: LookConfig, baseUrl: string): Promise<Lut3D> {
+export async function resolveLookLut(look: LookConfig, baseUrl: string): Promise<Lut3D | null> {
+  // An imported preset already carries its cube; all that is left is to move
+  // it into this pipeline's input space.
+  const custom = look.custom
+  if (custom) {
+    if (!custom.lut) return null
+    return redomainLut(custom.lut, custom.inputSpace ?? 'srgb')
+  }
+
   if (look.lut) {
     try {
       return await loadCubeLut(new URL(look.lut, baseUrl).href)

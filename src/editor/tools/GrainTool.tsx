@@ -1,6 +1,6 @@
 import { Slider, formatPlain } from '../../app/ui/Slider'
 import { useEditor } from '../edit-stack/store'
-import { getLook } from '../presets/looks'
+import { getLook } from '../presets/catalogue'
 
 export function GrainTool() {
   const edits = useEditor((s) => s.edits)
@@ -13,7 +13,9 @@ export function GrainTool() {
         <section className="tool__group">
           <header className="tool__group-head">
             <span>Grain</span>
-            {look && <span className="tool__note">{look.name} defaults applied</span>}
+            {look && !look.custom && (
+              <span className="tool__note">{look.name} defaults applied</span>
+            )}
           </header>
           <Slider
             label="Amount"

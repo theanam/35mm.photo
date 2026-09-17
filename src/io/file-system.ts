@@ -63,6 +63,53 @@ export async function pickDirectory(): Promise<OpenedFile[]> {
   }
 }
 
+/**
+ * Pick LUT and preset files. Separate from `pickFiles` because the filter is a
+ * different set of extensions and nothing here becomes a frame — the files are
+ * parsed and thrown away, so no handle is kept.
+ */
+export async function pickPresetFiles(accept: string): Promise<File[]> {
+  if (canUseFileSystemAccess()) {
+    try {
+      const handles = await window.showOpenFilePicker({
+        multiple: true,
+        types: [
+          {
+            description: 'LUTs and presets',
+            accept: { '*/*': accept.split(',') as `.${string}`[] },
+          },
+        ],
+      })
+      return Promise.all(handles.map((handle) => handle.getFile()))
+    } catch (err) {
+      if (isAbort(err)) return []
+      console.warn('[35mm] file picker unavailable, using the input fallback', err)
+    }
+  }
+
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.multiple = true
+    input.accept = accept
+    input.style.display = 'none'
+
+    let settled = false
+    const done = (files: File[]) => {
+      if (settled) return
+      settled = true
+      input.remove()
+      resolve(files)
+    }
+
+    input.addEventListener('change', () => done(Array.from(input.files ?? [])))
+    window.addEventListener('focus', () => setTimeout(() => done([]), 500), { once: true })
+
+    document.body.append(input)
+    input.click()
+  })
+}
+
 /** `<input type="file">` fallback; `webkitdirectory` covers the folder case. */
 function pickFilesViaInput(directory = false): Promise<OpenedFile[]> {
   return new Promise((resolve) => {
@@ -100,7 +147,11 @@ function pickFilesViaInput(directory = false): Promise<OpenedFile[]> {
   })
 }
 
-/** Walks a drag-and-drop payload, including dropped folders. */
+/**
+ * Walks a drag-and-drop payload, including dropped folders. Everything found is
+ * returned — a drop can legitimately carry photos, LUTs and presets at once, so
+ * deciding what each file is belongs to the caller, not here.
+ */
 export async function filesFromDataTransfer(dt: DataTransfer): Promise<OpenedFile[]> {
   const out: OpenedFile[] = []
 
@@ -112,9 +163,7 @@ export async function filesFromDataTransfer(dt: DataTransfer): Promise<OpenedFil
   if (entries.length) {
     for (const entry of entries) await walkEntry(entry, out)
   } else {
-    for (const file of Array.from(dt.files ?? [])) {
-      if (isSupportedFile(file.name)) out.push({ file })
-    }
+    for (const file of Array.from(dt.files ?? [])) out.push({ file })
   }
 
   out.sort((a, b) => a.file.name.localeCompare(b.file.name, undefined, { numeric: true }))
@@ -128,7 +177,7 @@ async function walkEntry(entry: FileSystemEntry, out: OpenedFile[], depth = 0) {
     const file = await new Promise<File | null>((resolve) =>
       (entry as FileSystemFileEntry).file(resolve, () => resolve(null)),
     )
-    if (file && isSupportedFile(file.name)) out.push({ file })
+    if (file) out.push({ file })
     return
   }
 

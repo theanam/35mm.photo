@@ -1,4 +1,55 @@
-import type { CurvePoint } from '../edit-stack/types'
+import type { CurvePoint, EditState } from '../edit-stack/types'
+import type { InputSpace } from './inputSpace'
+
+/**
+ * A 3D colour cube. Lives here rather than in `lut3d.ts` so the preset types
+ * can name it without importing the builder.
+ */
+export interface Lut3D {
+  size: number
+  /** size³ RGB triples, r fastest → b slowest, matching `.cube` order. */
+  data: Float32Array
+}
+
+/** Import formats understood by `presets/import` (spec §4.3.1). */
+export type PresetFormat = 'cube' | 'hald' | 'xmp' | 'lrtemplate'
+
+/**
+ * A preset the user brought in from their own files. Two shapes hide behind
+ * one record, because the two things people call a "filter" are not the same:
+ *
+ * - `lut` — a baked colour cube (`.cube`, HALD/strip PNG). Applied as a look,
+ *   blendable with the strength slider, not otherwise editable.
+ * - `parametric` — Lightroom/Camera Raw slider values (`.xmp`, `.lrtemplate`).
+ *   Applied straight onto the edit stack, so every value stays adjustable.
+ *
+ * Stored in IndexedDB as-is: `Float32Array` is structured-cloneable, so no
+ * serialiser is needed and nothing about a preset leaves the tab.
+ */
+export interface CustomPreset {
+  /** `custom:<uuid>` — namespaced so it can never collide with a built-in id. */
+  id: string
+  name: string
+  kind: 'lut' | 'parametric'
+  format: PresetFormat
+  /** The file it came from, shown in the preset's tooltip. */
+  filename: string
+  createdAt: number
+
+  /** LUT presets: the cube exactly as parsed, still in its own input space. */
+  lut?: Lut3D
+  /** LUT presets: the space the cube expects. User-changeable after import. */
+  inputSpace?: InputSpace
+
+  /** Parametric presets: the subset of the edit stack this preset sets. */
+  edits?: Partial<EditState>
+
+  /**
+   * Settings the importer recognised but cannot reproduce — masks, profiles,
+   * split toning. Surfaced on import so a half-applied preset is never silent.
+   */
+  dropped?: string[]
+}
 
 /**
  * A look is a compound effect, not an overlay (spec §4.3): a base colour
@@ -37,6 +88,12 @@ export interface LookConfig {
 
   /** 0..100, the strength the look lands on when first applied. */
   defaultStrength: number
+
+  /**
+   * Set on looks synthesised from a user import. Its presence is what tells
+   * the catalogue, the cache and the Looks grid that this is not a built-in.
+   */
+  custom?: CustomPreset
 }
 
 export interface ColorTransform {

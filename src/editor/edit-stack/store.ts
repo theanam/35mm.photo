@@ -5,16 +5,22 @@ import { countEdits, type PanelId } from './summary'
 import type { EditState, Frame, ImageMeta } from './types'
 import type { Orientation } from '../../io/exif'
 import { MAX_PREVIEW_EDGE, decodeFile, makeThumbnail, previewBitmap } from '../../io/decode'
+import type { DecodeStage } from '../../io/decode'
+import { extensionOf, isRawFile } from '../../io/formats'
 import type { OpenedFile } from '../../io/file-system'
 import { DEFAULT_EXPORT, type ExportSettings } from '../../io/export'
-import { getLook } from '../presets/looks'
+import { getLook, setCustomPresets } from '../presets/catalogue'
+import { forgetLut } from '../presets/lutCache'
+import { importPresetFiles } from '../presets/import'
+import type { CustomPreset } from '../presets/types'
+import type { InputSpace } from '../presets/inputSpace'
 import type { HistogramData } from '../histogram'
 import * as db from '../../storage/indexeddb'
 
 export interface Toast {
   id: string
   message: string
-  tone: 'info' | 'error'
+  tone: 'info' | 'warn' | 'error'
 }
 
 export type ZoomMode = 'fit' | number
@@ -42,9 +48,14 @@ interface EditorState {
   history: History
   clipboard: EditState | null
 
+  /** LUTs and presets the user has imported (spec §4.3.1). */
+  presets: CustomPreset[]
+
   /* UI */
   loading: boolean
   loadingLabel: string
+  /** File the loader names, so a slow open says which photo it is waiting on. */
+  loadingName: string
   splitCompare: boolean
   splitAt: number
   zoom: ZoomMode
@@ -82,6 +93,11 @@ interface EditorState {
   refreshRecents: () => Promise<void>
   clearRecents: () => Promise<void>
 
+  loadPresets: () => Promise<void>
+  importPresets: (files: File[]) => Promise<void>
+  deletePreset: (id: string) => Promise<void>
+  setPresetInputSpace: (id: string, space: InputSpace) => Promise<void>
+
   update: (patch: Partial<EditState>, coalesceKey?: string) => void
   updateCrop: (patch: Partial<EditState['crop']>, coalesceKey?: string) => void
   applyLook: (id: string | null) => void
@@ -113,6 +129,13 @@ interface EditorState {
 /** Rebuilt never: the comparison target for "has this photo been touched?". */
 const PRISTINE = defaultEdits()
 
+/** What the loader says at each stage of a decode. */
+const STAGE_LABELS: Record<DecodeStage, string> = {
+  reading: 'Reading the file',
+  developing: 'Developing the raw',
+  preview: 'Building the preview',
+}
+
 const AUTOSAVE_DELAY = 600
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -125,13 +148,15 @@ export const useEditor = create<EditorState>((set, get) => ({
   edits: defaultEdits(),
   history: emptyHistory(),
   clipboard: null,
+  presets: [],
 
   loading: false,
   loadingLabel: '',
+  loadingName: '',
   splitCompare: false,
   splitAt: 0.38,
   zoom: 'fit',
-  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, detail: false, grain: false, raw: false },
+  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, detail: false, grain: false, raw: false },
   focusedPanel: null,
   activeTool: null,
   toolSnapshot: null,
@@ -161,8 +186,8 @@ export const useEditor = create<EditorState>((set, get) => ({
       id: db.fileKey(f.file),
       meta: {
         name: f.file.name,
-        ext: f.file.name.split('.').pop()?.toLowerCase() ?? '',
-        isRaw: false,
+        ext: extensionOf(f.file.name),
+        isRaw: isRawFile(f.file.name),
         width: 0,
         height: 0,
         orientation: 1,
@@ -189,10 +214,20 @@ export const useEditor = create<EditorState>((set, get) => ({
     const opened = openedFiles.get(id)
     if (!opened) return
 
-    set({ loading: true, loadingLabel: 'Opening', activeFrameId: id, cropping: false })
+    set({
+      loading: true,
+      loadingLabel: isRawFile(opened.file.name) ? STAGE_LABELS.reading : 'Opening',
+      loadingName: opened.file.name,
+      activeFrameId: id,
+      cropping: false,
+    })
 
     try {
-      const decoded = await decodeFile(opened.file)
+      const decoded = await decodeFile(opened.file, (stage) => {
+        // Only relabel while this file is still the one being opened; a fast
+        // click onto another frame must not be narrated by the old decode.
+        if (get().activeFrameId === id) set({ loadingLabel: STAGE_LABELS[stage] })
+      })
       const preview = await previewBitmap(decoded.bitmap)
 
       const key = db.fileKey(opened.file)
@@ -212,6 +247,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         histogram: null,
         loading: false,
         loadingLabel: '',
+        loadingName: '',
         frames: get().frames.map((f) =>
           f.id === id ? { ...f, meta: decoded.meta, error: undefined } : f,
         ),
@@ -225,6 +261,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       set({
         loading: false,
         loadingLabel: '',
+        loadingName: '',
         frames: get().frames.map((f) => (f.id === id ? { ...f, error: message } : f)),
       })
       get().toast(message, 'error')
@@ -248,6 +285,73 @@ export const useEditor = create<EditorState>((set, get) => ({
     await db.clearRecents()
     set({ recents: [] })
     get().toast('Recent edits cleared')
+  },
+
+  /* ─────────────────────────── imported presets ─────────────────────────── */
+
+  async loadPresets() {
+    publishPresets(await db.loadPresets(), set)
+  },
+
+  async importPresets(files) {
+    if (!files.length) return
+
+    const outcomes = await importPresetFiles(files)
+    const added = outcomes.map((o) => o.preset).filter((p): p is CustomPreset => Boolean(p))
+    for (const preset of added) await db.savePreset(preset)
+    if (added.length) publishPresets([...added, ...get().presets], set)
+
+    for (const { error } of outcomes) if (error) get().toast(error, 'error')
+
+    if (added.length === 1) {
+      const [preset] = added
+      const lost = preset.dropped ?? []
+      if (!lost.length) {
+        get().toast(`Imported "${preset.name}"`)
+      } else {
+        // One toast, not two: the old pair said "Imported" and then "not
+        // applied", which read as a contradiction. The preset always applies —
+        // what varies is how much of it survived the trip.
+        get().toast(
+          `Imported "${preset.name}" · everything applied except ${listPhrase(lost)}`,
+          toneForLost(lost.length),
+        )
+      }
+    } else if (added.length > 1) {
+      const partial = added.filter((p) => p.dropped?.length)
+      if (!partial.length) {
+        get().toast(`Imported ${added.length} presets`)
+      } else {
+        const worst = Math.max(...partial.map((p) => p.dropped?.length ?? 0))
+        get().toast(
+          `Imported ${added.length} presets · ${partial.length} of them use settings 35mm has no equivalent for`,
+          toneForLost(worst),
+        )
+      }
+    }
+  },
+
+  async deletePreset(id) {
+    const preset = get().presets.find((p) => p.id === id)
+    await db.deletePreset(id)
+    forgetLut(id)
+    publishPresets(get().presets.filter((p) => p.id !== id), set)
+
+    // Nothing should still be pointing at a look that no longer exists.
+    if (get().edits.look.id === id) {
+      get().update({ look: { id: null, strength: 100 } }, 'look')
+    }
+    if (preset) get().toast(`Removed "${preset.name}"`)
+  },
+
+  async setPresetInputSpace(id, space) {
+    const preset = get().presets.find((p) => p.id === id)
+    if (!preset || preset.kind !== 'lut' || preset.inputSpace === space) return
+
+    const next = { ...preset, inputSpace: space }
+    await db.savePreset(next)
+    forgetLut(id)
+    publishPresets(get().presets.map((p) => (p.id === id ? next : p)), set)
   },
 
   /* ─────────────────────────── edits ─────────────────────────── */
@@ -276,8 +380,24 @@ export const useEditor = create<EditorState>((set, get) => ({
       get().update({ look: { id: null, strength: 100 }, grain: 0 }, 'look')
       return
     }
-    // A look brings its own grain defaults into the edit state rather than
-    // hiding them, so the Grain panel always shows what is actually applied.
+
+    const preset = look.custom
+    if (preset?.kind === 'parametric') {
+      // A Lightroom preset *is* slider values, so it lands on the edit stack
+      // directly and stays editable. Like Lightroom, it only touches what it
+      // actually contains; `look.id` is set purely to mark the grid, and
+      // resolves to no LUT.
+      get().update({ ...preset.edits, look: { id: look.id, strength: 100 } }, 'look')
+      return
+    }
+    if (preset) {
+      // An imported LUT carries no grain of its own; leave whatever is set.
+      get().update({ look: { id: look.id, strength: look.defaultStrength } }, 'look')
+      return
+    }
+
+    // A built-in look brings its own grain defaults into the edit state rather
+    // than hiding them, so the Grain panel always shows what is applied.
     get().update(
       {
         look: { id: look.id, strength: look.defaultStrength },
@@ -440,6 +560,33 @@ export function registerOpenedFile(id: string, file: OpenedFile) {
   openedFiles.set(id, file)
 }
 
+/**
+ * One write for both readers: the store (for React) and the catalogue (for the
+ * LUT cache and the renderer, which resolve look ids outside React).
+ */
+function publishPresets(presets: CustomPreset[], set: Setter) {
+  const sorted = [...presets].sort((a, b) => b.createdAt - a.createdAt)
+  setCustomPresets(sorted)
+  set({ presets: sorted })
+}
+
+/**
+ * A couple of missing settings is a footnote; a handful means the preset will
+ * not look like itself, and saying so in the same colour as "saved" would be
+ * misleading. Either way the rest of the preset is applied — the tone is about
+ * how much to trust the result, not whether anything happened.
+ */
+const MAX_LOST_FOR_WARNING = 2
+
+function toneForLost(count: number): Toast['tone'] {
+  return count <= MAX_LOST_FOR_WARNING ? 'warn' : 'error'
+}
+
+function listPhrase(items: string[]): string {
+  if (items.length === 1) return items[0]
+  return `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`
+}
+
 type Setter = (partial: Partial<EditorState>) => void
 type Getter = () => EditorState
 
@@ -468,6 +615,12 @@ async function cacheThumbnail(
 /** Decode the rest of a dropped batch at thumbnail size only. */
 async function hydrateThumbnails(ids: string[], set: Setter, get: Getter) {
   for (const id of ids) {
+    // Wait for any open the user is actually watching before queueing the next
+    // thumbnail. LibRaw runs one decode at a time, so without this a folder of
+    // raws puts every remaining file ahead of the photo they just clicked —
+    // minutes of apparent freeze. Yielding here bounds that to a single decode.
+    while (get().loading) await new Promise((r) => setTimeout(r, 120))
+
     if (get().frames.find((f) => f.id === id)?.thumbUrl) continue
     const opened = openedFiles.get(id)
     if (!opened) continue
@@ -519,6 +672,7 @@ function migrate(edits: Partial<EditState>): EditState {
     ...edits,
     curves: { ...base.curves, ...(edits.curves ?? {}) },
     hsl: { ...base.hsl, ...(edits.hsl ?? {}) },
+    colorGrade: { ...base.colorGrade, ...(edits.colorGrade ?? {}) },
     look: { ...base.look, ...(edits.look ?? {}) },
     crop: { ...base.crop, ...(edits.crop ?? {}) },
   }
