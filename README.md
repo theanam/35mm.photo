@@ -2,7 +2,10 @@
 
 **[35mm.photo](https://35mm.photo)** — a local, no-upload photo editor. Everything
 — decode, grading, export — happens in the browser tab. No backend, no accounts,
-no network calls after load.
+and your photos are never uploaded.
+
+The published site loads Google Analytics; see [Analytics](#analytics). Nothing
+about a photo is sent anywhere, and a local build has no analytics at all.
 
 Built to `photo-editor-spec.md`, Phase 1 scope.
 
