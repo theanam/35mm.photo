@@ -80,5 +80,13 @@ export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/' : (process.env.BASE_PATH ?? '/'),
   plugins: [react(), sitemap(), analytics(process.env.GA_MEASUREMENT_ID)],
   worker: { format: 'es' },
+  /**
+   * libraw-wasm starts its decoder with `new Worker(new URL('./worker.js',
+   * import.meta.url))`. Pre-bundling rewrites the package into .vite/deps but
+   * leaves that sibling behind, so the URL resolves to a file that is not there
+   * and the worker 404s — in dev only; the production build resolves it fine.
+   * Serving the package unbundled keeps the two files next to each other.
+   */
+  optimizeDeps: { exclude: ['libraw-wasm'] },
   build: { target: 'es2022', assetsInlineLimit: 0 },
 }))

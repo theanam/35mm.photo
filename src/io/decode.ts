@@ -10,26 +10,50 @@ export interface DecodedImage {
 
 export class UnsupportedFormatError extends Error {
   constructor(public readonly ext: string) {
-    super(
-      `35mm cannot develop .${ext.toUpperCase()} files yet — RAW decoding arrives with the ` +
-        'libraw worker in the next phase. Open a JPEG, PNG, WebP or AVIF in the meantime.',
-    )
+    super(`35mm cannot open .${ext.toUpperCase()} files. Try a JPEG, PNG, WebP or AVIF.`)
     this.name = 'UnsupportedFormatError'
   }
 }
 
 /**
- * Decode a file to an `ImageBitmap`. Raw files are routed to the decoder worker
- * (spec §5); until that worker ships a real libraw build it reports the format
- * as undecodable rather than silently editing the embedded JPEG preview, which
- * spec §5.4 rules out.
+ * A raw file the decoder recognised but could not develop — most often a
+ * compression variant missing from this LibRaw build, sometimes a truncated
+ * file. Separate from `UnsupportedFormatError` so the message can say which of
+ * the two happened rather than blaming the format as a whole.
  */
-export async function decodeFile(file: File): Promise<DecodedImage> {
+export class RawDecodeError extends Error {
+  constructor(
+    public readonly ext: string,
+    public readonly detail?: string,
+  ) {
+    super(
+      `35mm could not develop this .${ext.toUpperCase()} file` +
+        (detail ? ` — ${detail}` : '. The camera may use a compression this build does not decode.'),
+    )
+    this.name = 'RawDecodeError'
+  }
+}
+
+/**
+ * Decode a file to an `ImageBitmap`. Raw files go to the LibRaw pipeline in
+ * `raw/decode-raw.ts` (spec §5), which develops the sensor data rather than
+ * lifting the embedded JPEG preview — §5.4 rules that out, so a raw the build
+ * cannot develop fails loudly instead.
+ */
+/**
+ * Progress callback. A raw file is seconds of work with no natural progress
+ * events to report, so the loader shows which stage is running instead of a
+ * percentage it would have to invent.
+ */
+export type DecodeStage = 'reading' | 'developing' | 'preview'
+export type OnStage = (stage: DecodeStage) => void
+
+export async function decodeFile(file: File, onStage?: OnStage): Promise<DecodedImage> {
   const ext = extensionOf(file.name)
 
   if (isRawFile(file.name)) {
     const { decodeRaw } = await import('../raw/decode-raw')
-    return decodeRaw(file)
+    return decodeRaw(file, onStage)
   }
 
   const { orientation, encoded } = await readOrientation(file)

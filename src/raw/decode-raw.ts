@@ -1,68 +1,128 @@
-import type { DecodedImage } from '../io/decode'
-import { UnsupportedFormatError } from '../io/decode'
+import LibRaw from 'libraw-wasm'
+import type { DecodedImage, OnStage } from '../io/decode'
+import { RawDecodeError } from '../io/decode'
 import { extensionOf } from '../io/formats'
-import { readOrientation } from '../io/exif'
-import { uprightSize } from '../editor/gpu/transform'
 
 /**
- * Entry point for the raw pipeline (spec §5). The decoder itself is a WASM
- * libraw build running in `decoder-worker.ts`; this module owns the worker
- * lifecycle and the fallback when no build is present.
+ * Raw pipeline (spec §5), backed by a LibRaw build compiled to WASM.
  *
- * Until that binary ships, opening a raw file fails loudly. Falling back to the
- * embedded JPEG preview would look like it worked while quietly editing an
- * 8-bit camera render instead of sensor data — explicitly ruled out by §5.4.
+ * `libraw-wasm` runs the decode in a worker of its own, which is the reason
+ * this module no longer owns one: a second worker around it would only nest
+ * another message hop around the same off-thread work (spec §3.3).
+ *
+ * The embedded JPEG preview is still never used as the picture — §5.4 rules it
+ * out, and a failed decode has to read as a failure rather than quietly handing
+ * back an 8-bit camera render.
  */
 
-let worker: Worker | null = null
-let workerAvailable: boolean | null = null
+/**
+ * Development settings. These decide what a raw looks like the instant it
+ * opens, before the edit stack touches it, so they lean neutral: the camera's
+ * own white balance, no auto-exposure stretch, and LibRaw's default BT.709
+ * transfer so the result is display-referred like every other format the app
+ * decodes.
+ */
+const SETTINGS = {
+  /** 16 bits per channel; the preview is knocked down to 8 below, export is not. */
+  outputBps: 16,
+  /** sRGB primaries, matching the working space of the render graph. */
+  outputColor: 1,
+  /** As-shot white balance. Without it LibRaw invents its own and every file
+   *  opens on a different cast than the camera showed on the back screen. */
+  useCameraWb: true,
+  /**
+   * Leave the exposure alone. LibRaw's auto-brighten stretches the histogram by
+   * a clipped-pixel percentile, which is a per-file guess — the Light tool and
+   * `tools/auto.ts` are where that decision belongs.
+   */
+  noAutoBright: true,
+  /**
+   * AHD for Bayer sensors. LibRaw routes X-Trans past this to Markesteijn
+   * regardless, taking a quality above 10 as the signal for the slower 3-pass
+   * variant, so this also picks 1-pass Markesteijn for Fujifilm RAF.
+   */
+  userQual: 3,
+  /**
+   * Let LibRaw apply the camera's rotation. Every vendor records it somewhere
+   * different, and RAF in particular is not a TIFF container, so `io/exif.ts`
+   * cannot be trusted to find the tag. The pixels therefore arrive upright and
+   * the meta below reports orientation 1 rather than asking the render graph to
+   * rotate them a second time.
+   */
+  userFlip: -1,
+} as const
 
-interface DecodeResponse {
-  ok: boolean
-  error?: string
-  width?: number
-  height?: number
-  /** Demosaiced linear sensor data, RGBA16. */
-  pixels?: Uint16Array
-  meta?: { iso?: number; camera?: string; lens?: string; shotAt?: number }
+/**
+ * Ceiling on a single decode. Generous — a 26 MP X-Trans frame takes about ten
+ * seconds through Markesteijn on a laptop — because this is not a performance
+ * budget. It is here because `libraw-wasm` never rejects when its worker fails
+ * to start: the call simply never settles, and since it serialises every later
+ * call behind that one, a decoder that cannot load would wedge the app for the
+ * rest of the session with nothing on screen to say so.
+ */
+const DECODE_TIMEOUT_MS = 120_000
+
+let decoder: LibRaw | null = null
+
+function getDecoder(): LibRaw {
+  if (!decoder) decoder = new LibRaw()
+  return decoder
 }
 
-function getWorker(): Worker | null {
-  if (workerAvailable === false) return null
-  if (worker) return worker
+/** Reject rather than hang, and take the wedged worker down with it. */
+function withTimeout<T>(work: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      disposeRawDecoder()
+      reject(new Error('the decoder did not respond'))
+    }, DECODE_TIMEOUT_MS)
 
-  try {
-    worker = new Worker(new URL('./decoder-worker.ts', import.meta.url), { type: 'module' })
-    workerAvailable = true
-    return worker
-  } catch (err) {
-    console.warn('[35mm] raw decoder worker unavailable', err)
-    workerAvailable = false
-    return null
+    work.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (err) => { clearTimeout(timer); reject(err) },
+    )
+  })
+}
+
+let previewWorker: Worker | null = null
+
+function getPreviewWorker(): Worker {
+  if (!previewWorker) {
+    previewWorker = new Worker(new URL('./preview-worker.ts', import.meta.url), {
+      type: 'module',
+    })
   }
+  return previewWorker
 }
 
-export async function decodeRaw(file: File): Promise<DecodedImage> {
+export async function decodeRaw(file: File, onStage?: OnStage): Promise<DecodedImage> {
   const ext = extensionOf(file.name)
-  const w = getWorker()
-  if (!w) throw new UnsupportedFormatError(ext)
+  onStage?.('reading')
+  const bytes = new Uint8Array(await file.arrayBuffer())
 
-  // Read the tag before the buffer is transferred to the worker.
-  const { orientation } = await readOrientation(file)
-  const bytes = await file.arrayBuffer()
-  const response = await request(w, bytes, file.name)
-
-  if (!response.ok || !response.pixels || !response.width || !response.height) {
-    throw new UnsupportedFormatError(ext)
+  let image: Awaited<ReturnType<LibRaw['imageData']>>
+  let metadata: Awaited<ReturnType<LibRaw['metadata']>>
+  try {
+    const libraw = getDecoder()
+    onStage?.('developing')
+    await withTimeout(libraw.open(bytes, SETTINGS))
+    // Read the metadata first: once `imageData()` has transferred its buffer out
+    // of the worker there is nothing left to ask about the file. The `true` asks
+    // for the full block, which is the only one carrying `lens`.
+    metadata = await withTimeout(libraw.metadata(true))
+    image = await withTimeout(libraw.imageData())
+  } catch (err) {
+    // A camera whose compression this build has no decoder for lands here, as
+    // does a truncated or misnamed file. The distinction is not ours to make.
+    throw new RawDecodeError(ext, err instanceof Error ? err.message : undefined)
   }
 
-  // 16-bit linear sensor data down to the 8-bit texture the preview pipeline
-  // uploads. Export re-reads the 16-bit buffer.
-  const { width, height, pixels } = response
-  const rgba = new Uint8ClampedArray(width * height * 4)
-  for (let i = 0; i < rgba.length; i++) rgba[i] = pixels[i] >> 8
-  const bitmap = await createImageBitmap(new ImageData(rgba, width, height))
-  const upright = uprightSize(width, height, orientation)
+  if (!image?.data || !image.width || !image.height) {
+    throw new RawDecodeError(ext)
+  }
+
+  onStage?.('preview')
+  const bitmap = await toPreviewBitmap(image)
 
   return {
     bitmap,
@@ -70,31 +130,80 @@ export async function decodeRaw(file: File): Promise<DecodedImage> {
       name: file.name,
       ext,
       isRaw: true,
-      width: upright.width,
-      height: upright.height,
-      orientation,
+      width: image.width,
+      height: image.height,
+      // Already applied by LibRaw — see `userFlip` above.
+      orientation: 1,
       bytes: file.size,
-      ...response.meta,
+      ...shotDetails(metadata),
     },
   }
 }
 
-function request(w: Worker, bytes: ArrayBuffer, name: string): Promise<DecodeResponse> {
-  return new Promise((resolve) => {
-    const id = crypto.randomUUID()
+/**
+ * LibRaw hands back tightly packed channels — three of them for nearly every
+ * camera, four only for the sensors that carry a second green or an emerald.
+ * `preview-worker.ts` does the rewrite into RGBA, off the main thread.
+ *
+ * The 16-bit buffer is dropped rather than kept for export, which re-renders
+ * from the edit stack. Holding a second full-resolution copy of a 60 MP frame
+ * to serve a path that does not read it would cost more than it buys.
+ */
+function toPreviewBitmap(image: {
+  width: number
+  height: number
+  colors: number
+  bits: number
+  data: Uint8Array | Uint16Array
+}): Promise<ImageBitmap> {
+  const worker = getPreviewWorker()
+  const id = crypto.randomUUID()
 
+  return new Promise((resolve, reject) => {
     const onMessage = (event: MessageEvent) => {
       if (event.data?.id !== id) return
-      w.removeEventListener('message', onMessage)
-      resolve(event.data as DecodeResponse)
+      worker.removeEventListener('message', onMessage)
+      if (event.data.ok) resolve(event.data.bitmap as ImageBitmap)
+      else reject(new Error(event.data.error ?? 'could not build the preview'))
     }
-    w.addEventListener('message', onMessage)
-    w.postMessage({ id, type: 'decode', name, bytes }, [bytes])
+    worker.addEventListener('message', onMessage)
+
+    worker.postMessage(
+      {
+        id,
+        width: image.width,
+        height: image.height,
+        colors: image.colors,
+        bits: image.bits,
+        data: image.data,
+      },
+      [image.data.buffer],
+    )
   })
 }
 
+/** The as-shot fields `ImageMeta` advertises, where LibRaw could read them. */
+function shotDetails(metadata: Awaited<ReturnType<LibRaw['metadata']>>) {
+  if (!metadata) return {}
+
+  const camera = [metadata.camera_make, metadata.camera_model]
+    .filter((part) => typeof part === 'string' && part.trim())
+    .join(' ')
+    .trim()
+
+  return {
+    ...(metadata.iso_speed ? { iso: Math.round(metadata.iso_speed) } : {}),
+    ...(camera ? { camera } : {}),
+    ...(metadata.lens?.Lens ? { lens: String(metadata.lens.Lens).trim() } : {}),
+    ...(metadata.timestamp instanceof Date && !Number.isNaN(metadata.timestamp.valueOf())
+      ? { shotAt: metadata.timestamp.valueOf() }
+      : {}),
+  }
+}
+
 export function disposeRawDecoder() {
-  worker?.terminate()
-  worker = null
-  workerAvailable = null
+  decoder?.dispose()
+  decoder = null
+  previewWorker?.terminate()
+  previewWorker = null
 }
