@@ -60,12 +60,68 @@ export async function exportImage(request: ExportRequest): Promise<ExportResult>
   const width = Math.max(1, Math.round(full.width * scale))
   const height = Math.max(1, Math.round(full.height * scale))
 
+  const { blob } = await renderToBlob({ source, meta, edits, settings, width, height, onProgress })
+  {
+
+    const filename = exportFilename(meta.name, settings.format)
+    if (!blob) throw new Error('The browser could not encode the exported image')
+
+    onProgress?.('Saving')
+    if (request.overwriteHandle) {
+      const ok = await writeToHandle(request.overwriteHandle, blob)
+      if (ok) {
+        return { outcome: 'saved', filename, width, height, bytes: blob.size }
+      }
+    }
+
+    const outcome = await saveBlob(blob, filename, MIME[settings.format], EXT[settings.format])
+    return { outcome, filename, width, height, bytes: blob.size }
+  }
+}
+
+export interface RenderRequest {
+  source: ImageBitmap
+  meta: ImageMeta
+  edits: EditState
+  settings: ExportSettings
+  width: number
+  height: number
+  onProgress?: (stage: string) => void
+  /**
+   * Reuse a renderer across many exports. A browser caps how many live WebGL
+   * contexts it will hand out — around sixteen — so a batch that built one per
+   * photo would die partway through a folder. Left unset, one is made and
+   * disposed for this single render.
+   */
+  renderer?: Renderer
+}
+
+/**
+ * The render-and-encode half of an export, without the saving. Split out so a
+ * batch can drive it directly with one renderer and one destination, rather
+ * than going through the single-file path that prompts for somewhere to put
+ * each photo.
+ */
+export async function renderToBlob(
+  request: RenderRequest,
+): Promise<{ blob: Blob | null; width: number; height: number }> {
+  const { source, meta, edits, settings, width, height, onProgress } = request
+
   const canvas =
     typeof OffscreenCanvas !== 'undefined'
       ? new OffscreenCanvas(width, height)
       : Object.assign(document.createElement('canvas'), { width, height })
 
-  const renderer = new Renderer(canvas)
+  const owned = !request.renderer
+  const renderer = request.renderer ?? new Renderer(canvas)
+  const surface = renderer.canvas
+
+  // A reused renderer arrives sized for whatever it drew last.
+  if (!owned) {
+    surface.width = width
+    surface.height = height
+  }
+
   try {
     onProgress?.('Rendering')
     renderer.setImage(source, meta.orientation)
@@ -81,25 +137,11 @@ export async function exportImage(request: ExportRequest): Promise<ExportResult>
     renderer.gl.finish()
 
     onProgress?.('Encoding')
-    const blob = await encode(canvas, settings)
-    if (!blob) throw new Error('The browser could not encode the exported image')
-
-    const filename = exportFilename(meta.name, settings.format)
-
-    onProgress?.('Saving')
-    if (request.overwriteHandle) {
-      const ok = await writeToHandle(request.overwriteHandle, blob)
-      if (ok) {
-        return { outcome: 'saved', filename, width, height, bytes: blob.size }
-      }
-    }
-
-    const outcome = await saveBlob(blob, filename, MIME[settings.format], EXT[settings.format])
-    return { outcome, filename, width, height, bytes: blob.size }
+    return { blob: await encode(surface, settings), width, height }
   } finally {
     // Its canvas is discarded with this call, so free the context now rather
     // than letting exports pile up live contexts against the browser's cap.
-    renderer.dispose({ loseContext: true })
+    if (owned) renderer.dispose({ loseContext: true })
   }
 }
 

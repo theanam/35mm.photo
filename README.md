@@ -35,6 +35,8 @@ original file is never rewritten unless you export.
   chromatic aberration
 - **Halation, grain and vignette**
 - **Live histogram and RGB parade**
+- **Batch editing** — select many photos, sync settings by group, export a
+  whole selection into one folder
 - **Installs as a PWA** and works offline
 
 ## Formats
@@ -134,8 +136,11 @@ about a photo is sent anywhere.
 
 ## Not implemented
 
-Masks and local adjustments, batch editing, and a WebGPU backend — capability
-detection exists, but WebGL2 is the only implemented one.
+Masks and local adjustments, and a WebGPU backend — capability detection
+exists, but WebGL2 is the only implemented one.
+
+Batch export needs the File System Access API to write a folder; browsers
+without it fall back to exporting one photo at a time.
 
 Lens correction is manual only. Profile-driven correction needs Adobe's lens
 profile database, which cannot be shipped with a web app, so a preset that

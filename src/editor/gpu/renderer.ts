@@ -62,7 +62,11 @@ export class Renderer {
   private orientation: Orientation = 1
   private disposed = false
 
+  /** The surface this renderer draws to, so a batch can size it per photo. */
+  readonly canvas: Canvas
+
   constructor(canvas: Canvas) {
+    this.canvas = canvas
     const gl = canvas.getContext('webgl2', {
       alpha: false,
       antialias: false,

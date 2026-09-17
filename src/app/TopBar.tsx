@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
 import { Mark } from './Mark'
 import { saveSidecar } from '../io/export'
@@ -14,6 +15,34 @@ export function TopBar() {
   const loading = useEditor((s) => s.loading)
   const loadingLabel = useEditor((s) => s.loadingLabel)
   const setAboutOpen = useEditor((s) => s.setAboutOpen)
+  const frames = useEditor((s) => s.frames)
+  const selection = useEditor((s) => s.selection)
+  const exportSelection = useEditor((s) => s.exportSelection)
+  const batch = useEditor((s) => s.batch)
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const editedIds = frames.filter((f) => (f.editCount ?? 0) > 0).map((f) => f.id)
+  // The plain Export button already covers the open photo, so the menu only
+  // earns its place once there is a second thing to export.
+  const batchOptions = selection.length > 1 || editedIds.length > 1
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
 
   const meta = photo?.meta
 
@@ -89,9 +118,72 @@ export function TopBar() {
           <button className="button" onClick={onSaveEdits}>
             Save edits
           </button>
-          <button className="button button--accent" onClick={() => setExportOpen(true)}>
-            Export…
-          </button>
+          <div className="export-split" data-split={batchOptions || undefined} ref={menuRef}>
+            <button
+              className="button button--accent export-split__main"
+              onClick={() => setExportOpen(true)}
+            >
+              Export…
+            </button>
+
+            {batchOptions && (
+              <>
+                <button
+                  className="button button--accent export-split__more"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  disabled={batch.running}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  aria-label="More export options"
+                >
+                  ▾
+                </button>
+
+                {menuOpen && (
+                  <div className="menu" role="menu">
+                    <button
+                      className="menu__item"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setExportOpen(true)
+                      }}
+                    >
+                      Export this photo…
+                    </button>
+
+                    {selection.length > 1 && (
+                      <button
+                        className="menu__item"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false)
+                          void exportSelection()
+                        }}
+                      >
+                        Export selected
+                        <span className="mono">{selection.length}</span>
+                      </button>
+                    )}
+
+                    {editedIds.length > 1 && (
+                      <button
+                        className="menu__item"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false)
+                          void exportSelection(editedIds)
+                        }}
+                      >
+                        Export all edited
+                        <span className="mono">{editedIds.length}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
     </header>
