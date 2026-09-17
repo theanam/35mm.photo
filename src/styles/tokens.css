@@ -69,6 +69,12 @@
 
 html, body, #root { height: 100%; }
 
+/* iOS Safari's collapsing toolbar makes percentage heights jump; dvh tracks the
+   actually-visible viewport. */
+@supports (height: 100dvh) {
+  body, #root { height: 100dvh; }
+}
+
 body {
   margin: 0;
   background: var(--bg-app);
@@ -77,6 +83,9 @@ body {
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  /* Drops the 300ms tap delay without disabling pinch-zoom of the page. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button { font-family: inherit; }
