@@ -42,6 +42,26 @@ export function GrainTool() {
 
         <section className="tool__group">
           <header className="tool__group-head">
+            <span>Halation</span>
+          </header>
+          <Slider
+            label="Amount"
+            value={edits.halation}
+            min={0}
+            max={100}
+            origin={0}
+            resetTo={0}
+            format={(v) => formatPlain(v)}
+            onChange={(v) => update({ halation: v }, 'halation')}
+          />
+          <p className="tool__hint">
+            The warm glow film gets around a bright light, from the red layer scattering
+            deepest in the emulsion. Strongest where highlights meet shadow.
+          </p>
+        </section>
+
+        <section className="tool__group">
+          <header className="tool__group-head">
             <span>Vignette</span>
           </header>
           <Slider

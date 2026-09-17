@@ -10,7 +10,7 @@ export function DetailTool() {
       <div className="tool__columns">
         <section className="tool__group">
           <header className="tool__group-head">
-            <span>Sharpness</span>
+            <span>Contrast &amp; detail</span>
           </header>
           <Slider
             label="Clarity"
@@ -18,6 +18,20 @@ export function DetailTool() {
             min={-100}
             max={100}
             onChange={(v) => update({ clarity: v }, 'clarity')}
+          />
+          <Slider
+            label="Texture"
+            value={edits.texture}
+            min={-100}
+            max={100}
+            onChange={(v) => update({ texture: v }, 'texture')}
+          />
+          <Slider
+            label="Dehaze"
+            value={edits.dehaze}
+            min={-100}
+            max={100}
+            onChange={(v) => update({ dehaze: v }, 'dehaze')}
           />
           <Slider
             label="Sharpen"
