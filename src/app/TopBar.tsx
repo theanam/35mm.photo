@@ -1,6 +1,8 @@
 import { useEditor } from '../editor/edit-stack/store'
 import { Mark } from './Mark'
 import { saveSidecar } from '../io/export'
+import { IconGitHub, IconHelp } from './ui/icons'
+import { REPO_URL } from './AboutDialog'
 
 export function TopBar() {
   const photo = useEditor((s) => s.photo)
@@ -11,6 +13,7 @@ export function TopBar() {
   const markSidecarSaved = useEditor((s) => s.markSidecarSaved)
   const loading = useEditor((s) => s.loading)
   const loadingLabel = useEditor((s) => s.loadingLabel)
+  const setAboutOpen = useEditor((s) => s.setAboutOpen)
 
   const meta = photo?.meta
 
@@ -53,6 +56,29 @@ export function TopBar() {
       <div className="topbar__status">
         <span className="dot" />
         <span>{meta ? 'Edits saved locally · non-destructive' : 'Works offline · nothing to install'}</span>
+      </div>
+
+      {/* Always present, with or without a photo: the way out to the source and
+          to a bug report should not depend on having opened something first. */}
+      <div className="topbar__meta-actions">
+        <a
+          className="icon-button icon-button--quiet"
+          href={REPO_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+          title="Source on GitHub"
+          aria-label="Source on GitHub"
+        >
+          <IconGitHub size={15} />
+        </a>
+        <button
+          className="icon-button icon-button--quiet"
+          onClick={() => setAboutOpen(true)}
+          title="Help and about"
+          aria-label="Help and about"
+        >
+          <IconHelp size={16} />
+        </button>
       </div>
 
       {meta && (

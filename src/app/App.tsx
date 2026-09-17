@@ -10,6 +10,7 @@ import { IdleRail } from './IdleRail'
 import { EmptyState } from './EmptyState'
 import { LoadingOverlay } from './LoadingOverlay'
 import { ExportDialog } from './ExportDialog'
+import { AboutDialog } from './AboutDialog'
 import { Toasts } from './Toasts'
 import { useKeyboard } from './useKeyboard'
 import { useDropTarget } from './useDropTarget'
@@ -85,6 +86,7 @@ export function App() {
 
       <LoadingOverlay />
       <ExportDialog />
+      <AboutDialog />
       <Toasts />
     </div>
   )

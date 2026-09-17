@@ -807,6 +807,14 @@
 .look__remove:focus-visible { opacity: 1; }
 .look__remove:hover { background: #8a4a44; }
 
+.idle-group__note {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  text-wrap: pretty;
+}
+
 .looks__custom { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 .looks__custom .tool__group-head { margin: 0; }
 
@@ -1373,4 +1381,87 @@
   border-radius: 50%;
   background: var(--text);
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+}
+
+/* ──────────────────────── help / about ──────────────────────── */
+
+.topbar__meta-actions { display: flex; align-items: center; gap: 4px; margin-left: 10px; }
+
+/* Chromeless until hovered: these sit beside Export and must not compete with
+   it, but they are also the only route to the source and the issue tracker. */
+.icon-button--quiet {
+  width: 30px;
+  height: 30px;
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
+  text-decoration: none;
+}
+.icon-button--quiet:hover {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+
+/*
+ * The about panel owns its own section heading rather than reusing .field.
+ * There are two .field rules in this sheet and the later one only overrides
+ * flex-direction, so the earlier align-items:center survives and centres
+ * everything inside it — fine for the export dialog's chip rows, wrong for
+ * paragraphs and lists.
+ */
+.about__section { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; }
+
+.about__label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* Inline links in a note, which would otherwise fall back to the browser's
+   blue against a dark panel. */
+.modal__note a { color: var(--link); text-decoration-color: color-mix(in srgb, var(--link) 45%, transparent); }
+.modal__note a:hover { color: var(--link-hover); }
+
+.about__list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+.about__list code { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+
+.about__links { display: flex; flex-direction: column; gap: 8px; align-self: stretch; }
+
+.about__link {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+.about__link:hover { border-color: var(--line-soft); background: var(--surface-hover); }
+.about__link span { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.about__link small { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+.about__at { font-size: 17px; font-weight: 700; color: var(--text-muted); width: 15px; text-align: center; }
+
+kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  color: var(--text);
+  background: var(--bg-app);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
 }
