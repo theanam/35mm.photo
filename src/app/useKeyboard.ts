@@ -7,7 +7,10 @@ import { pickFiles } from '../io/file-system'
 export function useKeyboard() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null
+      // Checked rather than cast: a keydown can be dispatched at the window or
+      // the document, which have no closest(), and the throw would take every
+      // shortcut down with it.
+      const target = event.target instanceof Element ? event.target : null
       // Never steal a key from a field the user is typing in.
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) {
         if (!(event.key === 'Escape')) return
