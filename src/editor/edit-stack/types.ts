@@ -125,6 +125,99 @@ export interface LensState {
   ca: number
 }
 
+/**
+ * Local adjustments (spec §7). A mask is a shape or a colour range, not a
+ * painted bitmap: everything here is a handful of numbers, so masks survive a
+ * `.35mm.json` sidecar, an IndexedDB record and a batch sync with no special
+ * serialiser — the same property that makes every other edit parametric.
+ *
+ * Geometry is stored in *upright image* coordinates, 0..1 across the photo the
+ * right way up, before the crop, the quarter turns and the flips. That is what
+ * makes a mask stick to the thing it was drawn over: re-crop or straighten
+ * afterwards and the mask travels with the content rather than with the frame.
+ */
+export interface MaskAdjust {
+  exposure: number // −4..4 EV
+  contrast: number // −100..100
+  highlights: number // −100..100
+  shadows: number // −100..100
+  whites: number // −100..100
+  blacks: number // −100..100
+  /**
+   * A *shift*, −100..100, not an absolute Kelvin like the global control. Only
+   * the whole frame has a light source to be described; a region has a
+   * neighbourhood to be warmed or cooled relative to it.
+   */
+  temperature: number
+  tint: number // −100..100
+  saturation: number // −100..100
+  clarity: number // −100..100
+  texture: number // −100..100
+  sharpen: number // 0..100
+}
+
+interface MaskCommon {
+  id: string
+  /** Shown in the mask list; editable, and defaulted from the kind. */
+  name: string
+  /** Off keeps the mask in the list but out of the render. */
+  enabled: boolean
+  /** Act everywhere the mask does not, instead of where it does. */
+  invert: boolean
+  /** Overall strength of the whole mask, 0..100. */
+  amount: number
+  /** How far the edge fades, 0..100. For a range mask, how soft its ends are. */
+  feather: number
+  adjust: MaskAdjust
+}
+
+/** An ellipse. Radii are in upright-uv units; the angle turns it in real space. */
+export interface RadialMask extends MaskCommon {
+  kind: 'radial'
+  cx: number
+  cy: number
+  rx: number
+  ry: number
+  /** Degrees, clockwise. */
+  angle: number
+}
+
+/**
+ * A gradient running from full effect at (x1,y1) to none at (x2,y2). Two points
+ * rather than an angle and a width, because that is the gesture: you drag from
+ * where the effect should be strongest to where it should stop.
+ */
+export interface LinearMask extends MaskCommon {
+  kind: 'linear'
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
+/** Everything between two luminance levels, 0..100. */
+export interface LuminanceMask extends MaskCommon {
+  kind: 'luminance'
+  lo: number
+  hi: number
+}
+
+/** A slice of the colour wheel. */
+export interface ColourMask extends MaskCommon {
+  kind: 'colour'
+  /** Centre of the slice, 0..360. */
+  hue: number
+  /** How much of the wheel it covers, 0..100. */
+  width: number
+}
+
+export type Mask = RadialMask | LinearMask | LuminanceMask | ColourMask
+
+export type MaskKind = Mask['kind']
+
+/** Every pass evaluates every mask per pixel, so the ceiling is a real one. */
+export const MAX_MASKS = 8
+
 export interface EditState {
   /* Light */
   exposure: number // −5..5 EV
@@ -164,6 +257,9 @@ export interface EditState {
   grain: number // 0..100
   grainSize: number // 0..100
   vignette: number // −100..100
+
+  /* Local adjustments */
+  masks: Mask[]
 
   /* Geometry */
   crop: CropState

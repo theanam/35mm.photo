@@ -27,6 +27,8 @@ original file is never rewritten unless you export.
 - **Tone curves**, RGB and per-channel
 - **Colour mixer** — hue, saturation and luminance across eight bands
 - **Colour grading** — split toning across shadows, midtones and highlights
+- **Masks and local adjustments** — radial, linear, and luminance or colour
+  range, each carrying its own tone, colour and detail
 - **Detail** — texture, clarity, dehaze, sharpening, luminance and chroma
   noise reduction
 - **Looks** — nine built-ins, plus your own imported LUTs and presets
@@ -51,9 +53,11 @@ original file is never rewritten unless you export.
 
 A Lightroom preset imports as slider values rather than a baked cube, so
 everything it sets stays editable afterwards. Whatever it uses that this
-pipeline has no equivalent for — masks, camera profiles, texture, dehaze, lens
-and perspective corrections — is reported on import rather than dropped in
-silence.
+pipeline has no equivalent for — camera profiles, texture, dehaze, lens and
+perspective corrections, and Lightroom's own masks — is reported on import
+rather than dropped in silence. 35mm has masks of its own, but not Lightroom's
+model of them: theirs carries AI subject and sky selections, mask groups and
+intersections, none of which a handful of numbers can stand in for.
 
 GPR, X3F and plain RGB TIFF are not supported. They fail with a message saying
 so rather than appearing to work.
@@ -84,6 +88,7 @@ a unit test can meaningfully assert about.
 | `⌘C` / `⌘V` | copy / paste look |
 | `\` | before/after split |
 | `C` | crop |
+| `M` | masks |
 | `F` / `1` | fit / 100% |
 | `←` `→` | previous / next photo |
 | `[` `]` | cycle looks |
@@ -115,7 +120,14 @@ brand/          brand sources and the social card's render step
 Edit state is a single plain-JSON object. Nothing is baked into pixels until
 export, so undo, the before/after split and the `.35mm.json` sidecar all fall
 out of the same parametric state. Rendering is one WebGL2 graph — geometry,
-colour, detail and finishing passes, with looks applied as a 3D LUT.
+colour, local, detail and finishing passes, with looks applied as a 3D LUT.
+
+Masks are part of that state rather than an exception to it: a shape or a range
+is a few numbers, so local adjustments round-trip through a sidecar like
+everything else. They are stored in upright image coordinates — the picture the
+right way up, before the crop — which is what lets a mask stay on the thing it
+was placed over when the crop, the straighten or the quarter turns change
+underneath it.
 
 Raw decoding and histogram binning run in workers. The LibRaw binary is 1.4 MB
 and sits behind a dynamic import, so it is fetched only when you open a raw
@@ -136,8 +148,13 @@ about a photo is sent anywhere.
 
 ## Not implemented
 
-Masks and local adjustments, and a WebGPU backend — capability detection
-exists, but WebGL2 is the only implemented one.
+A WebGPU backend — capability detection exists, but WebGL2 is the only
+implemented one.
+
+Masks are parametric shapes and ranges. There is no brush: a painted mask is a
+bitmap, and a bitmap is the one thing this edit state cannot carry as a few
+numbers in a sidecar. Eight masks per photo is the ceiling, because every pass
+that reads them evaluates every one of them per pixel.
 
 Batch export needs the File System Access API to write a folder; browsers
 without it fall back to exporting one photo at a time.

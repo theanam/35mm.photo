@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyMat3Point,
   buildPerspective,
+  buildUprightTransform,
   buildUvTransform,
   mat3Identity,
+  mat3Invert,
   mat3Mul,
   outputSize,
   uprightSize,
@@ -127,5 +130,57 @@ describe('buildPerspective', () => {
     const out = apply(m, 0.42, 0.63)
     expect(out.u).toBeCloseTo(0.42, 6)
     expect(out.v).toBeCloseTo(0.63, 6)
+  })
+})
+
+describe('mat3Invert', () => {
+  it('round-trips a point through a projective transform', () => {
+    const m = buildUprightTransform(
+      3000,
+      2000,
+      { ...crop(), x: 0.2, y: 0.1, w: 0.5, h: 0.6, angle: 7, rotate90: 1, flipH: true },
+      { vertical: 40, horizontal: -20, aspect: 10, scale: 105 },
+    )
+    const inverse = mat3Invert(m)
+    expect(inverse).not.toBeNull()
+
+    for (const [u, v] of [[0, 0], [1, 1], [0.37, 0.82], [0.5, 0.5]]) {
+      const [x, y] = applyMat3Point(m, u, v)
+      const [bu, bv] = applyMat3Point(inverse!, x, y)
+      expect(bu).toBeCloseTo(u, 5)
+      expect(bv).toBeCloseTo(v, 5)
+    }
+  })
+
+  it('returns null for a matrix that collapses the plane', () => {
+    expect(mat3Invert(new Float32Array([1, 2, 3, 2, 4, 6, 0, 0, 0]))).toBeNull()
+  })
+})
+
+describe('buildUprightTransform', () => {
+  it('leaves the EXIF step to buildUvTransform', () => {
+    const c = { ...crop(), x: 0.1, y: 0.2, w: 0.4, h: 0.5, angle: -4 }
+    const upright = buildUprightTransform(2000, 3000, c)
+    // Orientation 1 stores the pixels the right way up, so the two agree.
+    const withExif = buildUvTransform(2000, 3000, c, 1)
+    expect([...upright]).toEqual([...withExif])
+  })
+
+  it('keeps a mask anchored to the picture when the crop moves', () => {
+    // A point on the subject, in upright uv. Whatever the crop does, asking
+    // the transform for that point must give back the same place.
+    const subject: [number, number] = [0.62, 0.41]
+
+    const find = (c: ReturnType<typeof crop>) => {
+      const inverse = mat3Invert(buildUprightTransform(3000, 2000, c))!
+      return applyMat3Point(inverse, subject[0], subject[1])
+    }
+
+    const wide = find({ ...crop() })
+    const tight = find({ ...crop(), x: 0.25, y: 0.2, w: 0.5, h: 0.5 })
+
+    // Same content, so the output position shifts exactly as the crop does.
+    expect(tight[0]).toBeCloseTo((wide[0] - 0.25) / 0.5, 6)
+    expect(tight[1]).toBeCloseTo((wide[1] - 0.2) / 0.5, 6)
   })
 })

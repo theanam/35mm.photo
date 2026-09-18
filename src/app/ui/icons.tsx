@@ -152,6 +152,29 @@ export const IconGitHub = ({ size = 16 }: Props) => (
   </svg>
 )
 
+export const IconEye = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M1.4 8s2.6-4.2 6.6-4.2S14.6 8 14.6 8s-2.6 4.2-6.6 4.2S1.4 8 1.4 8Z" />
+    <circle cx="8" cy="8" r="1.9" />
+  </svg>
+)
+
+export const IconEyeOff = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M2.6 5.4C1.8 6.4 1.4 8 1.4 8s2.6 4.2 6.6 4.2c1 0 1.9-.26 2.7-.66M6.1 4.1c.6-.2 1.2-.3 1.9-.3 4 0 6.6 4.2 6.6 4.2s-.7 1.15-1.9 2.25" />
+    <path d="m6.5 6.5a2.1 2.1 0 0 0 3 3" />
+    <path d="M2.2 2.2 13.8 13.8" opacity=".75" />
+  </svg>
+)
+
+/** A disc half-painted: the mask, and the picture showing through beside it. */
+export const IconMask = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <circle cx="8" cy="8" r="5.6" />
+    <path d="M8 2.4a5.6 5.6 0 0 0 0 11.2Z" fill="currentColor" stroke="none" opacity=".7" />
+  </svg>
+)
+
 export const IconCrop = ({ size = 16 }: Props) => (
   <svg {...base(size)}>
     <path d="M4.2 1v10.8H15" />

@@ -1,9 +1,15 @@
 import { GLSL_COMMON } from './common.glsl'
+import { GLSL_MASK } from './mask.glsl'
 
 /**
  * Grain then vignette, the last two stages of spec §6. Grain is generated
  * rather than sampled from a texture so its size tracks the look and the export
  * resolution without a second asset to ship.
+ *
+ * The mask overlay is painted here, after everything else, because it is not
+ * part of the picture: it is an answer to "where is this mask?", and it should
+ * show exactly the weight the render used — not that weight sharpened, grained
+ * and vignetted on its way to the screen.
  */
 export const FINISH_FRAG = /* glsl */ `#version 300 es
 precision highp float;
@@ -21,8 +27,11 @@ uniform float uGrainSize;    // pixels per grain cell
 uniform float uGrainShadowBias; // 0..1
 uniform float uVignette;     // -1..1
 uniform float uSeed;
+/** Index of the mask to paint over the picture, or −1 for none. */
+uniform int   uMaskOverlay;
 
 ${GLSL_COMMON}
+${GLSL_MASK}
 
 float hash(vec2 p) {
   p = fract(p * vec2(443.8975, 397.2973));
@@ -87,6 +96,15 @@ void main() {
     c *= 1.0 - uVignette * falloff * 0.85;
   }
 
-  fragColor = vec4(clamp(c, 0.0, 1.0), src.a);
+  c = clamp(c, 0.0, 1.0);
+
+  if (uMaskOverlay >= 0) {
+    // Safelight red, the one hue the interface never uses for anything else.
+    const vec3 OVERLAY = vec3(0.85, 0.20, 0.14);
+    float w = maskWeight(uMaskOverlay, maskUv(vUv), c);
+    c = mix(c, OVERLAY, w * 0.45);
+  }
+
+  fragColor = vec4(c, src.a);
 }
 `

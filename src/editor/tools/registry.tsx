@@ -13,13 +13,14 @@ import {
   hasFinishEdits,
   hasGradeEdits,
   hasLensEdits,
+  hasMaskEdits,
   hasMixerEdits,
   hasToneEdits,
   type PanelId,
 } from '../edit-stack/summary'
 import {
   IconCrop, IconCurves, IconDetail, IconGrade, IconGrain, IconLens, IconLight, IconLooks,
-  IconMixer, IconRaw,
+  IconMask, IconMixer, IconRaw,
 } from '../../app/ui/icons'
 import { LooksTool } from './LooksTool'
 import { LightTool } from './LightTool'
@@ -28,6 +29,7 @@ import { MixerTool } from './MixerTool'
 import { ColorGradeTool } from './ColorGradeTool'
 import { LensTool } from './LensTool'
 import { CropTool } from './CropTool'
+import { MasksTool } from './MasksTool'
 import { DetailTool } from './DetailTool'
 import { GrainTool } from './GrainTool'
 import { RawTool } from './RawTool'
@@ -116,6 +118,15 @@ export const TOOLS: ToolDef[] = [
     reset: () => ({ colorGrade: neutralColorGrade() }),
   },
   {
+    id: 'masks',
+    label: 'Masks',
+    hint: 'local adjustments — radial, linear and range',
+    Icon: IconMask,
+    Content: MasksTool,
+    isDirty: hasMaskEdits,
+    reset: () => ({ masks: [] }),
+  },
+  {
     id: 'crop',
     label: 'Crop',
     hint: 'aspect, straighten and rotation',
@@ -175,10 +186,12 @@ export const TOOLS: ToolDef[] = [
  * Tools that live in the top toolbar, each opening a drawer with its own
  * apply/discard. Geometry goes here because it needs the whole viewport and a
  * commit gesture; the continuous colour adjustments stay in the right rail.
+ * Masks join them for the same reason: placing one is a gesture on the picture,
+ * not a slider you leave open.
  *
  * Add an id here to promote a tool to the toolbar — nothing else needs to change.
  */
-export const TOOLBAR_TOOL_IDS: ToolId[] = ['crop']
+export const TOOLBAR_TOOL_IDS: ToolId[] = ['crop', 'masks']
 
 export const TOOLS_BY_ID = new Map(TOOLS.map((t) => [t.id, t]))
 

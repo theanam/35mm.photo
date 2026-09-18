@@ -1,10 +1,17 @@
 import { GLSL_COMMON } from './common.glsl'
+import { GLSL_MASK } from './mask.glsl'
 
 /**
  * Clarity and sharpening, both unsharp variants against pre-blurred copies at
  * different radii (spec §4.2). Clarity works on luminance only so it does not
  * bloom colour; sharpening is masked away from flat areas so noise does not get
  * amplified along with detail.
+ *
+ * Masks reach this pass because clarity, texture and sharpening are the three
+ * local adjustments that need a blurred copy to work against, and those copies
+ * belong to this stage. Each one adds its masked amount to the global slider
+ * before the maths runs, so a mask asking for +40 clarity over a frame already
+ * set to +20 gets +60 there and +20 everywhere else.
  */
 export const DETAIL_FRAG = /* glsl */ `#version 300 es
 precision highp float;
@@ -24,11 +31,34 @@ uniform float uSharpen;        // 0..1
 uniform float uDenoiseLuma;    // 0..1
 uniform float uDenoiseChroma;  // 0..1
 
+// clarity, texture, sharpen, unused
+uniform vec4 uMaskDetail[8];
+
 ${GLSL_COMMON}
+${GLSL_MASK}
 
 void main() {
   vec4 src = texture(uImage, vUv);
   vec3 c = src.rgb;
+
+  // Resolved against the incoming picture, so a luminance or colour range mask
+  // measures what came out of the colour pass rather than something the
+  // sharpening in this pass has already moved.
+  float clarity = uClarity;
+  float texAmount = uTexture;
+  float sharpen = uSharpen;
+  if (uMaskCount > 0) {
+    vec2 p = maskUv(vUv);
+    for (int i = 0; i < MAX_MASKS; i++) {
+      if (i >= uMaskCount) break;
+      float w = maskWeight(i, p, src.rgb);
+      if (w <= 0.0) continue;
+      vec4 d = uMaskDetail[i];
+      clarity   += d.x * w;
+      texAmount += d.y * w;
+      sharpen   += d.z * w;
+    }
+  }
 
   if (uDenoiseLuma > 0.0 || uDenoiseChroma > 0.0) {
     // Blend toward the tight blur, splitting luma and chroma so chroma noise
@@ -80,31 +110,31 @@ void main() {
    * clarity it runs on luminance only, which is what keeps it from turning
    * skin blotchy.
    */
-  if (uTexture != 0.0) {
+  if (texAmount != 0.0) {
     float y = luma(c);
     float base = luma(texture(uMidBlur, vUv).rgb);
     float detail = y - base;
     // Negative texture smooths, and smoothing wants no edge guard at all.
-    float guard = uTexture > 0.0 ? 1.0 - smoothstep(0.86, 1.0, y) : 1.0;
-    float shaped = y + detail * uTexture * 1.25 * guard;
+    float guard = texAmount > 0.0 ? 1.0 - smoothstep(0.86, 1.0, y) : 1.0;
+    float shaped = y + detail * texAmount * 1.25 * guard;
     c *= (y > 1.0e-4) ? shaped / y : 1.0;
   }
 
-  if (uClarity != 0.0) {
+  if (clarity != 0.0) {
     float y = luma(c);
     float base = luma(texture(uWideBlur, vUv).rgb);
     float detail = y - base;
     // Taper in the extremes so clarity does not halo against a blown sky.
     float guard = 1.0 - smoothstep(0.82, 1.0, y) - smoothstep(0.18, 0.0, y);
-    float boosted = y + detail * uClarity * 1.6 * clamp(guard, 0.0, 1.0);
+    float boosted = y + detail * clarity * 1.6 * clamp(guard, 0.0, 1.0);
     c *= (y > 1.0e-4) ? boosted / y : 1.0;
   }
 
-  if (uSharpen > 0.0) {
+  if (sharpen > 0.0) {
     vec3 base = texture(uTightBlur, vUv).rgb;
     vec3 detail = c - base;
     float edge = smoothstep(0.004, 0.05, length(detail));
-    c += detail * uSharpen * 2.0 * edge;
+    c += detail * sharpen * 2.0 * edge;
   }
 
   fragColor = vec4(clamp(c, 0.0, 1.0), src.a);

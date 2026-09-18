@@ -4,6 +4,9 @@ import { GLSL_COMMON } from './common.glsl'
  * The colour pass: white balance → exposure → tone → curves → HSL →
  * saturation/vibrance → look LUT, in the order spec §6 lays out.
  *
+ * Tone and saturation themselves live in `common.glsl`, because the local pass
+ * runs the identical maths on whatever the masks resolve to.
+ *
  * Edge sampling is clamped rather than wrapped; with a straighten angle the
  * transform can reach just outside the source rect.
  */
@@ -65,42 +68,6 @@ const float BAND_CENTER[8] = float[8](
 
 float curveLookup(float x, float row) {
   return texture(uCurves, vec2(clamp(x, 0.0, 1.0), (row + 0.5) / 4.0)).r;
-}
-
-/**
- * Highlight/shadow/white/black recovery with smooth luminance masks. Working on
- * a ratio rather than adding a flat offset keeps colour from drifting when a
- * region is pushed hard.
- */
-vec3 applyTone(vec3 c) {
-  float y = luma(c);
-
-  if (uHighlights != 0.0) {
-    float m = smoothstep(0.45, 1.0, y);
-    float target = uHighlights > 0.0 ? mix(y, 1.0, uHighlights) : mix(y, y * 0.45, -uHighlights);
-    c *= (y > 1.0e-4) ? mix(1.0, target / y, m) : 1.0;
-    y = luma(c);
-  }
-  if (uShadows != 0.0) {
-    float m = 1.0 - smoothstep(0.0, 0.55, y);
-    float target = uShadows > 0.0 ? mix(y, pow(max(y, 1.0e-4), 0.55), uShadows)
-                                  : mix(y, y * 0.5, -uShadows);
-    c *= (y > 1.0e-4) ? mix(1.0, target / y, m) : 1.0;
-    y = luma(c);
-  }
-  if (uWhites != 0.0) {
-    c *= 1.0 + uWhites * 0.35 * smoothstep(0.25, 1.0, y);
-    y = luma(c);
-  }
-  if (uBlacks != 0.0) {
-    c += uBlacks * 0.18 * (1.0 - smoothstep(0.0, 0.45, y));
-  }
-
-  if (uContrast != 0.0) {
-    // Pivot on middle grey so contrast does not double as an exposure change.
-    c = (c - 0.5) * (1.0 + uContrast) + 0.5;
-  }
-  return c;
 }
 
 vec3 applyHsl(vec3 c) {
@@ -166,21 +133,6 @@ vec3 applyGrade(vec3 c) {
   return c;
 }
 
-vec3 applySaturation(vec3 c) {
-  float y = luma(c);
-  if (uVibrance != 0.0) {
-    float sat = max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b);
-    // Vibrance leans on the least-saturated pixels and mostly spares skin.
-    float w = 1.0 - smoothstep(0.1, 0.85, sat);
-    c = mix(vec3(y), c, 1.0 + uVibrance * w);
-    y = luma(c);
-  }
-  if (uSaturation != 0.0) {
-    c = mix(vec3(y), c, 1.0 + uSaturation);
-  }
-  return c;
-}
-
 /**
  * Radial remap about the frame centre, measured in aspect-corrected space so
  * the correction stays circular on a non-square frame. The factor scales radius by
@@ -225,7 +177,7 @@ void main() {
   lin *= exp2(uExposure);
   vec3 c = toSrgb(lin);
 
-  c = applyTone(c);
+  c = applyTone(c, uContrast, uHighlights, uShadows, uWhites, uBlacks);
   c = clamp(c, 0.0, 1.0);
 
   if (uHasCurves) {
@@ -234,7 +186,7 @@ void main() {
   }
 
   if (uHasHsl) c = applyHsl(c);
-  c = clamp(applySaturation(c), 0.0, 1.0);
+  c = clamp(applySaturation(c, uVibrance, uSaturation), 0.0, 1.0);
 
   // Camera Raw grades after the basic, curve and HSL block but before the
   // profile look, so this sits between saturation and the LUT.

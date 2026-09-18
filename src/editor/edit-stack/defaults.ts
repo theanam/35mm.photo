@@ -88,6 +88,8 @@ export function defaultEdits(): EditState {
     grainSize: 50,
     vignette: 0,
 
+    masks: [],
+
     perspective: neutralPerspective(),
     lens: neutralLens(),
 

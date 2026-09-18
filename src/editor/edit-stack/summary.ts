@@ -1,6 +1,7 @@
 import { NEUTRAL_TEMPERATURE } from './defaults'
 import { isIdentityCurve } from '../presets/curve'
 import { getLook } from '../presets/catalogue'
+import { maskIsActive } from './masks'
 import { GRADE_ZONES, HSL_BANDS, type EditState, type ImageMeta } from './types'
 
 /** Panels the chips can jump to — matches the right-rail group ids. */
@@ -14,6 +15,7 @@ export type PanelId =
   | 'lens'
   | 'detail'
   | 'grain'
+  | 'masks'
   | 'raw'
 
 export interface StackChip {
@@ -79,6 +81,15 @@ export function hasDetailEdits(edits: EditState): boolean {
     edits.clarity !== 0 || edits.texture !== 0 || edits.dehaze !== 0 ||
     edits.sharpen !== 0 || edits.denoiseLuma !== 0 || edits.denoiseChroma !== 0
   )
+}
+
+/**
+ * A mask counts once it would change something. An empty one is a mask you are
+ * still placing, and the edit stack should not claim the photo has been altered
+ * because you opened the tool.
+ */
+export function hasMaskEdits(edits: EditState): boolean {
+  return edits.masks.some(maskIsActive)
 }
 
 export function hasFinishEdits(edits: EditState): boolean {
@@ -177,6 +188,16 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
             ? `sharpen ${Math.round(edits.sharpen)}`
             : `clarity ${signed(edits.clarity)}`
     chips.push({ id: 'detail', label: 'Detail', value, panel: 'detail' })
+  }
+
+  if (hasMaskEdits(edits)) {
+    const count = edits.masks.filter(maskIsActive).length
+    chips.push({
+      id: 'masks',
+      label: 'Masks',
+      value: `${count} local`,
+      panel: 'masks',
+    })
   }
 
   const look = getLook(edits.look.id)

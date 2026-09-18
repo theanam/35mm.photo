@@ -7,9 +7,17 @@ import { BLUR_FRAG } from '../shaders/blur.glsl'
 import { COLOR_FRAG } from '../shaders/color.glsl'
 import { DETAIL_FRAG } from '../shaders/detail.glsl'
 import { FINISH_FRAG } from '../shaders/finish.glsl'
+import { LOCAL_FRAG } from '../shaders/local.glsl'
 import { PASSTHROUGH_VERT, QUAD_VERT } from '../shaders/quad.glsl'
 import { RenderTarget, SCRATCH_UNIT, Uniforms, createProgram, createQuad } from './gl'
-import { buildUvTransform, displaySize, mat3Identity, uprightSize } from './transform'
+import {
+  buildUprightTransform,
+  buildUvTransform,
+  displaySize,
+  mat3Identity,
+  uprightSize,
+} from './transform'
+import { packMasks, type PackedMasks } from './mask-uniforms'
 import type { Orientation } from '../../io/exif'
 import { whiteBalanceGain } from './whitebalance'
 
@@ -20,6 +28,11 @@ export interface RenderOptions {
   splitAt?: number | null
   /** Render the original only, ignoring every adjustment. */
   beforeOnly?: boolean
+  /**
+   * Index into `edits.masks` of a mask to paint over the picture, so you can
+   * see where it falls. Nothing else about the render changes.
+   */
+  maskOverlay?: number | null
 }
 
 type Canvas = HTMLCanvasElement | OffscreenCanvas
@@ -34,15 +47,18 @@ export class Renderer {
 
   private quad: { vao: WebGLVertexArrayObject; buffer: WebGLBuffer }
   private colorProgram: WebGLProgram
+  private localProgram: WebGLProgram
   private blurProgram: WebGLProgram
   private detailProgram: WebGLProgram
   private finishProgram: WebGLProgram
   private colorU: Uniforms
+  private localU: Uniforms
   private blurU: Uniforms
   private detailU: Uniforms
   private finishU: Uniforms
 
   private rtColor: RenderTarget
+  private rtLocal: RenderTarget
   private rtPing: RenderTarget
   private rtWide: RenderTarget
   private rtMid: RenderTarget
@@ -89,16 +105,19 @@ export class Renderer {
 
     this.quad = createQuad(gl)
     this.colorProgram = createProgram(gl, QUAD_VERT, COLOR_FRAG)
+    this.localProgram = createProgram(gl, PASSTHROUGH_VERT, LOCAL_FRAG)
     this.blurProgram = createProgram(gl, PASSTHROUGH_VERT, BLUR_FRAG)
     this.detailProgram = createProgram(gl, PASSTHROUGH_VERT, DETAIL_FRAG)
     this.finishProgram = createProgram(gl, PASSTHROUGH_VERT, FINISH_FRAG)
     this.colorU = new Uniforms(gl, this.colorProgram)
+    this.localU = new Uniforms(gl, this.localProgram)
     this.blurU = new Uniforms(gl, this.blurProgram)
     this.detailU = new Uniforms(gl, this.detailProgram)
     this.finishU = new Uniforms(gl, this.finishProgram)
 
     const mk = () => new RenderTarget(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE)
     this.rtColor = mk()
+    this.rtLocal = mk()
     this.rtPing = mk()
     this.rtWide = mk()
     this.rtMid = mk()
@@ -334,6 +353,71 @@ export class Renderer {
     this.draw()
   }
 
+  /**
+   * Hand a program everything it needs to evaluate the masks. The geometry is
+   * the same for all three that read masks; only the adjustments differ, so a
+   * pass takes the parts it will actually use.
+   */
+  private setMaskUniforms(
+    u: Uniforms,
+    packed: PackedMasks,
+    edits: EditState,
+    parts: { tone?: boolean; detail?: boolean } = {},
+  ) {
+    u.i('uMaskCount', packed.count)
+    if (packed.count === 0) return
+
+    u.mat3(
+      'uMaskTransform',
+      this.uprightWidth
+        ? buildUprightTransform(
+            this.uprightWidth,
+            this.uprightHeight,
+            edits.crop,
+            edits.perspective,
+          )
+        : mat3Identity(),
+    )
+    // The *upright* aspect, not the displayed one: a mask is anchored to the
+    // picture, so a quarter turn must not reshape it.
+    u.f('uMaskAspect', (this.uprightWidth || 1) / (this.uprightHeight || 1))
+    u.iv('uMaskKind', packed.kind)
+    u.v4v('uMaskGeom', packed.geom)
+    u.v4v('uMaskShape', packed.shape)
+
+    if (parts.tone) {
+      u.v4v('uMaskToneA', packed.toneA)
+      u.v4v('uMaskToneB', packed.toneB)
+      u.v3v('uMaskWb', packed.wb)
+    }
+    if (parts.detail) u.v4v('uMaskDetail', packed.detail)
+  }
+
+  /**
+   * Local adjustments. Skipped outright when no mask carries tone or colour —
+   * a frame with masks that only sharpen never pays for this pass.
+   */
+  private localPass(
+    width: number,
+    height: number,
+    edits: EditState,
+    packed: PackedMasks,
+  ): RenderTarget {
+    if (!packed.hasTone) return this.rtColor
+
+    const gl = this.gl
+    this.rtLocal.resize(width, height)
+    this.rtLocal.bind()
+    gl.useProgram(this.localProgram)
+
+    this.bindTexture(0, gl.TEXTURE_2D, this.rtColor.texture)
+    this.localU.i('uImage', 0)
+    this.setMaskUniforms(this.localU, packed, edits, { tone: true })
+    this.draw()
+
+    return this.rtLocal
+  }
+
   private blurInto(
     dest: RenderTarget,
     source: WebGLTexture,
@@ -360,11 +444,19 @@ export class Renderer {
     this.draw()
   }
 
-  private detailPass(width: number, height: number, edits: EditState): RenderTarget {
-    const needsWide = edits.clarity !== 0 || edits.dehaze !== 0
-    const needsMid = edits.texture !== 0
-    const needsTight = edits.sharpen > 0 || edits.denoiseLuma > 0 || edits.denoiseChroma > 0
-    if (!needsWide && !needsMid && !needsTight) return this.rtColor
+  private detailPass(
+    source: RenderTarget,
+    width: number,
+    height: number,
+    edits: EditState,
+    packed: PackedMasks,
+  ): RenderTarget {
+    const masked = packed.hasDetail ? packed.detailNeeds : { wide: false, mid: false, tight: false }
+    const needsWide = edits.clarity !== 0 || edits.dehaze !== 0 || masked.wide
+    const needsMid = edits.texture !== 0 || masked.mid
+    const needsTight =
+      edits.sharpen > 0 || edits.denoiseLuma > 0 || edits.denoiseChroma > 0 || masked.tight
+    if (!needsWide && !needsMid && !needsTight) return source
 
     const gl = this.gl
     // Clarity and the dehaze veil estimate both want a radius that scales with
@@ -372,15 +464,15 @@ export class Renderer {
     // radius near one pixel whatever the size. Each blur is skipped unless
     // something downstream reads it — they are two passes apiece.
     const wideRadius = Math.max(3, Math.min(width, height) / 90)
-    if (needsWide) this.blurInto(this.rtWide, this.rtColor.texture, width, height, wideRadius)
-    if (needsMid) this.blurInto(this.rtMid, this.rtColor.texture, width, height, 3.2)
-    if (needsTight) this.blurInto(this.rtTight, this.rtColor.texture, width, height, 1.1)
+    if (needsWide) this.blurInto(this.rtWide, source.texture, width, height, wideRadius)
+    if (needsMid) this.blurInto(this.rtMid, source.texture, width, height, 3.2)
+    if (needsTight) this.blurInto(this.rtTight, source.texture, width, height, 1.1)
 
     this.rtDetail.resize(width, height)
     this.rtDetail.bind()
     gl.useProgram(this.detailProgram)
 
-    this.bindTexture(0, gl.TEXTURE_2D, this.rtColor.texture)
+    this.bindTexture(0, gl.TEXTURE_2D, source.texture)
     this.bindTexture(1, gl.TEXTURE_2D, this.rtWide.texture)
     this.bindTexture(2, gl.TEXTURE_2D, this.rtTight.texture)
     this.bindTexture(3, gl.TEXTURE_2D, this.rtMid.texture)
@@ -394,6 +486,9 @@ export class Renderer {
     this.detailU.f('uSharpen', edits.sharpen / 100)
     this.detailU.f('uDenoiseLuma', edits.denoiseLuma / 100)
     this.detailU.f('uDenoiseChroma', edits.denoiseChroma / 100)
+    this.setMaskUniforms(this.detailU, packed.hasDetail ? packed : EMPTY_MASKS, edits, {
+      detail: true,
+    })
     this.draw()
 
     return this.rtDetail
@@ -405,6 +500,8 @@ export class Renderer {
     height: number,
     edits: EditState,
     look: LookConfig | null,
+    packed: PackedMasks,
+    overlay: number | null,
     destFramebuffer: WebGLFramebuffer | null,
     scissor?: { x: number; y: number; width: number; height: number },
   ) {
@@ -443,6 +540,14 @@ export class Renderer {
     this.finishU.f('uVignette', edits.vignette / 100)
     // Tie the noise field to the crop so panning the crop does not shimmer.
     this.finishU.f('uSeed', edits.crop.x * 31.7 + edits.crop.y * 17.3)
+
+    // An overlay outside the packed range would index past the uniform arrays,
+    // so an out-of-date selection simply shows nothing.
+    const shown = overlay != null && overlay >= 0 && overlay < packed.count ? overlay : -1
+    this.finishU.i('uMaskOverlay', shown)
+    if (shown >= 0) this.setMaskUniforms(this.finishU, packed, edits)
+    else this.finishU.i('uMaskCount', 0)
+
     this.draw()
 
     if (scissor) gl.disable(gl.SCISSOR_TEST)
@@ -461,10 +566,14 @@ export class Renderer {
     look: LookConfig | null,
     destFramebuffer: WebGLFramebuffer | null,
     scissor?: { x: number; y: number; width: number; height: number },
+    overlay: number | null = null,
   ) {
+    const packed = packMasks(edits.masks)
+
     this.colorPass(width, height, edits, look)
-    const detail = this.detailPass(width, height, edits)
-    this.finishPass(detail, width, height, edits, look, destFramebuffer, scissor)
+    const local = this.localPass(width, height, edits, packed)
+    const detail = this.detailPass(local, width, height, edits, packed)
+    this.finishPass(detail, width, height, edits, look, packed, overlay, destFramebuffer, scissor)
   }
 
   /**
@@ -477,7 +586,7 @@ export class Renderer {
     gl.disable(gl.BLEND)
     gl.disable(gl.SCISSOR_TEST)
 
-    const { edits, look, splitAt, beforeOnly } = options
+    const { edits, look, splitAt, beforeOnly, maskOverlay } = options
     const original = originalEdits(edits)
 
     if (beforeOnly) {
@@ -485,7 +594,7 @@ export class Renderer {
       return
     }
 
-    this.runChain(width, height, edits, look, null)
+    this.runChain(width, height, edits, look, null, undefined, maskOverlay ?? null)
 
     if (splitAt != null && splitAt > 0) {
       const cut = Math.round(width * Math.min(splitAt, 1))
@@ -535,10 +644,16 @@ export class Renderer {
     this.disposed = true
     const gl = this.gl
 
-    for (const rt of [this.rtColor, this.rtPing, this.rtWide, this.rtTight, this.rtDetail, this.rtRead]) {
+    for (const rt of [
+      this.rtColor, this.rtLocal, this.rtPing, this.rtWide, this.rtMid,
+      this.rtTight, this.rtHalo, this.rtDetail, this.rtRead,
+    ]) {
       rt.dispose()
     }
-    for (const p of [this.colorProgram, this.blurProgram, this.detailProgram, this.finishProgram]) {
+    for (const p of [
+      this.colorProgram, this.localProgram, this.blurProgram, this.detailProgram,
+      this.finishProgram,
+    ]) {
       gl.deleteProgram(p)
     }
     if (this.imageTexture) gl.deleteTexture(this.imageTexture)
@@ -550,6 +665,9 @@ export class Renderer {
     if (options.loseContext) gl.getExtension('WEBGL_lose_context')?.loseContext()
   }
 }
+
+/** Uploaded in place of the real masks when a pass must ignore them. */
+const EMPTY_MASKS = packMasks([])
 
 /**
  * The "before" state: geometry kept, every adjustment dropped. Comparing
@@ -569,6 +687,7 @@ function originalEdits(edits: EditState): EditState {
     vibrance: 0,
     saturation: 0,
     curves: identityCurves(),
+    masks: [],
     hsl: Object.fromEntries(HSL_BANDS.map((b) => [b, { hue: 0, sat: 0, lum: 0 }])) as EditState['hsl'],
     look: { id: null, strength: 0 },
     clarity: 0,

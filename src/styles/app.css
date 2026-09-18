@@ -554,6 +554,119 @@
 .crop__handle--w { left: -7px; top: 50%; margin-top: -7px; cursor: ew-resize; }
 .crop__handle--e { right: -7px; top: 50%; margin-top: -7px; cursor: ew-resize; }
 
+/* ───────────────────────────── masks ───────────────────────────── */
+
+/* Drawn at the frame's pixel size, so a stroke width is a real pixel width and
+   the outline stays hairline-thin at every zoom. */
+.mask-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.mask-overlay__line {
+  fill: none;
+  stroke: rgba(242, 234, 220, 0.92);
+  stroke-width: 1.25;
+  /* The picture underneath can be any brightness; a dark halo keeps the line
+     readable over a blown sky as well as over a shadow. */
+  paint-order: stroke;
+  filter: drop-shadow(0 0 1.5px rgba(11, 10, 8, 0.85));
+}
+
+.mask-overlay__line--soft { stroke: rgba(242, 234, 220, 0.5); stroke-dasharray: 5 5; }
+.mask-overlay__line--axis { stroke: rgba(242, 234, 220, 0.55); stroke-dasharray: 3 4; }
+
+.mask-overlay__fill {
+  fill: rgba(242, 234, 220, 0.001);
+  stroke: none;
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+}
+
+.mask-overlay__handle {
+  fill: var(--text);
+  stroke: rgba(11, 10, 8, 0.7);
+  stroke-width: 1.25;
+}
+
+.mask-overlay__grab {
+  fill: transparent;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.viewport__stage[data-pannable] .mask-overlay__fill,
+.viewport__stage[data-pannable] .mask-overlay__grab { cursor: inherit; }
+
+.tool__columns--masks { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+
+.mask-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+
+.mask-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+.mask-row:hover { background: var(--surface-row-hover); }
+.mask-row[data-active] {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+}
+
+.mask-row__pick {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 6px 8px;
+  text-align: left;
+  font-family: inherit;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.mask-row__name { font-size: 14px; }
+.mask-row__note {
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mask-row[data-active] .mask-row__name { color: var(--accent-text); }
+
+.icon-button--quiet {
+  width: 28px;
+  height: 28px;
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
+}
+.icon-button--quiet:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
+
+.mask-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.mask-toggle input { accent-color: var(--accent); margin: 0; }
+
 /* ───────────────────────────── bottom bar ───────────────────────────── */
 
 .bottombar {
@@ -1150,6 +1263,8 @@
   .crop__handle--w { left: -11px; margin-top: -11px; }
   .crop__handle--e { right: -11px; margin-top: -11px; }
   .viewport__split-handle { width: 34px; height: 34px; margin: -17px 0 0 -17px; }
+  .mask-overlay__handle { r: 7; }
+  .mask-overlay__grab { r: 22; }
   .slider__input { inset: -14px 0; height: 31px; }
   .icon-button { width: 38px; height: 38px; }
   .band { width: 34px; height: 34px; }

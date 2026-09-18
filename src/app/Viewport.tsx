@@ -7,6 +7,7 @@ import { getLook } from '../editor/presets/catalogue'
 import { HistogramClient } from '../editor/histogram'
 import { detectCapabilities } from '../editor/gpu/caps'
 import { CropOverlay } from './CropOverlay'
+import { MaskOverlay } from './MaskOverlay'
 
 /** Histogram readback size — enough bins to be representative, cheap to read. */
 const HISTOGRAM_EDGE = 192
@@ -32,6 +33,9 @@ export function Viewport() {
   const splitAt = useEditor((s) => s.splitAt)
   const setSplitAt = useEditor((s) => s.setSplitAt)
   const cropping = useEditor((s) => s.cropping)
+  const masking = useEditor((s) => s.activeTool === 'masks')
+  const activeMaskId = useEditor((s) => s.activeMaskId)
+  const maskOverlay = useEditor((s) => s.maskOverlay)
   const setHistogram = useEditor((s) => s.setHistogram)
   const setViewScale = useEditor((s) => s.setViewScale)
   const setZoom = useEditor((s) => s.setZoom)
@@ -451,12 +455,21 @@ export function Viewport() {
     if (canvas.height !== bufferH) canvas.height = bufferH
 
     const look = getLook(renderEdits.look.id)
+    // The overlay is a tool affordance, so it only exists while the tool is
+    // open — an export or a histogram readback never sees it.
+    const overlay =
+      masking && maskOverlay ? renderEdits.masks.findIndex((m) => m.id === activeMaskId) : -1
+
     renderer.render(bufferW, bufferH, {
       edits: renderEdits,
       look: peekLut(renderEdits.look.id) ? look : null,
       splitAt: splitCompare && !cropping ? splitAt : null,
+      maskOverlay: overlay >= 0 ? overlay : null,
     })
-  }, [cssWidth, cssHeight, renderEdits, splitCompare, splitAt, cropping])
+  }, [
+    cssWidth, cssHeight, renderEdits, splitCompare, splitAt, cropping,
+    masking, maskOverlay, activeMaskId,
+  ])
 
   useEffect(() => {
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
@@ -588,6 +601,7 @@ export function Viewport() {
           )}
 
           {cropping && <CropOverlay width={cssWidth} height={cssHeight} />}
+          {masking && !cropping && <MaskOverlay width={cssWidth} height={cssHeight} />}
         </div>
       </div>
 

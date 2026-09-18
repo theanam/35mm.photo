@@ -25,6 +25,7 @@ export const SYNC_GROUPS = [
   'detail',
   'finish',
   'look',
+  'masks',
   'crop',
 ] as const
 
@@ -40,15 +41,20 @@ export const SYNC_GROUP_LABEL: Record<SyncGroup, string> = {
   detail: 'Detail & noise',
   finish: 'Halation, grain & vignette',
   look: 'Look',
+  masks: 'Masks & local adjustments',
   crop: 'Crop & rotation',
 }
 
 /**
- * What a fresh sync starts with. Crop is off because it is per-picture. White
- * balance is on because a set shot under one light wants it — but it is the
- * first thing to turn off when the set is not.
+ * What a fresh sync starts with. Crop is off because it is per-picture, and
+ * masks for the same reason twice over: a radial placed on one face lands on
+ * whatever happens to be in that corner of the next frame. White balance is on
+ * because a set shot under one light wants it — but it is the first thing to
+ * turn off when the set is not.
  */
-export const DEFAULT_SYNC_GROUPS: SyncGroup[] = SYNC_GROUPS.filter((g) => g !== 'crop')
+export const DEFAULT_SYNC_GROUPS: SyncGroup[] = SYNC_GROUPS.filter(
+  (g) => g !== 'crop' && g !== 'masks',
+)
 
 /** Fields carried by each group, so the mapping is stated once. */
 const FIELDS: Record<SyncGroup, (keyof EditState)[]> = {
@@ -61,6 +67,7 @@ const FIELDS: Record<SyncGroup, (keyof EditState)[]> = {
   detail: ['clarity', 'texture', 'dehaze', 'sharpen', 'denoiseLuma', 'denoiseChroma'],
   finish: ['halation', 'grain', 'grainSize', 'vignette'],
   look: ['look'],
+  masks: ['masks'],
   crop: ['crop'],
 }
 

@@ -76,8 +76,10 @@ export function SyncDialog() {
           </div>
 
           <p className="modal__note">
-            Crop is off by default because it frames one picture, not a set. White balance
-            travels well under one light and badly across a day — untick it when the set moves.
+            Crop and masks are off by default because they are placed on one picture, not a
+            set — a radial over a face lands on whatever is in that corner of the next frame.
+            White balance travels well under one light and badly across a day — untick it when
+            the set moves.
           </p>
         </div>
 

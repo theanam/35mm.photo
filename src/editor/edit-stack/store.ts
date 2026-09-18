@@ -2,8 +2,9 @@ import { create } from 'zustand'
 import { cloneEdits, defaultEdits, editsEqual } from './defaults'
 import { emptyHistory, pushHistory, shouldPush, touchHistory, type History } from './history'
 import { countEdits, type PanelId } from './summary'
+import { createMask, replaceMask, replaceMaskAdjust } from './masks'
 import { applySyncScope, type SyncGroup } from './sync'
-import type { EditState, Frame, ImageMeta } from './types'
+import { MAX_MASKS, type EditState, type Frame, type ImageMeta, type Mask, type MaskAdjust, type MaskKind } from './types'
 import type { Orientation } from '../../io/exif'
 import { MAX_PREVIEW_EDGE, decodeFile, makeThumbnail, previewBitmap } from '../../io/decode'
 import type { DecodeStage } from '../../io/decode'
@@ -85,6 +86,14 @@ interface EditorState {
    */
   toolSnapshot: EditState | null
   cropping: boolean
+  /**
+   * Which mask the tool is editing. UI state rather than edit state: it decides
+   * what the panel shows and what the overlay draws, and nothing about it
+   * belongs in a sidecar.
+   */
+  activeMaskId: string | null
+  /** Paint the selected mask over the picture while the tool is open. */
+  maskOverlay: boolean
   exportOpen: boolean
   aboutOpen: boolean
   batch: BatchState
@@ -135,6 +144,12 @@ interface EditorState {
   update: (patch: Partial<EditState>, coalesceKey?: string) => void
   updateCrop: (patch: Partial<EditState['crop']>, coalesceKey?: string) => void
   applyLook: (id: string | null) => void
+  addMask: (kind: MaskKind) => void
+  removeMask: (id: string) => void
+  selectMask: (id: string | null) => void
+  updateMask: (id: string, patch: Partial<Mask>, coalesceKey?: string) => void
+  updateMaskAdjust: (id: string, patch: Partial<MaskAdjust>, coalesceKey?: string) => void
+  setMaskOverlay: (on: boolean) => void
   replaceEdits: (edits: EditState, coalesceKey?: string) => void
   undo: () => void
   redo: () => void
@@ -217,11 +232,13 @@ export const useEditor = create<EditorState>((set, get) => ({
   splitCompare: false,
   splitAt: 0.38,
   zoom: 'fit',
-  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, lens: false, detail: false, grain: false, raw: false },
+  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, lens: false, detail: false, grain: false, masks: false, raw: false },
   focusedPanel: null,
   activeTool: null,
   toolSnapshot: null,
   cropping: false,
+  activeMaskId: null,
+  maskOverlay: true,
   exportOpen: false,
   aboutOpen: false,
   syncOpen: false,
@@ -330,6 +347,8 @@ export const useEditor = create<EditorState>((set, get) => ({
         edits,
         history: emptyHistory(),
         histogram: null,
+        // The selection named a mask on the photo being left behind.
+        activeMaskId: edits.masks[0]?.id ?? null,
         loading: false,
         loadingLabel: '',
         loadingName: '',
@@ -583,6 +602,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       edits: defaultEdits(),
       history: emptyHistory(),
       histogram: null,
+      activeMaskId: null,
       exifOpen: false,
     })
   },
@@ -723,6 +743,53 @@ export const useEditor = create<EditorState>((set, get) => ({
     )
   },
 
+  /* ─────────────────────────── masks ─────────────────────────── */
+
+  addMask(kind) {
+    const { edits, photo } = get()
+    if (edits.masks.length >= MAX_MASKS) {
+      get().toast(`A photo can carry ${MAX_MASKS} masks — remove one first`, 'error')
+      return
+    }
+
+    // The frame's shape decides the starting geometry, so a radial arrives as
+    // a circle rather than an ellipse stretched by whatever the aspect is.
+    const aspect = photo ? photo.meta.width / photo.meta.height : 1
+    const mask = createMask(kind, aspect, edits.masks)
+    get().update({ masks: [...edits.masks, mask] }, `mask-add-${mask.id}`)
+    set({ activeMaskId: mask.id })
+  },
+
+  removeMask(id) {
+    const { edits, activeMaskId } = get()
+    const index = edits.masks.findIndex((m) => m.id === id)
+    if (index === -1) return
+
+    const remaining = edits.masks.filter((m) => m.id !== id)
+    get().update({ masks: remaining }, `mask-remove-${id}`)
+
+    if (activeMaskId !== id) return
+    // Land on the neighbour, so removing a mask does not close the panel.
+    const next = remaining[Math.min(index, remaining.length - 1)]
+    set({ activeMaskId: next?.id ?? null })
+  },
+
+  selectMask(id) {
+    set({ activeMaskId: id })
+  },
+
+  updateMask(id, patch, coalesceKey) {
+    get().update({ masks: replaceMask(get().edits.masks, id, patch) }, coalesceKey)
+  },
+
+  updateMaskAdjust(id, patch, coalesceKey) {
+    get().update({ masks: replaceMaskAdjust(get().edits.masks, id, patch) }, coalesceKey)
+  },
+
+  setMaskOverlay(on) {
+    set({ maskOverlay: on })
+  },
+
   replaceEdits(edits, coalesceKey) {
     const current = get().edits
     if (editsEqual(edits, current)) return
@@ -819,6 +886,14 @@ export const useEditor = create<EditorState>((set, get) => ({
       toolSnapshot: cloneEdits(edits),
       cropping: tool === 'crop',
       splitCompare: tool === 'crop' ? false : get().splitCompare,
+      // Opening the mask tool on a photo that already has masks should show one,
+      // not an empty panel and a picture with nothing drawn on it.
+      activeMaskId:
+        tool === 'masks'
+          ? (get().activeMaskId && edits.masks.some((m) => m.id === get().activeMaskId)
+              ? get().activeMaskId
+              : (edits.masks[0]?.id ?? null))
+          : get().activeMaskId,
     })
   },
 
@@ -1019,6 +1094,7 @@ function migrate(edits: Partial<EditState>): EditState {
     perspective: { ...base.perspective, ...(edits.perspective ?? {}) },
     lens: { ...base.lens, ...(edits.lens ?? {}) },
     colorGrade: { ...base.colorGrade, ...(edits.colorGrade ?? {}) },
+    masks: edits.masks ?? base.masks,
     look: { ...base.look, ...(edits.look ?? {}) },
     crop: { ...base.crop, ...(edits.crop ?? {}) },
   }

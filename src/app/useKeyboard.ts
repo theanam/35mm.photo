@@ -57,6 +57,11 @@ export function useKeyboard() {
           event.preventDefault()
           s.openTool('crop')
           break
+        case 'm':
+        case 'M':
+          event.preventDefault()
+          s.openTool('masks')
+          break
         case 'Escape':
           // The drawer owns Escape while it is open.
           if (s.exportOpen) s.setExportOpen(false)

@@ -112,6 +112,27 @@ export function buildUvTransform(
   orientation: Orientation = 1,
   perspective?: PerspectiveState,
 ): Mat3 {
+  const m = buildUprightTransform(imgW, imgH, crop, perspective)
+  // Last: upright uv → the uv of the pixels as they are actually stored.
+  return orientation === 1 ? m : mat3Mul(ORIENTATION_INVERSE[orientation], m)
+}
+
+/**
+ * Output UV → *upright image* UV: every step of `buildUvTransform` except the
+ * EXIF one, stopping at the picture the right way up rather than carrying on
+ * into however the file happens to store it.
+ *
+ * This is the space masks are defined in, and the reason they are: it is the
+ * only frame of reference that survives a re-crop, a straighten and a quarter
+ * turn. Inverted (`mat3Invert`) it also takes a mask's geometry back out to
+ * the viewport, which is how the overlay draws handles in the right place.
+ */
+export function buildUprightTransform(
+  imgW: number,
+  imgH: number,
+  crop: CropState,
+  perspective?: PerspectiveState,
+): Mat3 {
   const d = displaySize(imgW, imgH, crop.rotate90)
   const aspect = d.width / d.height
 
@@ -145,10 +166,43 @@ export function buildUvTransform(
   const k = ((crop.rotate90 % 4) + 4) % 4
   if (k !== 0) m = mat3Mul(ROT90_INVERSE[k], m)
 
-  // Last: upright uv → the uv of the pixels as they are actually stored.
-  if (orientation !== 1) m = mat3Mul(ORIENTATION_INVERSE[orientation], m)
-
   return m
+}
+
+/**
+ * Apply a projective 3×3 to a point, doing the divide the vertex shader leaves
+ * to the fragment stage. Straight lines stay straight under this, which is why
+ * the overlay can map a mask's outline by its corners and let SVG join them up.
+ */
+export function applyMat3Point(m: Mat3, x: number, y: number): [number, number] {
+  const w = m[2] * x + m[5] * y + m[8]
+  const d = Math.abs(w) < 1e-9 ? 1e-9 : w
+  return [(m[0] * x + m[3] * y + m[6]) / d, (m[1] * x + m[4] * y + m[7]) / d]
+}
+
+/**
+ * Inverse of a projective 3×3, or null if it is singular. A projective matrix
+ * is only defined up to scale, so the result is left unnormalised — the divide
+ * in `applyMat3Point` cancels whatever scale comes out.
+ */
+export function mat3Invert(m: Mat3): Mat3 | null {
+  // Column-major: m[c * 3 + r].
+  const a = m[0], b = m[1], c = m[2]
+  const d = m[3], e = m[4], f = m[5]
+  const g = m[6], h = m[7], i = m[8]
+
+  const A = e * i - f * h
+  const B = f * g - d * i
+  const C = d * h - e * g
+  const det = a * A + b * B + c * C
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null
+
+  const inv = 1 / det
+  return new Float32Array([
+    A * inv, (c * h - b * i) * inv, (b * f - c * e) * inv,
+    B * inv, (a * i - c * g) * inv, (c * d - a * f) * inv,
+    C * inv, (b * g - a * h) * inv, (a * e - b * d) * inv,
+  ])
 }
 
 /**
