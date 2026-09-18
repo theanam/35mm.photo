@@ -40,6 +40,8 @@ export interface OpenPhoto {
   source: ImageBitmap
   /** Possibly downscaled copy the viewport renders (spec §5). */
   preview: ImageBitmap
+  /** The file itself, for readers that want the bytes rather than the pixels. */
+  file: File
   handle?: FileSystemFileHandle
 }
 
@@ -87,6 +89,7 @@ interface EditorState {
   aboutOpen: boolean
   batch: BatchState
   syncOpen: boolean
+  exifOpen: boolean
   exportSettings: ExportSettings
   histogram: HistogramData | null
   /** Published by the viewport so the bottom bar can show the zoom level. */
@@ -152,6 +155,7 @@ interface EditorState {
   setExportOpen: (open: boolean) => void
   setAboutOpen: (open: boolean) => void
   setSyncOpen: (open: boolean) => void
+  setExifOpen: (open: boolean) => void
   setExportSettings: (patch: Partial<ExportSettings>) => void
   setHistogram: (data: HistogramData) => void
   setViewScale: (scale: number, fit: number) => void
@@ -221,6 +225,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   exportOpen: false,
   aboutOpen: false,
   syncOpen: false,
+  exifOpen: false,
   batch: { ...IDLE_BATCH },
   exportSettings: { ...DEFAULT_EXPORT },
   histogram: null,
@@ -313,7 +318,15 @@ export const useEditor = create<EditorState>((set, get) => ({
       }
 
       set({
-        photo: { frameId: id, key, meta: decoded.meta, source: decoded.bitmap, preview, handle: opened.handle },
+        photo: {
+          frameId: id,
+          key,
+          meta: decoded.meta,
+          source: decoded.bitmap,
+          preview,
+          file: opened.file,
+          handle: opened.handle,
+        },
         edits,
         history: emptyHistory(),
         histogram: null,
@@ -564,7 +577,14 @@ export const useEditor = create<EditorState>((set, get) => ({
       photo.source.close()
       if (photo.preview !== photo.source) photo.preview.close()
     }
-    set({ photo: null, activeFrameId: null, edits: defaultEdits(), history: emptyHistory(), histogram: null })
+    set({
+      photo: null,
+      activeFrameId: null,
+      edits: defaultEdits(),
+      history: emptyHistory(),
+      histogram: null,
+      exifOpen: false,
+    })
   },
 
   async refreshRecents() {
@@ -826,6 +846,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setSyncOpen(open) {
     set({ syncOpen: open })
+  },
+
+  setExifOpen(open) {
+    set({ exifOpen: open })
   },
 
   setExportOpen(open) { set({ exportOpen: open }) },

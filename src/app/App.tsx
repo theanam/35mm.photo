@@ -12,6 +12,7 @@ import { LoadingOverlay } from './LoadingOverlay'
 import { ExportDialog } from './ExportDialog'
 import { AboutDialog } from './AboutDialog'
 import { SyncDialog } from './SyncDialog'
+import { ExifDialog } from './ExifDialog'
 import { BatchBar } from './BatchBar'
 import { Toasts } from './Toasts'
 import { useKeyboard } from './useKeyboard'
@@ -90,6 +91,7 @@ export function App() {
       <ExportDialog />
       <AboutDialog />
       <SyncDialog />
+      <ExifDialog />
       <BatchBar />
       <Toasts />
     </div>

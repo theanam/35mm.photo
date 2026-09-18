@@ -1721,3 +1721,120 @@ kbd {
   right: auto;
   min-width: 190px;
 }
+
+/* ──────────────────────── metadata viewer ──────────────────────── */
+
+.icon-button--round { border-radius: 50%; width: 26px; height: 26px; }
+
+/* Two columns of pairs: more metadata fits on screen at once, and the labels
+   line up into a column the eye can run down. */
+.modal__panel--wide { width: min(640px, calc(100vw - 48px)); }
+
+.exif__section { display: flex; flex-direction: column; gap: 10px; }
+
+.exif__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.exif__title svg { color: var(--accent); }
+
+.exif__list {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  gap: 7px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+.exif__list dt { color: var(--text-muted); white-space: nowrap; }
+.exif__list dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+
+@media (max-width: 620px) {
+  .exif__list { grid-template-columns: auto 1fr; }
+}
+
+/* ──────────────────── shot info in the bottom bar ──────────────────── */
+
+.bottombar__shot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  margin-left: 14px;
+  padding: 5px 9px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.bottombar__shot:hover { color: var(--text); border-color: var(--line-strong); }
+.bottombar__shot svg { color: var(--accent); flex: none; }
+
+.bottombar__shot-part {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A long lens name must give way before the zoom controls do. */
+@media (max-width: 1100px) {
+  .bottombar__shot-part:last-child { display: none; }
+}
+@media (max-width: 880px) {
+  .bottombar__shot { display: none; }
+}
+
+/* ──────────────────────── custom crop ratio ──────────────────────── */
+
+/*
+ * The fields sit in the chip row itself, so they take the chip's own metrics:
+ * a control that opens on a line of its own reads as a panel, and this is one
+ * more choice alongside the presets.
+ */
+.aspect-custom { display: inline-flex; align-items: center; gap: 5px; }
+
+.aspect-custom__field {
+  width: 52px;
+  /* Matches .chip exactly — same font, padding and border, so the row keeps
+     one height whether or not Custom is showing. */
+  font-size: 13px;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--bg-app);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  text-align: center;
+}
+.aspect-custom__field:focus-visible { border-color: var(--accent); outline: none; }
+/* The spinners are noise on a field two characters wide. */
+.aspect-custom__field::-webkit-outer-spin-button,
+.aspect-custom__field::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.aspect-custom__field { appearance: textfield; }
+
+.aspect-custom__colon { color: var(--text-muted); font-size: 13px; }
+
+.aspect-custom__flip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.aspect-custom__flip:hover { color: var(--text); border-color: var(--line-soft); }

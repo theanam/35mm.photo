@@ -1,5 +1,5 @@
 import { useEditor } from '../editor/edit-stack/store'
-import { IconMinus, IconPlus, IconSplit } from './ui/icons'
+import { IconCamera, IconLens, IconMinus, IconPlus, IconSplit } from './ui/icons'
 
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.66, 1, 1.5, 2, 3, 4]
 
@@ -11,6 +11,8 @@ export function BottomBar({ scale, fitScale }: { scale: number; fitScale: number
   const setSplit = useEditor((s) => s.setSplit)
   const cropping = useEditor((s) => s.cropping)
   const photo = useEditor((s) => s.photo)
+  const setExifOpen = useEditor((s) => s.setExifOpen)
+  const meta = photo?.meta
 
   const step = (direction: 1 | -1) => {
     const current = zoom === 'fit' ? fitScale : zoom
@@ -35,6 +37,29 @@ export function BottomBar({ scale, fitScale }: { scale: number; fitScale: number
         <IconSplit />
         <span>Split view</span>
       </button>
+
+      {/* What the photo was shot with, beside the photo rather than a dialog
+          away. The whole thing is the handle for the rest of the metadata. */}
+      {(meta?.camera || meta?.lens) && (
+        <button
+          className="bottombar__shot"
+          onClick={() => setExifOpen(true)}
+          title="All metadata for this photo"
+        >
+          {meta.camera && (
+            <span className="bottombar__shot-part">
+              <IconCamera size={14} />
+              {meta.camera}
+            </span>
+          )}
+          {meta.lens && (
+            <span className="bottombar__shot-part">
+              <IconLens size={14} />
+              {meta.lens}
+            </span>
+          )}
+        </button>
+      )}
 
       <div className="bottombar__spacer" />
 

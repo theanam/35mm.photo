@@ -82,6 +82,51 @@ export const MarkEdited = () => (
   </svg>
 )
 
+/** Two arrows trading places: swap the two numbers of a ratio. */
+export const IconSwap = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M2.4 5.4h9.1M9.2 3.1l2.3 2.3-2.3 2.3" />
+    <path d="M13.6 10.6H4.5M6.8 8.3 4.5 10.6l2.3 2.3" />
+  </svg>
+)
+
+export const IconInfo = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <circle cx="8" cy="8" r="6.4" />
+    <path d="M8 7.2v4" />
+    <path d="M8 4.7h.01" strokeWidth="1.8" />
+  </svg>
+)
+
+/* One per section of the EXIF viewer, so a group is findable by shape. */
+export const IconCamera = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M1.8 4.9h2.9l1-1.7h4.6l1 1.7h2.9v7.9H1.8V4.9Z" />
+    <circle cx="8" cy="8.6" r="2.4" />
+  </svg>
+)
+
+export const IconExposure = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <circle cx="8" cy="8" r="6.2" />
+    <path d="M8 1.8v12.4M3.6 3.6l8.8 8.8" />
+  </svg>
+)
+
+export const IconPlace = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M8 14.2s4.6-4 4.6-7.4a4.6 4.6 0 1 0-9.2 0c0 3.4 4.6 7.4 4.6 7.4Z" />
+    <circle cx="8" cy="6.8" r="1.7" />
+  </svg>
+)
+
+export const IconFile = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M9 1.8H4.2v12.4h7.6V4.6L9 1.8Z" />
+    <path d="M8.9 1.9v2.8h2.8" />
+  </svg>
+)
+
 export const IconHelp = ({ size = 16 }: Props) => (
   <svg {...base(size)}>
     <circle cx="8" cy="8" r="6.4" />

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
 import { Mark } from './Mark'
 import { saveSidecar } from '../io/export'
-import { IconGitHub, IconHelp } from './ui/icons'
+import { IconGitHub, IconHelp, IconInfo } from './ui/icons'
 import { REPO_URL } from './AboutDialog'
 
 export function TopBar() {
@@ -15,6 +15,7 @@ export function TopBar() {
   const loading = useEditor((s) => s.loading)
   const loadingLabel = useEditor((s) => s.loadingLabel)
   const setAboutOpen = useEditor((s) => s.setAboutOpen)
+  const setExifOpen = useEditor((s) => s.setExifOpen)
   const frames = useEditor((s) => s.frames)
   const selection = useEditor((s) => s.selection)
   const exportSelection = useEditor((s) => s.exportSelection)
@@ -73,6 +74,14 @@ export function TopBar() {
           <span className="topbar__name">{meta.name}</span>
           {meta.isRaw && <span className="badge">RAW</span>}
           <span className="topbar__meta">{describe(meta)}</span>
+          <button
+            className="icon-button icon-button--quiet icon-button--round"
+            onClick={() => setExifOpen(true)}
+            title="All metadata for this photo"
+            aria-label="All metadata for this photo"
+          >
+            <IconInfo size={15} />
+          </button>
         </div>
       ) : (
         <span className="topbar__idle">No photo open</span>
