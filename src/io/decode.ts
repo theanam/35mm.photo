@@ -1,7 +1,7 @@
 import { extensionOf, isRawFile } from './formats'
 import { readOrientation, swapsAxes, type Orientation } from './exif'
 import { readShotInfo } from './exif-tags'
-import type { ImageMeta } from '../editor/edit-stack/types'
+import type { ImageMeta, RawDevelopState } from '../editor/edit-stack/types'
 import { uprightSize } from '../editor/gpu/transform'
 
 export interface DecodedImage {
@@ -49,12 +49,16 @@ export class RawDecodeError extends Error {
 export type DecodeStage = 'reading' | 'developing' | 'preview'
 export type OnStage = (stage: DecodeStage) => void
 
-export async function decodeFile(file: File, onStage?: OnStage): Promise<DecodedImage> {
+export async function decodeFile(
+  file: File,
+  onStage?: OnStage,
+  develop?: RawDevelopState,
+): Promise<DecodedImage> {
   const ext = extensionOf(file.name)
 
   if (isRawFile(file.name)) {
     const { decodeRaw } = await import('../raw/decode-raw')
-    return decodeRaw(file, onStage)
+    return decodeRaw(file, onStage, develop)
   }
 
   const { orientation, encoded } = await readOrientation(file)

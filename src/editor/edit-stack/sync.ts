@@ -25,6 +25,7 @@ export const SYNC_GROUPS = [
   'detail',
   'finish',
   'look',
+  'raw',
   'masks',
   'crop',
 ] as const
@@ -41,6 +42,7 @@ export const SYNC_GROUP_LABEL: Record<SyncGroup, string> = {
   detail: 'Detail & noise',
   finish: 'Halation, grain & vignette',
   look: 'Look',
+  raw: 'RAW development',
   masks: 'Masks & local adjustments',
   crop: 'Crop & rotation',
 }
@@ -67,6 +69,7 @@ const FIELDS: Record<SyncGroup, (keyof EditState)[]> = {
   detail: ['clarity', 'texture', 'dehaze', 'sharpen', 'denoiseLuma', 'denoiseChroma'],
   finish: ['halation', 'grain', 'grainSize', 'vignette'],
   look: ['look'],
+  raw: ['raw'],
   masks: ['masks'],
   crop: ['crop'],
 }

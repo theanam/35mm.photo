@@ -12,8 +12,6 @@ export function TopBar() {
   const closePhoto = useEditor((s) => s.closePhoto)
   const toast = useEditor((s) => s.toast)
   const markSidecarSaved = useEditor((s) => s.markSidecarSaved)
-  const loading = useEditor((s) => s.loading)
-  const loadingLabel = useEditor((s) => s.loadingLabel)
   const setAboutOpen = useEditor((s) => s.setAboutOpen)
   const setExifOpen = useEditor((s) => s.setExifOpen)
   const frames = useEditor((s) => s.frames)
@@ -89,7 +87,8 @@ export function TopBar() {
 
       <div className="topbar__spacer" />
 
-      {loading && <span className="topbar__loading">{loadingLabel || 'Working'}…</span>}
+      {/* The viewport's own indicator says this, right where the work is
+          landing. Saying it twice in two places reads as two operations. */}
 
       <div className="topbar__status">
         <span className="dot" />

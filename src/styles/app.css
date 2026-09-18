@@ -14,6 +14,7 @@
 }
 
 .app__center {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -1342,30 +1343,39 @@
  * spinner tucked into the top bar there is too quiet to answer "is this
  * working?". `LoadingOverlay` holds it back 350ms so quick opens never see it.
  */
+/* Anchored to the top of the frame rather than covering it, and transparent to
+   the pointer: the decode is off-thread, so nothing here should take the
+   filmstrip away while it runs. */
 .loading {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
+  position: absolute;
+  top: 14px;
+  left: 0;
+  right: 0;
+  z-index: 12;
   display: flex;
-  align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--bg-app) 72%, transparent);
-  backdrop-filter: blur(2px);
+  pointer-events: none;
 }
 
 .loading__card {
-  min-width: 260px;
-  max-width: min(420px, calc(100vw - 32px));
-  padding: 20px 22px;
-  background: var(--bg-panel);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 9px 14px;
+  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  text-align: center;
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
 }
+
+.loading__text { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 
 /* Indeterminate: a sliver travelling the track, since LibRaw reports no
    progress and a percentage here would be invented. */
 .loading__bar {
+  flex: 0 0 52px;
   height: 3px;
   border-radius: 2px;
   background: var(--track);
@@ -1384,12 +1394,14 @@
   100% { transform: translateX(363%); }
 }
 
-.loading__label { margin: 14px 0 0; font-size: 14px; color: var(--text); }
+.loading__label { margin: 0; font-size: 13px; color: var(--text); white-space: nowrap; }
 .loading__name {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 12px;
   color: var(--text-muted);
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

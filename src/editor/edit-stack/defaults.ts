@@ -6,6 +6,7 @@ import {
   type LensState,
   type PerspectiveState,
   type EditState,
+  type RawDevelopState,
   type HslBand,
   type HslAdjustment,
 } from './types'
@@ -53,6 +54,22 @@ export function neutralLens(): LensState {
   return { distortion: 0, ca: 0 }
 }
 
+/**
+ * What the decoder has always been told to do, written down. Keeping these as
+ * the defaults means every raw already on disk develops exactly as it did
+ * before the panel existed — the controls are an opt-in, not a re-render of
+ * everyone's library.
+ */
+export function defaultRawDevelop(): RawDevelopState {
+  return {
+    whiteBalance: 'camera',
+    demosaic: 'standard',
+    highlights: 'clip',
+    noiseReduction: 'off',
+    draft: false,
+  }
+}
+
 /** Daylight. Temperatures are absolute Kelvin, so the neutral point is a value, not zero. */
 export const NEUTRAL_TEMPERATURE = 5500
 
@@ -88,6 +105,7 @@ export function defaultEdits(): EditState {
     grainSize: 50,
     vignette: 0,
 
+    raw: defaultRawDevelop(),
     masks: [],
 
     perspective: neutralPerspective(),

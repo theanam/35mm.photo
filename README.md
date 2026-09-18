@@ -21,7 +21,10 @@ original file is never rewritten unless you export.
 ## Features
 
 - **Camera raw development** via [LibRaw](https://www.libraw.org/) compiled to
-  WebAssembly — demosaic, camera white balance, 16-bit pipeline
+  WebAssembly — demosaic, camera white balance, 16-bit pipeline, with the
+  develop settings a photographer should have a say in: white balance basis,
+  demosaic quality, highlight reconstruction, pre-demosaic noise reduction and
+  a half-size draft mode
 - **Light and colour** — exposure, contrast, highlights, shadows, whites,
   blacks, white balance, vibrance, saturation
 - **Tone curves**, RGB and per-channel
@@ -140,7 +143,20 @@ underneath it.
 
 Raw decoding and histogram binning run in workers. The LibRaw binary is 1.4 MB
 and sits behind a dynamic import, so it is fetched only when you open a raw
-file.
+file. Because that work is off the main thread, the progress indicator sits in
+a corner of the frame and takes nothing away while it runs — the photo you were
+looking at stays on screen and every control stays live.
+
+Develop settings live on the edit stack like everything else, so they reach the
+sidecar, sync and undo. Unlike everything else they cannot be applied to pixels
+that already exist, so any write that moves them runs the decoder again.
+
+A developed raw is cached at preview resolution, keyed by the file *and* the
+develop settings, which turns re-opening a 50 MP frame from 4.4 s into about
+0.3 s. It is stored as PNG: lossless WebP takes 2.4 s to encode, and lossy WebP
+moves pixels by up to 60 levels, which is not something to put under a
+photograph someone is grading. The cache holds previews only — an export always
+develops from the raw, so nothing that leaves the app has been through it.
 
 ## Deploying
 

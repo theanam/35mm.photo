@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
 import { IconGitHub } from './ui/icons'
+import * as db from '../storage/indexeddb'
 
 export const REPO_URL = 'https://github.com/theanam/35mm.photo'
 export const ISSUES_URL = `${REPO_URL}/issues`
@@ -24,6 +25,34 @@ function issueUrl(): string {
     '',
   ].join('\n')
   return `${ISSUES_URL}/new?body=${encodeURIComponent(body)}`
+}
+
+/**
+ * The develop cache is the one thing here that grows on its own — about 20 MB
+ * per raw — so it says how much it is holding and offers a way out. Everything
+ * else in storage is either tiny or something the user put there deliberately.
+ */
+function DevelopCache() {
+  const [size, setSize] = useState<{ count: number; bytes: number } | null>(null)
+
+  useEffect(() => {
+    void db.developCacheSize().then(setSize)
+  }, [])
+
+  if (!size?.count) return null
+
+  return (
+    <p className="modal__note">
+      Developed raws cached for quick reopening: <strong>{size.count}</strong>{' '}
+      {size.count === 1 ? 'photo' : 'photos'}, {(size.bytes / 1e6).toFixed(0)} MB.{' '}
+      <button
+        className="link-button"
+        onClick={() => void db.clearDevelops().then(() => setSize({ count: 0, bytes: 0 }))}
+      >
+        Clear
+      </button>
+    </p>
+  )
 }
 
 export function AboutDialog() {
@@ -102,6 +131,8 @@ export function AboutDialog() {
               </a>
             </div>
           </section>
+
+          <DevelopCache />
 
           <p className="modal__note">
             Raw development uses <a href="https://www.libraw.org/" target="_blank" rel="noreferrer noopener">LibRaw</a>{' '}

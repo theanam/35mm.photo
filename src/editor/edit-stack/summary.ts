@@ -1,4 +1,4 @@
-import { NEUTRAL_TEMPERATURE } from './defaults'
+import { NEUTRAL_TEMPERATURE, defaultRawDevelop } from './defaults'
 import { isIdentityCurve } from '../presets/curve'
 import { getLook } from '../presets/catalogue'
 import { maskIsActive } from './masks'
@@ -92,6 +92,24 @@ export function hasMaskEdits(edits: EditState): boolean {
   return edits.masks.some(maskIsActive)
 }
 
+/** True when the decoder is being asked for something other than the default. */
+export function hasRawEdits(edits: EditState): boolean {
+  const base = defaultRawDevelop()
+  return (Object.keys(base) as (keyof typeof base)[]).some((k) => edits.raw[k] !== base[k])
+}
+
+/** The short form shown on the RAW chip and beside the panel title. */
+export function rawSummary(edits: EditState): string {
+  const raw = edits.raw
+  const parts: string[] = []
+  if (raw.draft) parts.push('draft')
+  if (raw.demosaic !== 'standard') parts.push(raw.demosaic)
+  if (raw.whiteBalance !== 'camera') parts.push(`${raw.whiteBalance} WB`)
+  if (raw.highlights !== 'clip') parts.push(raw.highlights)
+  if (raw.noiseReduction !== 'off') parts.push(`NR ${raw.noiseReduction}`)
+  return parts.length ? parts.join(' · ') : 'as shot'
+}
+
 export function hasFinishEdits(edits: EditState): boolean {
   return edits.grain !== 0 || edits.vignette !== 0 || edits.halation !== 0
 }
@@ -105,7 +123,7 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
   const chips: StackChip[] = []
 
   if (meta?.isRaw) {
-    chips.push({ id: 'raw', label: 'RAW develop', value: 'auto', panel: 'raw' })
+    chips.push({ id: 'raw', label: 'RAW develop', value: rawSummary(edits), panel: 'raw' })
   }
 
   if (edits.temperature !== NEUTRAL_TEMPERATURE || edits.tint !== 0) {

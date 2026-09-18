@@ -6,7 +6,8 @@ import { createMask, replaceMask, replaceMaskAdjust } from './masks'
 import { applySyncScope, type SyncGroup } from './sync'
 import { MAX_MASKS, type EditState, type Frame, type ImageMeta, type Mask, type MaskAdjust, type MaskKind } from './types'
 import type { Orientation } from '../../io/exif'
-import { MAX_PREVIEW_EDGE, decodeFile, makeThumbnail, previewBitmap } from '../../io/decode'
+import { MAX_PREVIEW_EDGE, decodeFile, makeThumbnail } from '../../io/decode'
+import { developFor, developFullSource } from '../../io/develop'
 import type { DecodeStage } from '../../io/decode'
 import { extensionOf, isRawFile } from '../../io/formats'
 import type { OpenedFile } from '../../io/file-system'
@@ -41,6 +42,12 @@ export interface OpenPhoto {
   source: ImageBitmap
   /** Possibly downscaled copy the viewport renders (spec §5). */
   preview: ImageBitmap
+  /**
+   * True when `source` is really the preview, because this open came from the
+   * develop cache and there are no full-resolution pixels in hand. Export asks
+   * for them before it writes anything.
+   */
+  sourceIsPreview?: boolean
   /** The file itself, for readers that want the bytes rather than the pixels. */
   file: File
   handle?: FileSystemFileHandle
@@ -144,6 +151,10 @@ interface EditorState {
   update: (patch: Partial<EditState>, coalesceKey?: string) => void
   updateCrop: (patch: Partial<EditState['crop']>, coalesceKey?: string) => void
   applyLook: (id: string | null) => void
+  /** Change a develop setting and run the decoder again. */
+  updateRawDevelop: (patch: Partial<EditState['raw']>) => void
+  /** Full-resolution pixels, developing them first if this open came from cache. */
+  ensureFullSource: () => Promise<ImageBitmap | null>
   addMask: (kind: MaskKind) => void
   removeMask: (id: string) => void
   selectMask: (id: string | null) => void
@@ -317,16 +328,29 @@ export const useEditor = create<EditorState>((set, get) => ({
     })
 
     try {
-      const decoded = await decodeFile(opened.file, (stage) => {
+      // Edits are read *before* the decode, not after: they carry the develop
+      // settings, and those decide what the decoder is asked for in the first
+      // place. Reading them afterwards would develop every raw on the defaults
+      // and then quietly disagree with the panel.
+      const key = db.fileKey(opened.file)
+      const saved = await db.loadEdits(key)
+      const edits = saved?.edits ? migrate(saved.edits) : defaultEdits()
+
+      const developed = await developFor(opened.file, edits.raw, (stage) => {
         // Only relabel while this file is still the one being opened; a fast
         // click onto another frame must not be narrated by the old decode.
         if (get().activeFrameId === id) set({ loadingLabel: STAGE_LABELS[stage] })
       })
-      const preview = await previewBitmap(decoded.bitmap)
+      // Clicking another photo mid-develop is now an ordinary thing to do, so
+      // a result that is no longer the one being waited for is dropped rather
+      // than allowed to land on top of whatever the user moved on to.
+      if (get().activeFrameId !== id) {
+        developed.source.close()
+        if (developed.preview !== developed.source) developed.preview.close()
+        return
+      }
 
-      const key = db.fileKey(opened.file)
-      const saved = await db.loadEdits(key)
-      const edits = saved?.edits ? migrate(saved.edits) : defaultEdits()
+      const { meta, source, preview, sourceIsPreview } = developed
 
       const previous = get().photo
       if (previous && previous.frameId !== id) {
@@ -338,9 +362,10 @@ export const useEditor = create<EditorState>((set, get) => ({
         photo: {
           frameId: id,
           key,
-          meta: decoded.meta,
-          source: decoded.bitmap,
+          meta,
+          source,
           preview,
+          sourceIsPreview,
           file: opened.file,
           handle: opened.handle,
         },
@@ -356,7 +381,7 @@ export const useEditor = create<EditorState>((set, get) => ({
           f.id === id
             ? {
                 ...f,
-                meta: decoded.meta,
+                meta,
                 error: undefined,
                 editCount: countEdits(edits),
                 // A sidecar is a file on disk, and nothing here can see one, so
@@ -368,7 +393,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       })
 
       if (opened.handle) void db.saveHandle(key, opened.handle)
-      void cacheThumbnail(key, id, decoded.bitmap, decoded.meta.orientation, set, get)
+      void cacheThumbnail(key, id, preview, meta.orientation, set, get)
       void get().refreshRecents()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not open that file'
@@ -695,6 +720,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     const { edits, history } = get()
     const next = { ...edits, ...patch }
     if (editsEqual(next, edits)) return
+    const beforeRaw = edits.raw
 
     const now = Date.now()
     const nextHistory = shouldPush(history, coalesceKey ?? null, now)
@@ -702,6 +728,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       : touchHistory(history, coalesceKey ?? null, now)
 
     set({ edits: next, history: nextHistory })
+    maybeRedevelop(beforeRaw, get, set)
     scheduleAutosave(get, set)
   },
 
@@ -741,6 +768,44 @@ export const useEditor = create<EditorState>((set, get) => ({
       },
       'look',
     )
+  },
+
+  /* ─────────────────────────── raw development ─────────────────────────── */
+
+  updateRawDevelop(patch) {
+    const { photo, edits } = get()
+    const next = { ...edits.raw, ...patch }
+    if (JSON.stringify(next) === JSON.stringify(edits.raw)) return
+
+    // Onto the edit stack like anything else, so it round-trips through the
+    // sidecar and undo reaches it. Unlike anything else, it then has to be
+    // developed again — a develop setting is not a slider, it is a question put
+    // to the decoder.
+    void photo
+    get().update({ raw: next }, 'raw-develop')
+  },
+
+  async ensureFullSource() {
+    const photo = get().photo
+    if (!photo) return null
+    if (!photo.sourceIsPreview) return photo.source
+
+    // The open came from the cache, which holds preview pixels only. Anything
+    // being written out has to be developed from the file.
+    set({ loading: true, loadingLabel: STAGE_LABELS.developing, loadingName: photo.meta.name })
+    try {
+      const source = await developFullSource(photo.file, get().edits.raw)
+      const current = get().photo
+      // Still the same photo? A slow develop must not land on a different one.
+      if (!current || current.frameId !== photo.frameId) {
+        source.close()
+        return null
+      }
+      set({ photo: { ...current, source, sourceIsPreview: false } })
+      return source
+    } finally {
+      set({ loading: false, loadingLabel: '', loadingName: '' })
+    }
   },
 
   /* ─────────────────────────── masks ─────────────────────────── */
@@ -798,6 +863,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       edits: cloneEdits(edits),
       history: pushHistory(get().history, cloneEdits(current), coalesceKey ?? null, now),
     })
+    maybeRedevelop(current.raw, get, set)
     scheduleAutosave(get, set)
   },
 
@@ -805,6 +871,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     const { history, edits } = get()
     const previous = history.past.at(-1)
     if (!previous) return
+    const beforeRaw = edits.raw
     set({
       edits: previous,
       history: {
@@ -814,6 +881,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         coalesceAt: 0,
       },
     })
+    maybeRedevelop(beforeRaw, get, set)
     scheduleAutosave(get, set)
   },
 
@@ -821,6 +889,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     const { history, edits } = get()
     const next = history.future[0]
     if (!next) return
+    const beforeRaw = edits.raw
     set({
       edits: next,
       history: {
@@ -830,6 +899,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         coalesceAt: 0,
       },
     })
+    maybeRedevelop(beforeRaw, get, set)
     scheduleAutosave(get, set)
   },
 
@@ -947,6 +1017,74 @@ export const useEditor = create<EditorState>((set, get) => ({
 }))
 
 /* ─────────────────────────── module-local helpers ─────────────────────────── */
+
+/**
+ * Re-run the decoder for the open photo.
+ *
+ * Counted rather than cancelled: LibRaw has no way to abandon a decode in
+ * flight, so a second change while the first is still running would otherwise
+ * land whichever finished last. The generation check means only the newest one
+ * is allowed to reach the screen.
+ */
+let developGeneration = 0
+
+/**
+ * Develop again when the develop settings moved, wherever they moved from.
+ *
+ * This sits on the edit stack's write paths rather than only on the panel's
+ * action, because the panel is not the only thing that can change them: undo,
+ * redo, "reset everything", pasting a look and a batch sync all write the whole
+ * edit state. Any of those can change what the decoder was asked for, and a
+ * panel that disagreed with the pixels on screen would be worse than no panel.
+ */
+function maybeRedevelop(before: EditState['raw'], get: Getter, set: Setter): void {
+  if (!get().photo?.meta.isRaw) return
+  if (JSON.stringify(before) === JSON.stringify(get().edits.raw)) return
+  void redevelop(get, set)
+}
+
+async function redevelop(get: Getter, set: Setter): Promise<void> {
+  const photo = get().photo
+  if (!photo) return
+
+  const generation = ++developGeneration
+  const raw = get().edits.raw
+  set({ loading: true, loadingLabel: STAGE_LABELS.developing, loadingName: photo.meta.name })
+
+  try {
+    const developed = await developFor(photo.file, raw, (stage) => {
+      if (developGeneration === generation) set({ loadingLabel: STAGE_LABELS[stage] })
+    })
+
+    const current = get().photo
+    if (developGeneration !== generation || !current || current.frameId !== photo.frameId) {
+      developed.source.close()
+      if (developed.preview !== developed.source) developed.preview.close()
+      return
+    }
+
+    current.source.close()
+    if (current.preview !== current.source) current.preview.close()
+
+    set({
+      photo: {
+        ...current,
+        meta: developed.meta,
+        source: developed.source,
+        preview: developed.preview,
+        sourceIsPreview: developed.sourceIsPreview,
+      },
+      histogram: null,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Could not develop that file'
+    get().toast(message, 'error')
+  } finally {
+    if (developGeneration === generation) {
+      set({ loading: false, loadingLabel: '', loadingName: '' })
+    }
+  }
+}
 
 /**
  * Files are held outside the store: `File` and `FileSystemFileHandle` are not
@@ -1095,6 +1233,7 @@ function migrate(edits: Partial<EditState>): EditState {
     lens: { ...base.lens, ...(edits.lens ?? {}) },
     colorGrade: { ...base.colorGrade, ...(edits.colorGrade ?? {}) },
     masks: edits.masks ?? base.masks,
+    raw: { ...base.raw, ...(edits.raw ?? {}) },
     look: { ...base.look, ...(edits.look ?? {}) },
     crop: { ...base.crop, ...(edits.crop ?? {}) },
   }

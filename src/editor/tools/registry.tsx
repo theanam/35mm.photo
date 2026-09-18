@@ -2,6 +2,7 @@ import type { ComponentType } from 'react'
 import type { EditState, ImageMeta } from '../edit-stack/types'
 import {
   NEUTRAL_TEMPERATURE,
+  defaultRawDevelop,
   neutralColorGrade,
   neutralLens,
   neutralPerspective,
@@ -15,6 +16,7 @@ import {
   hasLensEdits,
   hasMaskEdits,
   hasMixerEdits,
+  hasRawEdits,
   hasToneEdits,
   type PanelId,
 } from '../edit-stack/summary'
@@ -173,11 +175,13 @@ export const TOOLS: ToolDef[] = [
   {
     id: 'raw',
     label: 'RAW',
-    hint: 'as shot',
+    hint: 'how the file is developed',
     Icon: IconRaw,
     Content: RawTool,
-    isDirty: () => false,
-    reset: () => ({}),
+    isDirty: hasRawEdits,
+    // Safe to reset through the ordinary edit path: the store watches the
+    // develop block on every write and runs the decoder again when it moves.
+    reset: () => ({ raw: defaultRawDevelop() }),
     available: (meta) => Boolean(meta?.isRaw),
   },
 ]

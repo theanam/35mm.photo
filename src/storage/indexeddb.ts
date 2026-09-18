@@ -2,18 +2,20 @@ import type { EditState, ImageMeta } from '../editor/edit-stack/types'
 import type { CustomPreset } from '../editor/presets/types'
 
 /**
- * Local persistence (spec §4.4). Four stores: the edit state per photo, a
+ * Local persistence (spec §4.4). Five stores: the edit state per photo, a
  * cached thumbnail so recents render instantly, the directory/file handles
- * needed to reopen a photo without a second picker prompt, and the presets the
- * user has imported.
+ * needed to reopen a photo without a second picker prompt, the presets the user
+ * has imported, and developed raw previews so returning to a photo does not
+ * mean running LibRaw over it again.
  */
 
 const DB_NAME = '35mm'
-const DB_VERSION = 2
+const DB_VERSION = 3
 const STORE_EDITS = 'edits'
 const STORE_THUMBS = 'thumbs'
 const STORE_HANDLES = 'handles'
 const STORE_PRESETS = 'presets'
+const STORE_DEVELOP = 'develop'
 
 export interface StoredEdit {
   /** Stable key derived from the file identity, not the object URL. */
@@ -27,6 +29,33 @@ export interface StoredEdit {
 
 let dbPromise: Promise<IDBDatabase | null> | null = null
 
+/**
+ * How long to wait for the database before giving up on it for this session.
+ *
+ * The case this exists for is a version upgrade that another tab is blocking.
+ * That fires `onblocked` and then simply never settles — the request stays
+ * pending for as long as the other connection lives, which can be all day.
+ */
+const OPEN_TIMEOUT_MS = 3000
+
+/** Set when the open was blocked, so the app can say why rather than hanging. */
+let blockedByAnotherTab = false
+let blockedReported = false
+
+/**
+ * True when storage gave up this session — the app is running, and not saving.
+ * Read by the shell so it can say so out loud; the top bar otherwise promises
+ * that edits are being kept.
+ *
+ * Reports once and then stops. React runs mount effects twice in development,
+ * and the caller's job is to warn the user, not to warn them repeatedly.
+ */
+export function storageBlocked(): boolean {
+  if (!blockedByAnotherTab || blockedReported) return false
+  blockedReported = true
+  return true
+}
+
 function openDb(): Promise<IDBDatabase | null> {
   if (dbPromise) return dbPromise
 
@@ -37,6 +66,39 @@ function openDb(): Promise<IDBDatabase | null> {
     }
 
     const request = indexedDB.open(DB_NAME, DB_VERSION)
+    let settled = false
+
+    /**
+     * Resolving null is a decision for the whole session, deliberately.
+     *
+     * Retrying later would be worse than not persisting: a photo whose edits
+     * failed to load opens on the defaults, and if a write then succeeded it
+     * would put those defaults over the edits that were on disk all along.
+     * Not writing at all cannot lose anyone's work.
+     */
+    const settle = (db: IDBDatabase | null) => {
+      if (settled) return
+      settled = true
+      resolve(db)
+    }
+
+    // Without this the upgrade waits on the other connection indefinitely, and
+    // so does everything behind it — which, since develop settings are read
+    // before a raw is decoded, now includes opening a photo at all.
+    const giveUp = setTimeout(() => {
+      console.warn(
+        '[35mm] IndexedDB did not open in time; this session will not persist edits',
+      )
+      settle(null)
+    }, OPEN_TIMEOUT_MS)
+
+    request.onblocked = () => {
+      blockedByAnotherTab = true
+      console.warn(
+        '[35mm] another tab is holding an older version of the database open, ' +
+          'so the upgrade cannot finish. Close it and reload.',
+      )
+    }
 
     request.onupgradeneeded = () => {
       const db = request.result
@@ -49,14 +111,31 @@ function openDb(): Promise<IDBDatabase | null> {
       if (!db.objectStoreNames.contains(STORE_PRESETS)) {
         db.createObjectStore(STORE_PRESETS, { keyPath: 'id' })
       }
+      if (!db.objectStoreNames.contains(STORE_DEVELOP)) {
+        const store = db.createObjectStore(STORE_DEVELOP, { keyPath: 'key' })
+        store.createIndex('usedAt', 'usedAt')
+      }
     }
 
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => {
+      clearTimeout(giveUp)
+      const db = request.result
+      // Step out of the way when another tab needs a newer version, rather than
+      // blocking it the way this tab was just blocked. This is what stops the
+      // next schema change repeating the problem.
+      db.onversionchange = () => {
+        db.close()
+        dbPromise = null
+      }
+      settle(db)
+    }
+
     request.onerror = () => {
+      clearTimeout(giveUp)
       // Private windows and blocked site data both land here. Everything below
       // degrades to "this session only" rather than failing the app.
       console.warn('[35mm] IndexedDB unavailable; edits will not persist', request.error)
-      resolve(null)
+      settle(null)
     }
   })
 
@@ -120,6 +199,7 @@ export async function clearRecents(): Promise<void> {
   await tx(STORE_EDITS, 'readwrite', (s) => s.clear())
   await tx(STORE_THUMBS, 'readwrite', (s) => s.clear())
   await tx(STORE_HANDLES, 'readwrite', (s) => s.clear())
+  await tx(STORE_DEVELOP, 'readwrite', (s) => s.clear())
 }
 
 export async function saveThumb(key: string, blob: Blob): Promise<void> {
@@ -161,6 +241,109 @@ export async function loadPresets(): Promise<CustomPreset[]> {
 
 export async function deletePreset(id: string): Promise<void> {
   await tx(STORE_PRESETS, 'readwrite', (s) => s.delete(id))
+}
+
+/* ─────────────────────── developed raw previews ─────────────────────── */
+
+/**
+ * One developed raw, at preview resolution, kept so that coming back to a photo
+ * does not mean running LibRaw over it a second time.
+ *
+ * Stored as a PNG rather than the pixels themselves or a WebP. Measured on a
+ * 12.6 MP preview: raw RGBA is 50 MB, lossless WebP is 10 MB but takes 2.4 s to
+ * encode — over half the develop it is meant to save — and WebP at quality 0.92
+ * is 0.3 MB but moves pixels by up to 60 levels, which is not something to put
+ * under a photograph someone is grading. PNG is lossless, encodes in 260 ms and
+ * decodes in about 110 ms against a 4.4 s develop.
+ */
+export interface StoredDevelop {
+  /** `<fileKey>@<develop fingerprint>` — settings are part of the identity. */
+  key: string
+  /** The developed preview, PNG-encoded. */
+  blob: Blob
+  width: number
+  height: number
+  /** Everything the decoder reported, so a hit needs no second read. */
+  meta: ImageMeta
+  bytes: number
+  usedAt: number
+}
+
+/** Entries to keep. Fifteen previews is roughly 260 MB at 12 MP apiece. */
+export const MAX_DEVELOPS = 15
+/** And a ceiling in bytes, for the larger sensors. */
+export const MAX_DEVELOP_BYTES = 600_000_000
+
+/**
+ * Which cached develops to drop, oldest first.
+ *
+ * Pure, and separate from the store it runs against, because the interesting
+ * part is the policy rather than the plumbing: it has to bound both the count
+ * and the bytes, and it must never evict the entry that was just written —
+ * which is exactly what a naive "drop the oldest" does on a machine where one
+ * frame is bigger than the whole budget.
+ */
+export function developEvictionPlan(
+  records: { key: string; bytes: number; usedAt: number }[],
+  keep: string | null = null,
+  limits: { maxEntries?: number; maxBytes?: number } = {},
+): string[] {
+  const maxEntries = limits.maxEntries ?? MAX_DEVELOPS
+  const maxBytes = limits.maxBytes ?? MAX_DEVELOP_BYTES
+
+  // The protected entry takes its share of the budget before anything else is
+  // measured. Letting it ride along afterwards instead would put the cache over
+  // its ceiling by a whole frame every time one was written.
+  const held = keep ? records.find((r) => r.key === keep) : undefined
+  let bytes = held?.bytes ?? 0
+  let kept = held ? 1 : 0
+
+  // Newest first; anything past the limits falls off the end.
+  const ordered = [...records].sort((a, b) => b.usedAt - a.usedAt)
+  const drop: string[] = []
+
+  for (const record of ordered) {
+    if (record.key === keep) continue
+    if (kept < maxEntries && bytes + record.bytes <= maxBytes) {
+      kept++
+      bytes += record.bytes
+    } else {
+      drop.push(record.key)
+    }
+  }
+  return drop
+}
+
+export async function loadDevelop(key: string): Promise<StoredDevelop | null> {
+  const record = await tx<StoredDevelop>(STORE_DEVELOP, 'readonly', (s) => s.get(key))
+  if (!record) return null
+  // Touch it so the eviction order reflects use rather than creation.
+  void tx(STORE_DEVELOP, 'readwrite', (s) => s.put({ ...record, usedAt: Date.now() }))
+  return record
+}
+
+export async function saveDevelop(
+  record: Omit<StoredDevelop, 'bytes' | 'usedAt'>,
+): Promise<void> {
+  const full: StoredDevelop = { ...record, bytes: record.blob.size, usedAt: Date.now() }
+  await tx(STORE_DEVELOP, 'readwrite', (s) => s.put(full))
+
+  const all = await tx<StoredDevelop[]>(STORE_DEVELOP, 'readonly', (s) => s.getAll())
+  if (!all) return
+  for (const key of developEvictionPlan(all, full.key)) {
+    await tx(STORE_DEVELOP, 'readwrite', (s) => s.delete(key))
+  }
+}
+
+export async function clearDevelops(): Promise<void> {
+  await tx(STORE_DEVELOP, 'readwrite', (s) => s.clear())
+}
+
+/** Bytes currently held by cached develops, for the panel to report. */
+export async function developCacheSize(): Promise<{ count: number; bytes: number }> {
+  const all = await tx<StoredDevelop[]>(STORE_DEVELOP, 'readonly', (s) => s.getAll())
+  if (!all) return { count: 0, bytes: 0 }
+  return { count: all.length, bytes: all.reduce((n, r) => n + r.bytes, 0) }
 }
 
 /**

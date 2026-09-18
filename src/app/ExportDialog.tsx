@@ -48,8 +48,19 @@ export function ExportDialog() {
   const run = async (overwrite: boolean) => {
     setBusy('Preparing')
     try {
+      // A photo restored from the develop cache holds preview pixels only, so
+      // what gets written is always developed from the raw rather than from
+      // whatever was convenient to keep.
+      const source = photo.sourceIsPreview
+        ? await useEditor.getState().ensureFullSource()
+        : photo.source
+      if (!source) {
+        setBusy(null)
+        return
+      }
+
       const result = await exportImage({
-        source: photo.source,
+        source,
         meta: photo.meta,
         edits,
         settings,

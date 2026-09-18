@@ -20,6 +20,7 @@ import { useDropTarget } from './useDropTarget'
 import { useEditor } from '../editor/edit-stack/store'
 import { LOOKS } from '../editor/presets/looks'
 import { warmLuts } from '../editor/presets/lutCache'
+import { storageBlocked } from '../storage/indexeddb'
 
 export function App() {
   const photo = useEditor((s) => s.photo)
@@ -35,6 +36,17 @@ export function App() {
     warmLuts(LOOKS.map((l) => l.id))
     void useEditor.getState().loadPresets().then(() => {
       warmLuts(useEditor.getState().presets.map((p) => p.id))
+      // Loading presets is the first thing to touch storage, so by now we know
+      // whether it opened. The top bar promises edits are being saved; if they
+      // are not, that has to be said rather than discovered later.
+      if (storageBlocked()) {
+        useEditor
+          .getState()
+          .toast(
+            'Another tab has 35mm open, so this one cannot save edits. Close it and reload.',
+            'warn',
+          )
+      }
     })
   }, [])
 
@@ -67,6 +79,7 @@ export function App() {
           <>
             <main className="app__center">
               <Viewport />
+              <LoadingOverlay />
               <BottomBar scale={viewScale} fitScale={fitScale} />
             </main>
             <RightRail />
@@ -75,6 +88,7 @@ export function App() {
           <>
             <main className="app__center app__center--empty">
               <EmptyState dragging={dragging} />
+              <LoadingOverlay />
             </main>
             <IdleRail />
           </>
@@ -87,7 +101,6 @@ export function App() {
         </div>
       )}
 
-      <LoadingOverlay />
       <ExportDialog />
       <AboutDialog />
       <SyncDialog />

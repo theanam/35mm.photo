@@ -11,6 +11,7 @@ import { GrainTool } from '../editor/tools/GrainTool'
 import { RawTool } from '../editor/tools/RawTool'
 import { useEditor } from '../editor/edit-stack/store'
 import { getTool } from '../editor/tools/registry'
+import { rawSummary } from '../editor/edit-stack/summary'
 
 /**
  * Colour and contrast live here, where they always have. Only the geometry
@@ -28,7 +29,7 @@ export function RightRail() {
       <Histogram />
 
       {isRaw && (
-        <Panel id="raw" title="RAW develop" note="as shot" collapsible>
+        <Panel id="raw" title="RAW develop" note={rawSummary(edits)} collapsible active={dirty('raw')}>
           <RawTool />
         </Panel>
       )}

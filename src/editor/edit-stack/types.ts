@@ -218,6 +218,36 @@ export type MaskKind = Mask['kind']
 /** Every pass evaluates every mask per pixel, so the ceiling is a real one. */
 export const MAX_MASKS = 8
 
+/**
+ * Raw development (spec §5). These are not adjustments — they decide what the
+ * decoder hands the pipeline in the first place, and changing one means
+ * developing the file again rather than moving a slider.
+ *
+ * The test for whether something belongs here rather than in the edit stack is
+ * whether the pipeline could do it afterwards. Exposure, contrast and white
+ * balance all survive downstream, non-destructively, so they stay downstream.
+ * Demosaic, highlight reconstruction and pre-demosaic noise reduction cannot:
+ * by the time the render graph sees pixels, the information those need is
+ * already gone.
+ */
+export type WhiteBalanceBasis = 'camera' | 'auto' | 'neutral'
+export type DemosaicQuality = 'fast' | 'standard' | 'best'
+export type HighlightMode = 'clip' | 'unclip' | 'blend' | 'rebuild'
+export type RawNoiseReduction = 'off' | 'light' | 'full'
+
+export interface RawDevelopState {
+  /** Where the white point starts. The temperature slider works on top of it. */
+  whiteBalance: WhiteBalanceBasis
+  /** Interpolation quality. The one control here with a real time cost. */
+  demosaic: DemosaicQuality
+  /** What to do with channels that clipped before the file was written. */
+  highlights: HighlightMode
+  /** Noise reduction *before* demosaic, which post-processing cannot match. */
+  noiseReduction: RawNoiseReduction
+  /** Develop at half resolution — around three times faster, for triage. */
+  draft: boolean
+}
+
 export interface EditState {
   /* Light */
   exposure: number // −5..5 EV
@@ -257,6 +287,9 @@ export interface EditState {
   grain: number // 0..100
   grainSize: number // 0..100
   vignette: number // −100..100
+
+  /* Raw development — ignored for a file that is not raw */
+  raw: RawDevelopState
 
   /* Local adjustments */
   masks: Mask[]
