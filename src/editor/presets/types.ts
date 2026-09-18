@@ -52,15 +52,45 @@ export interface CustomPreset {
 }
 
 /**
+ * Sections of the looks grid. A look is chosen by the mood it is wanted for,
+ * not by alphabetical order, so the grid groups by the kind of rendering each
+ * one is: how a stock behaves, not who made it.
+ */
+export const LOOK_GROUPS = ['everyday', 'reversal', 'reportage', 'negative', 'cine', 'mono'] as const
+
+export type LookGroup = (typeof LOOK_GROUPS)[number]
+
+export const LOOK_GROUP_LABEL: Record<LookGroup, string> = {
+  everyday: 'Everyday',
+  reversal: 'Reversal',
+  reportage: 'Reportage',
+  negative: 'Negative',
+  cine: 'Cine',
+  mono: 'Monochrome',
+}
+
+/** Sits under each section heading, so the grid explains itself. */
+export const LOOK_GROUP_BLURB: Record<LookGroup, string> = {
+  everyday: 'Clean rendering that stays out of the way',
+  reversal: 'Slide film: saturated, contrasty, white stays white',
+  reportage: 'Muted colour with a firm tone curve',
+  negative: 'Colour negative: lifted blacks, crossed shadows',
+  cine: 'Low contrast, graded for the shadows',
+  mono: 'Black and white, mixed rather than drained',
+}
+
+/**
  * A look is a compound effect, not an overlay (spec §4.3): a base colour
- * transform baked into a 3D LUT, a tone curve, an optional monochrome mix, and
- * grain sized per look.
+ * transform, a tone curve, an optional monochrome mix — all baked into one 3D
+ * LUT — and grain sized per look.
  */
 export interface LookConfig {
   id: string
   name: string
   /** One-line description shown on hover. */
   blurb: string
+  /** Section of the grid. Imported presets have none — they get their own. */
+  group?: LookGroup
 
   /**
    * Path to a `.cube` file under `public/luts/`. When present it is fetched and
@@ -75,7 +105,11 @@ export interface LookConfig {
    */
   color?: ColorTransform
 
-  /** Applied after the LUT, in the look's own pass. */
+  /**
+   * The stock's density response: contrast, toe and shoulder. Baked into the
+   * cube along with everything else, after the colour work and the monochrome
+   * mix, so it shapes the tones the look has already decided on.
+   */
   toneCurve?: CurvePoint[]
 
   /**
@@ -96,11 +130,45 @@ export interface LookConfig {
   custom?: CustomPreset
 }
 
+/**
+ * One hue-selective adjustment, the way a film stock's dye layers respond to
+ * one part of the spectrum rather than to everything at once.
+ *
+ * This is what separates a look from a filter. Turning every colour down by the
+ * same amount gives you a muted picture; turning the reds toward brick, holding
+ * the blues and letting the greens go olive gives you a *rendering*. The bands
+ * cost nothing at runtime — like everything else here they are baked into the
+ * 33³ cube once, and the shader still does a single lookup.
+ */
+export interface HueBand {
+  /** Centre of the band on the wheel, 0..360 (0 red, 120 green, 240 blue). */
+  hue: number
+  /** Full width in degrees; influence falls to nothing at the edges. */
+  width: number
+  /** Degrees of rotation at the centre of the band. */
+  shift?: number
+  /** Saturation multiplier at the centre, 1 = unchanged. */
+  sat?: number
+  /** Luminance multiplier at the centre, 1 = unchanged. */
+  lum?: number
+}
+
 export interface ColorTransform {
   /** Row-major 3×3 channel mixer applied in linear light. */
   matrix?: number[]
   /** Overall saturation multiplier, 1 = unchanged. */
   saturation?: number
+  /**
+   * How much of the saturation boost is given back in the highlights, 0..1.
+   *
+   * A flat multiplier is what makes a punchy look tip into a poster: the sky
+   * and any bright red go to a solid, hueless block. Rolling the boost off
+   * where the picture is brightest keeps the same punch in the midtones and
+   * leaves the highlights somewhere a print could still go.
+   */
+  satRolloff?: number
+  /** Hue-selective adjustments, applied in order. */
+  hueBands?: HueBand[]
   /** RGB push added to the shadows, each −0.2..0.2. */
   shadowTint?: [number, number, number]
   /** RGB push added to the highlights, each −0.2..0.2. */

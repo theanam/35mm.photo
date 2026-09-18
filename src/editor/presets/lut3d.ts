@@ -1,7 +1,7 @@
 import { clamp01, evalSampled, sampleCurve } from './curve'
 import { parseCube, type ParsedCube } from './cube'
 import { inputSpaceDef, srgbDecode, type InputSpace } from './inputSpace'
-import type { ColorTransform, LookConfig, Lut3D, MonoConfig } from './types'
+import type { ColorTransform, HueBand, LookConfig, Lut3D, MonoConfig } from './types'
 
 export type { Lut3D }
 
@@ -27,6 +27,66 @@ function toSrgb(c: number): number {
 }
 
 const LUMA = [0.2126, 0.7152, 0.0722] as const
+
+function luma(r: number, g: number, b: number): number {
+  return LUMA[0] * r + LUMA[1] * g + LUMA[2] * b
+}
+
+/** Hue in degrees, saturation and value 0..1. */
+function rgb2hsv(r: number, g: number, b: number): [number, number, number] {
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const d = max - min
+  let h = 0
+  if (d > 1e-9) {
+    if (max === r) h = ((g - b) / d) % 6
+    else if (max === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  return [h, max <= 1e-9 ? 0 : d / max, max]
+}
+
+function hsv2rgb(h: number, s: number, v: number): [number, number, number] {
+  const c = v * s
+  const hh = (((h % 360) + 360) % 360) / 60
+  const x = c * (1 - Math.abs((hh % 2) - 1))
+  const m = v - c
+  const [r, g, b] =
+    hh < 1 ? [c, x, 0] :
+    hh < 2 ? [x, c, 0] :
+    hh < 3 ? [0, c, x] :
+    hh < 4 ? [0, x, c] :
+    hh < 5 ? [x, 0, c] : [c, 0, x]
+  return [r + m, g + m, b + m]
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp01((x - edge0) / (edge1 - edge0 || 1e-9))
+  return t * t * (3 - 2 * t)
+}
+
+/** Shortest distance between two hues, in degrees. */
+function hueDistance(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360
+  return d > 180 ? 360 - d : d
+}
+
+/**
+ * How strongly one band claims a pixel. A raised cosine rather than a linear
+ * ramp: the band has to reach zero *smoothly* at its edges, or two neighbouring
+ * bands leave a visible seam running through every gradient that crosses them.
+ */
+function bandWeight(band: HueBand, hue: number, sat: number): number {
+  const half = Math.max(band.width, 1) / 2
+  const d = hueDistance(hue, band.hue)
+  if (d >= half) return 0
+  const w = 0.5 * (1 + Math.cos((Math.PI * d) / half))
+  // A near-grey pixel has no hue worth bending; without this, shadows and
+  // skies pick up a cast from whichever band happens to be nearest.
+  return w * smoothstep(0.04, 0.22, sat)
+}
 
 /** Build the identity LUT — the `.cube` a look with no colour transform would be. */
 export function identityLut(size = LUT_SIZE): Lut3D {
@@ -57,12 +117,22 @@ export function buildLookLut(look: LookConfig, size = LUT_SIZE): Lut3D {
   const curveR = ct?.channelCurves?.r ? sampleCurve(ct.channelCurves.r) : null
   const curveG = ct?.channelCurves?.g ? sampleCurve(ct.channelCurves.g) : null
   const curveB = ct?.channelCurves?.b ? sampleCurve(ct.channelCurves.b) : null
+  const tone = look.toneCurve ? sampleCurve(look.toneCurve) : null
 
   for (let i = 0; i < data.length; i += 3) {
     let rgb: [number, number, number] = [data[i], data[i + 1], data[i + 2]]
 
     if (ct) rgb = applyColorTransform(rgb, ct, curveR, curveG, curveB)
+    // After the colour work: a monochrome look mixes the channels the transform
+    // has already shaped, which is what lets a hue band act as a contrast
+    // filter over the lens — pull the blues down and the sky goes dark.
     if (look.mono) rgb = applyMono(rgb, look.mono)
+    // Last, so the curve shapes the tones the look has settled on. The lift and
+    // the drop below it are the print, and nothing re-crushes them afterwards.
+    if (tone) {
+      rgb = [evalSampled(tone, rgb[0]), evalSampled(tone, rgb[1]), evalSampled(tone, rgb[2])]
+    }
+    if (ct && (ct.blackLift || ct.whiteDrop)) rgb = applyPrint(rgb, ct)
 
     data[i] = clamp01(rgb[0])
     data[i + 1] = clamp01(rgb[1])
@@ -70,6 +140,17 @@ export function buildLookLut(look: LookConfig, size = LUT_SIZE): Lut3D {
   }
 
   return lut
+}
+
+/** Flare and paper base: the black never quite black, the white never quite white. */
+function applyPrint(
+  rgb: [number, number, number],
+  ct: ColorTransform,
+): [number, number, number] {
+  const lift = ct.blackLift ?? 0
+  const drop = ct.whiteDrop ?? 0
+  const span = 1 - lift - drop
+  return [lift + rgb[0] * span, lift + rgb[1] * span, lift + rgb[2] * span]
 }
 
 function applyColorTransform(
@@ -93,20 +174,31 @@ function applyColorTransform(
     b = toSrgb(m[6] * lr + m[7] * lg + m[8] * lb)
   }
 
+  if (ct.hueBands?.length) {
+    ;[r, g, b] = applyHueBands([r, g, b], ct.hueBands)
+  }
+
   if (ct.saturation != null && ct.saturation !== 1) {
-    const luma = LUMA[0] * r + LUMA[1] * g + LUMA[2] * b
-    const s = ct.saturation
-    r = luma + (r - luma) * s
-    g = luma + (g - luma) * s
-    b = luma + (b - luma) * s
+    const y = luma(r, g, b)
+    let s = ct.saturation
+    // Give the boost back where the picture is brightest, so a punchy look does
+    // not turn the sky into a flat block of cyan.
+    const rolloff = ct.satRolloff ?? 0
+    if (rolloff > 0 && s > 1) {
+      const high = clamp01(y) * clamp01(y)
+      s = s + (1 - s) * rolloff * high
+    }
+    r = y + (r - y) * s
+    g = y + (g - y) * s
+    b = y + (b - y) * s
   }
 
   if (ct.shadowTint || ct.highlightTint) {
-    const luma = clamp01(LUMA[0] * r + LUMA[1] * g + LUMA[2] * b)
+    const y = clamp01(luma(r, g, b))
     // Smooth weights so the two tints cross over in the midtones instead of
     // meeting at a hard edge.
-    const shadowW = (1 - luma) * (1 - luma)
-    const highW = luma * luma
+    const shadowW = (1 - y) * (1 - y)
+    const highW = y * y
     if (ct.shadowTint) {
       r += ct.shadowTint[0] * shadowW
       g += ct.shadowTint[1] * shadowW
@@ -123,16 +215,38 @@ function applyColorTransform(
   if (curveG) g = evalSampled(curveG, g)
   if (curveB) b = evalSampled(curveB, b)
 
-  const lift = ct.blackLift ?? 0
-  const drop = ct.whiteDrop ?? 0
-  if (lift || drop) {
-    const span = 1 - lift - drop
-    r = lift + r * span
-    g = lift + g * span
-    b = lift + b * span
-  }
-
   return [r, g, b]
+}
+
+/**
+ * Hue-selective shift, saturation and luminance.
+ *
+ * Every band is measured against the *incoming* hue rather than against the
+ * running result, so two overlapping bands both act on the colour that was
+ * actually there. Chaining them instead would make the order matter: a red band
+ * that rotates toward orange would hand the orange band something to work on
+ * that the picture never contained.
+ */
+function applyHueBands(
+  rgb: [number, number, number],
+  bands: HueBand[],
+): [number, number, number] {
+  const [h, s, v] = rgb2hsv(clamp01(rgb[0]), clamp01(rgb[1]), clamp01(rgb[2]))
+  if (s <= 1e-4) return rgb
+
+  let shift = 0
+  let sat = 1
+  let lum = 1
+  for (const band of bands) {
+    const w = bandWeight(band, h, s)
+    if (w <= 0) continue
+    shift += (band.shift ?? 0) * w
+    sat *= 1 + ((band.sat ?? 1) - 1) * w
+    lum *= 1 + ((band.lum ?? 1) - 1) * w
+  }
+  if (shift === 0 && sat === 1 && lum === 1) return rgb
+
+  return hsv2rgb(h + shift, clamp01(s * Math.max(sat, 0)), clamp01(v * Math.max(lum, 0)))
 }
 
 /**
@@ -147,13 +261,7 @@ function applyMono(
   const sum = mono.mix[0] + mono.mix[1] + mono.mix[2] || 1
   let y = (rgb[0] * mono.mix[0] + rgb[1] * mono.mix[1] + rgb[2] * mono.mix[2]) / sum
 
-  const c = mono.contrast / 100
-  if (c !== 0) {
-    // Pivot around middle grey so contrast does not shift overall brightness.
-    y = clamp01(0.5 + (y - 0.5) * (1 + c))
-    // A touch of sigmoid on top keeps the shoulder from clipping flat.
-    y = clamp01(y + c * 0.25 * Math.sin(Math.PI * 2 * y) * -0.15)
-  }
+  y = clamp01(monoContrast(y, mono.contrast / 100))
 
   const tone = mono.tone / 100
   const warm = Math.max(tone, 0)
@@ -165,6 +273,29 @@ function applyMono(
     clamp01(y + (0.015 * warm - 0.005 * cool) * toneW),
     clamp01(y + (-0.03 * warm + 0.055 * cool) * toneW),
   ]
+}
+
+/**
+ * Contrast for a monochrome mix, holding both endpoints.
+ *
+ * The obvious version — stretch about middle grey — is what the first cut did,
+ * and it is wrong for exactly the pictures black and white is for: at contrast
+ * 40 everything below 0.36 maps to pure black, so a night frame or a dark
+ * foreground loses a fifth of itself before the tone curve has even run. A
+ * normalised logistic pins 0 at 0 and 1 at 1 and only steepens the middle,
+ * which is what a harder paper grade actually does to a print.
+ */
+function monoContrast(y: number, c: number): number {
+  if (c === 0) return y
+  // Negative contrast is a flattening toward grey, which has no endpoint
+  // problem — a straight blend is exactly right.
+  if (c < 0) return y + (0.5 - y) * Math.min(-c, 1) * 0.6
+
+  const k = 1 + c * 10
+  const sig = (x: number) => 1 / (1 + Math.exp(-k * (x - 0.5)))
+  const lo = sig(0)
+  const hi = sig(1)
+  return (sig(y) - lo) / (hi - lo)
 }
 
 /** Trilinear sample of a LUT at an arbitrary 0..1 coordinate. */

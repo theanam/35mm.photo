@@ -6,7 +6,12 @@ import { useCustomLooks, useLooksCatalogue } from '../presets/catalogue'
 import { INPUT_SPACES, inputSpaceDef, type InputSpace } from '../presets/inputSpace'
 import { PRESET_ACCEPT } from '../presets/import'
 import { pickPresetFiles } from '../../io/file-system'
-import type { LookConfig } from '../presets/types'
+import {
+  LOOK_GROUPS,
+  LOOK_GROUP_BLURB,
+  LOOK_GROUP_LABEL,
+  type LookConfig,
+} from '../presets/types'
 import { useLookPreviews } from './useLookPreviews'
 
 type CanvasMap = React.MutableRefObject<Map<string, HTMLCanvasElement | null>>
@@ -38,30 +43,51 @@ export function LooksTool() {
 
   return (
     <div className="tool">
-      <div className="looks__grid">
-        <button
-          className="look"
-          data-active={activeId === null || undefined}
-          onClick={() => applyLook(null)}
-          title="No look — your adjustments only"
-        >
-          <span className="look__swatch look__swatch--none" aria-hidden />
-          <span className="look__name">None</span>
-        </button>
+      {/* Grouped by the kind of rendering rather than listed flat: with this
+          many looks a single grid is a wall of thumbnails, and the thing you
+          are actually choosing between is the character, not the name. */}
+      {LOOK_GROUPS.map((group) => {
+        const inGroup = LOOKS.filter((l) => l.group === group)
+        if (!inGroup.length) return null
 
-        {LOOKS.map((look) => (
-          <button
-            key={look.id}
-            className="look"
-            data-active={activeId === look.id || undefined}
-            onClick={() => applyLook(look.id)}
-            title={look.blurb}
-          >
-            <Swatch look={look} canvases={canvases} />
-            <span className="look__name">{look.name}</span>
-          </button>
-        ))}
-      </div>
+        return (
+          <section key={group} className="looks__section">
+            <header className="looks__section-head">
+              <span className="looks__section-name">{LOOK_GROUP_LABEL[group]}</span>
+              <span className="looks__section-note">{LOOK_GROUP_BLURB[group]}</span>
+            </header>
+
+            <div className="looks__grid">
+              {/* "None" leads the first section: it is the top of the same
+                  list, not a section of its own. */}
+              {group === LOOK_GROUPS[0] && (
+                <button
+                  className="look"
+                  data-active={activeId === null || undefined}
+                  onClick={() => applyLook(null)}
+                  title="No look — your adjustments only"
+                >
+                  <span className="look__swatch look__swatch--none" aria-hidden />
+                  <span className="look__name">None</span>
+                </button>
+              )}
+
+              {inGroup.map((look) => (
+                <button
+                  key={look.id}
+                  className="look"
+                  data-active={activeId === look.id || undefined}
+                  onClick={() => applyLook(look.id)}
+                  title={look.blurb}
+                >
+                  <Swatch look={look} canvases={canvases} />
+                  <span className="look__name">{look.name}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )
+      })}
 
       <section className="looks__custom">
         <header className="tool__group-head">

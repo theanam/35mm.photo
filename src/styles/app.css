@@ -836,12 +836,42 @@
 
 /* ───────────────────────────── looks ───────────────────────────── */
 
-.looks__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 10px; }
+/* Three across, fixed. Sized to fit the rail rather than to a minimum tile
+   width: with nineteen looks in six sections, two-up turns the panel into a
+   scroll everything else sits underneath. */
+.looks__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+
+.looks__section { display: flex; flex-direction: column; gap: 6px; }
+.looks__section + .looks__section { margin-top: 12px; }
+
+.looks__section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line-hair);
+}
+
+.looks__section-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Drops out first when the rail is narrow — the heading still names the
+   section, and the blurb is the part that can wait for a wider window. */
+.looks__section-note { font-size: 12px; color: var(--text-dim); }
+@media (max-width: 1280px) {
+  .looks__section-note { display: none; }
+}
 
 .look {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   padding: 0;
   background: none;
   border: none;
@@ -865,7 +895,12 @@
     var(--surface);
 }
 .look:hover .look__swatch { border-color: var(--text-muted); }
-.look__name { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.look__name {
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
 .look[data-active] .look__swatch { border: 2px solid var(--accent); }
 .look[data-active] .look__name { font-weight: 700; color: var(--accent-text); }
 
@@ -1292,6 +1327,8 @@
   .filmstrip__list li { flex: 0 0 110px; }
   .thumb--empty { flex: 0 0 110px; }
   .rail { width: 100%; flex-basis: auto; border-left: none; border-top: 1px solid var(--line); }
+  /* Full width now, so fill it rather than stretching three tiles across. */
+  .looks__grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
   .app__center { min-height: 60vh; }
   .empty { padding: 28px 16px; gap: 28px; }
   .dropzone { padding: 44px 24px; }

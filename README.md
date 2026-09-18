@@ -31,7 +31,9 @@ original file is never rewritten unless you export.
   range, each carrying its own tone, colour and detail
 - **Detail** — texture, clarity, dehaze, sharpening, luminance and chroma
   noise reduction
-- **Looks** — nine built-ins, plus your own imported LUTs and presets
+- **Looks** — nineteen built-ins across six groups — everyday, reversal,
+  reportage, negative, cine and monochrome — plus your own imported LUTs and
+  presets
 - **Crop and straighten**, with aspect presets and rotation
 - **Perspective and optics** — keystone correction, plus manual distortion and
   chromatic aberration
@@ -50,6 +52,13 @@ original file is never rewritten unless you export.
 | **Looks** | `.cube`, HALD and tiled LUT images |
 | **Presets** | `.xmp` and `.lrtemplate` from Lightroom Classic / Camera Raw |
 | **Camera profiles** | `.dcp` — the hue/saturation warps and tone curve are baked into a look |
+
+The built-in looks are original colour transforms, synthesised in the app from
+a hue-band description rather than shipped as baked cubes. They are named for
+what they do — the colour, the material, the process. None of them is derived
+from, named after, or claims any compatibility with a camera maker's own picture
+modes; where one lands somewhere familiar, that is the same physics described
+twice.
 
 A Lightroom preset imports as slider values rather than a baked cube, so
 everything it sets stays editable afterwards. Whatever it uses that this
