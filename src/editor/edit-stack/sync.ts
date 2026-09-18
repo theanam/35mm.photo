@@ -61,7 +61,7 @@ export const DEFAULT_SYNC_GROUPS: SyncGroup[] = SYNC_GROUPS.filter(
 /** Fields carried by each group, so the mapping is stated once. */
 const FIELDS: Record<SyncGroup, (keyof EditState)[]> = {
   whiteBalance: ['temperature', 'tint'],
-  light: ['exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks', 'vibrance', 'saturation'],
+  light: ['exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks', 'dynamicRange', 'vibrance', 'saturation'],
   curves: ['curves'],
   mixer: ['hsl'],
   grade: ['colorGrade'],

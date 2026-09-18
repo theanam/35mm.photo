@@ -72,7 +72,7 @@ export function hasLensEdits(edits: EditState): boolean {
 export function hasToneEdits(edits: EditState): boolean {
   return (
     edits.contrast !== 0 || edits.highlights !== 0 || edits.shadows !== 0 ||
-    edits.whites !== 0 || edits.blacks !== 0
+    edits.whites !== 0 || edits.blacks !== 0 || edits.dynamicRange !== 0
   )
 }
 
@@ -139,7 +139,12 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
   }
 
   if (hasToneEdits(edits)) {
-    const value = edits.contrast !== 0 ? signed(edits.contrast) : 'shaped'
+    const value =
+      edits.dynamicRange !== 0
+        ? `range ${signed(edits.dynamicRange)}`
+        : edits.contrast !== 0
+          ? signed(edits.contrast)
+          : 'shaped'
     chips.push({ id: 'tone', label: 'Tone', value, panel: 'light' })
   }
 

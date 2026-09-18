@@ -1233,6 +1233,7 @@ function migrate(edits: Partial<EditState>): EditState {
     lens: { ...base.lens, ...(edits.lens ?? {}) },
     colorGrade: { ...base.colorGrade, ...(edits.colorGrade ?? {}) },
     masks: edits.masks ?? base.masks,
+    dynamicRange: edits.dynamicRange ?? base.dynamicRange,
     raw: { ...base.raw, ...(edits.raw ?? {}) },
     look: { ...base.look, ...(edits.look ?? {}) },
     crop: { ...base.crop, ...(edits.crop ?? {}) },

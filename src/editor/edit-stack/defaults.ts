@@ -87,6 +87,8 @@ export function defaultEdits(): EditState {
     vibrance: 0,
     saturation: 0,
 
+    dynamicRange: 0,
+
     curves: identityCurves(),
     hsl: neutralHsl(),
     colorGrade: neutralColorGrade(),

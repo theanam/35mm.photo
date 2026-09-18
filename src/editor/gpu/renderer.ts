@@ -61,6 +61,7 @@ export class Renderer {
   private rtLocal: RenderTarget
   private rtPing: RenderTarget
   private rtWide: RenderTarget
+  private rtTone: RenderTarget
   private rtMid: RenderTarget
   private rtTight: RenderTarget
   private rtHalo: RenderTarget
@@ -120,6 +121,7 @@ export class Renderer {
     this.rtLocal = mk()
     this.rtPing = mk()
     this.rtWide = mk()
+    this.rtTone = mk()
     this.rtMid = mk()
     this.rtTight = mk()
     this.rtHalo = mk()
@@ -453,10 +455,11 @@ export class Renderer {
   ): RenderTarget {
     const masked = packed.hasDetail ? packed.detailNeeds : { wide: false, mid: false, tight: false }
     const needsWide = edits.clarity !== 0 || edits.dehaze !== 0 || masked.wide
+    const needsTone = edits.dynamicRange !== 0
     const needsMid = edits.texture !== 0 || masked.mid
     const needsTight =
       edits.sharpen > 0 || edits.denoiseLuma > 0 || edits.denoiseChroma > 0 || masked.tight
-    if (!needsWide && !needsMid && !needsTight) return source
+    if (!needsWide && !needsMid && !needsTight && !needsTone) return source
 
     const gl = this.gl
     // Clarity and the dehaze veil estimate both want a radius that scales with
@@ -467,6 +470,11 @@ export class Renderer {
     if (needsWide) this.blurInto(this.rtWide, source.texture, width, height, wideRadius)
     if (needsMid) this.blurInto(this.rtMid, source.texture, width, height, 3.2)
     if (needsTight) this.blurInto(this.rtTight, source.texture, width, height, 1.1)
+    // Far wider than clarity's: this one is describing "the area around here",
+    // and a tight neighbourhood is what puts a rim along every skyline.
+    if (needsTone) {
+      this.blurInto(this.rtTone, source.texture, width, height, Math.max(12, Math.min(width, height) / 14))
+    }
 
     this.rtDetail.resize(width, height)
     this.rtDetail.bind()
@@ -476,16 +484,19 @@ export class Renderer {
     this.bindTexture(1, gl.TEXTURE_2D, this.rtWide.texture)
     this.bindTexture(2, gl.TEXTURE_2D, this.rtTight.texture)
     this.bindTexture(3, gl.TEXTURE_2D, this.rtMid.texture)
+    this.bindTexture(4, gl.TEXTURE_2D, this.rtTone.texture)
     this.detailU.i('uImage', 0)
     this.detailU.i('uWideBlur', 1)
     this.detailU.i('uTightBlur', 2)
     this.detailU.i('uMidBlur', 3)
+    this.detailU.i('uToneBlur', 4)
     this.detailU.f('uClarity', edits.clarity / 100)
     this.detailU.f('uTexture', edits.texture / 100)
     this.detailU.f('uDehaze', edits.dehaze / 100)
     this.detailU.f('uSharpen', edits.sharpen / 100)
     this.detailU.f('uDenoiseLuma', edits.denoiseLuma / 100)
     this.detailU.f('uDenoiseChroma', edits.denoiseChroma / 100)
+    this.detailU.f('uDynamicRange', edits.dynamicRange / 100)
     this.setMaskUniforms(this.detailU, packed.hasDetail ? packed : EMPTY_MASKS, edits, {
       detail: true,
     })
@@ -645,7 +656,7 @@ export class Renderer {
     const gl = this.gl
 
     for (const rt of [
-      this.rtColor, this.rtLocal, this.rtPing, this.rtWide, this.rtMid,
+      this.rtColor, this.rtLocal, this.rtPing, this.rtWide, this.rtTone, this.rtMid,
       this.rtTight, this.rtHalo, this.rtDetail, this.rtRead,
     ]) {
       rt.dispose()
@@ -687,6 +698,7 @@ function originalEdits(edits: EditState): EditState {
     vibrance: 0,
     saturation: 0,
     curves: identityCurves(),
+    dynamicRange: 0,
     masks: [],
     hsl: Object.fromEntries(HSL_BANDS.map((b) => [b, { hue: 0, sat: 0, lum: 0 }])) as EditState['hsl'],
     look: { id: null, strength: 0 },

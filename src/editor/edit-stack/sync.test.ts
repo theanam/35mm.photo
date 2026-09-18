@@ -117,3 +117,45 @@ describe('resetSyncScope', () => {
     expect(resetSyncScope(edited(), SYNC_GROUPS)).toEqual(defaultEdits())
   })
 })
+
+describe('sync coverage', () => {
+  it('carries every field in the edit state when every group is on', () => {
+    // The failure this catches is a new parameter added to EditState and never
+    // added to a sync group: it would silently refuse to travel across a batch,
+    // and nothing else in the app would notice. Asserting the whole state
+    // round-trips means the mapping cannot quietly fall behind the type.
+    const target = defaultEdits()
+    const source: EditState = {
+      ...defaultEdits(),
+      exposure: 1.5,
+      contrast: 20,
+      highlights: -30,
+      shadows: 40,
+      whites: 10,
+      blacks: -10,
+      dynamicRange: 55,
+      temperature: 7200,
+      tint: 12,
+      vibrance: 25,
+      saturation: -15,
+      clarity: 30,
+      texture: 20,
+      dehaze: 10,
+      sharpen: 40,
+      denoiseLuma: 15,
+      denoiseChroma: 25,
+      halation: 30,
+      grain: 20,
+      grainSize: 70,
+      vignette: -25,
+      look: { id: 'chrome', strength: 60 },
+      raw: { ...defaultEdits().raw, demosaic: 'best', highlights: 'blend' },
+      crop: { ...defaultEdits().crop, x: 0.1, y: 0.2, w: 0.5, h: 0.5, angle: 3 },
+      perspective: { vertical: 20, horizontal: -10, aspect: 5, scale: 110 },
+      lens: { distortion: 15, ca: -8 },
+    }
+
+    const synced = applySyncScope(target, source, SYNC_GROUPS)
+    expect(synced).toEqual(source)
+  })
+})

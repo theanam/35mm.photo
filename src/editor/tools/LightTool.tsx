@@ -59,6 +59,13 @@ export function LightTool() {
             onChange={(v) => update({ shadows: v }, 'shadows')}
           />
           <Slider
+            label="Dynamic range"
+            value={edits.dynamicRange}
+            min={-100}
+            max={100}
+            onChange={(v) => update({ dynamicRange: v }, 'dynamic-range')}
+          />
+          <Slider
             label="Whites"
             value={edits.whites}
             min={-100}
@@ -112,6 +119,11 @@ export function LightTool() {
             max={100}
             onChange={(v) => update({ saturation: v }, 'saturation')}
           />
+          <p className="tool__hint">
+            <strong>Dynamic range</strong> opens shadows and holds highlights by reading the
+            area around each pixel rather than the pixel alone, so a face in shadow can lift
+            without the sky behind it lifting too.
+          </p>
           <p className="tool__hint">
             Double-click or alt-click any slider to put it back where it started.
           </p>

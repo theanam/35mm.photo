@@ -26,7 +26,9 @@ original file is never rewritten unless you export.
   demosaic quality, highlight reconstruction, pre-demosaic noise reduction and
   a half-size draft mode
 - **Light and colour** — exposure, contrast, highlights, shadows, whites,
-  blacks, white balance, vibrance, saturation
+  blacks, white balance, vibrance, saturation, and a **dynamic range** control
+  that reads the area around each pixel rather than the pixel alone, so a
+  subject in shadow can open without the sky behind it opening too
 - **Tone curves**, RGB and per-channel
 - **Colour mixer** — hue, saturation and luminance across eight bands
 - **Colour grading** — split toning across shadows, midtones and highlights

@@ -263,6 +263,13 @@ export interface EditState {
   vibrance: number // −100..100
   saturation: number // −100..100
 
+  /**
+   * Local tone mapping, −100..100. Unlike highlights and shadows, which decide
+   * from the pixel alone, this decides from the area around it — so it can open
+   * a face in shadow without lifting the night sky behind it.
+   */
+  dynamicRange: number
+
   /* Tone shaping */
   curves: Curves
   hsl: Record<HslBand, HslAdjustment>
