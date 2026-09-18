@@ -4,6 +4,7 @@ import { getLut } from '../editor/presets/lutCache'
 import { getLook } from '../editor/presets/catalogue'
 import type { EditState, ImageMeta } from '../editor/edit-stack/types'
 import { saveBlob, writeToHandle } from './file-system'
+import { attachExif } from './exif-write'
 
 export type ExportFormat = 'jpeg' | 'png' | 'webp'
 
@@ -31,6 +32,8 @@ export interface ExportRequest {
   meta: ImageMeta
   edits: EditState
   settings: ExportSettings
+  /** The file the photo came from, so its EXIF can travel to the export. */
+  sourceFile?: Blob
   /** Set to overwrite the file the photo came from instead of prompting. */
   overwriteHandle?: FileSystemFileHandle
   onProgress?: (stage: string) => void
@@ -60,7 +63,16 @@ export async function exportImage(request: ExportRequest): Promise<ExportResult>
   const width = Math.max(1, Math.round(full.width * scale))
   const height = Math.max(1, Math.round(full.height * scale))
 
-  const { blob } = await renderToBlob({ source, meta, edits, settings, width, height, onProgress })
+  const { blob } = await renderToBlob({
+    source,
+    meta,
+    edits,
+    settings,
+    width,
+    height,
+    onProgress,
+    sourceFile: request.sourceFile,
+  })
   {
 
     const filename = exportFilename(meta.name, settings.format)
@@ -87,6 +99,8 @@ export interface RenderRequest {
   width: number
   height: number
   onProgress?: (stage: string) => void
+  /** Original file, for carrying its EXIF into the encoded output. */
+  sourceFile?: Blob
   /**
    * Reuse a renderer across many exports. A browser caps how many live WebGL
    * contexts it will hand out — around sixteen — so a batch that built one per
@@ -137,7 +151,17 @@ export async function renderToBlob(
     renderer.gl.finish()
 
     onProgress?.('Encoding')
-    return { blob: await encode(surface, settings), width, height }
+    const blob = await encode(surface, settings)
+    if (!blob) return { blob, width, height }
+
+    // Carry the camera's own metadata across, and sign the result. A canvas
+    // writes pixels alone, so without this every export silently discarded the
+    // camera, lens, exposure, date and location the original carried.
+    return {
+      blob: await attachExif(blob, settings.format, request.sourceFile, { width, height }),
+      width,
+      height,
+    }
   } finally {
     // Its canvas is discarded with this call, so free the context now rather
     // than letting exports pile up live contexts against the browser's cap.

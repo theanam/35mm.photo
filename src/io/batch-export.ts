@@ -163,6 +163,7 @@ export async function runBatchExport(request: BatchRequest): Promise<BatchResult
             width: Math.max(1, Math.round(full.width * scale)),
             height: Math.max(1, Math.round(full.height * scale)),
             renderer,
+            sourceFile: item.file.file,
             onProgress: (stage) => onProgress({ frameId: item.frameId, status: 'working', stage }),
           })
           if (!blob) throw new Error('the browser could not encode it')

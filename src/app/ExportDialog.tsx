@@ -53,6 +53,7 @@ export function ExportDialog() {
         meta: photo.meta,
         edits,
         settings,
+        sourceFile: photo.file,
         overwriteHandle: overwrite ? photo.handle : undefined,
         onProgress: setBusy,
       })
