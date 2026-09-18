@@ -16,6 +16,13 @@ export interface ImageOrientationInfo {
   orientation: Orientation
   /** Dimensions as stored in the file, before any rotation. Null when unknown. */
   encoded: { width: number; height: number } | null
+  /**
+   * Where the TIFF block begins, for readers that want more than orientation.
+   * Finding it is the awkward half of reading EXIF — it hides in a JPEG APP1
+   * segment, a PNG eXIf chunk or a WebP EXIF chunk — so having found it once,
+   * this hands the offset on rather than making the next reader look again.
+   */
+  tiffStart: number | null
 }
 
 /** Orientations 5–8 exchange the two axes. */
@@ -24,10 +31,10 @@ export function swapsAxes(orientation: Orientation): boolean {
 }
 
 /** EXIF lives near the front of a file; no need to read a 50 MB body for it. */
-const HEADER_BYTES = 256 * 1024
+export const HEADER_BYTES = 256 * 1024
 
 export async function readOrientation(file: Blob): Promise<ImageOrientationInfo> {
-  const fallback: ImageOrientationInfo = { orientation: 1, encoded: null }
+  const fallback: ImageOrientationInfo = { orientation: 1, encoded: null, tiffStart: null }
   try {
     const buffer = await file.slice(0, HEADER_BYTES).arrayBuffer()
     const view = new DataView(buffer)
@@ -36,6 +43,14 @@ export async function readOrientation(file: Blob): Promise<ImageOrientationInfo>
     if (view.getUint16(0) === 0xffd8) return readJpeg(view)
     if (view.getUint32(0) === 0x89504e47) return readPng(view)
     if (view.getUint32(0) === 0x52494646 && view.getUint32(8) === 0x57454250) return readWebp(view)
+
+    // A bare TIFF, which is what most raw files are: ARW, NEF, CR2, DNG and
+    // RW2 all open with a byte-order mark and put their EXIF in IFD0 directly,
+    // with no container wrapped around it.
+    const order = view.getUint16(0)
+    if (order === 0x4949 || order === 0x4d4d) {
+      return { orientation: readTiff(view, 0) ?? 1, encoded: null, tiffStart: 0 }
+    }
 
     return fallback
   } catch {
@@ -54,6 +69,7 @@ const SOF_MARKERS = new Set([
 function readJpeg(view: DataView): ImageOrientationInfo {
   let orientation: Orientation = 1
   let encoded: { width: number; height: number } | null = null
+  let tiffStart: number | null = null
   let offset = 2
 
   while (offset + 4 <= view.byteLength) {
@@ -77,12 +93,17 @@ function readJpeg(view: DataView): ImageOrientationInfo {
     if (dataEnd > view.byteLength) break
 
     if (marker === 0xe1 && dataStart + 6 <= view.byteLength) {
-      // "Exif\0\0"
+      // "Exif\0\0". First one wins: a file that has been through several tools
+      // can carry more than one APP1, and the leading block is the one every
+      // decoder reads. Taking the last meant a stale block appended by earlier
+      // software quietly replaced the camera's own.
       if (
+        tiffStart === null &&
         view.getUint32(dataStart) === 0x45786966 &&
         view.getUint16(dataStart + 4) === 0x0000
       ) {
-        orientation = readTiff(view, dataStart + 6) ?? orientation
+        tiffStart = dataStart + 6
+        orientation = readTiff(view, tiffStart) ?? orientation
       }
     } else if (SOF_MARKERS.has(marker) && dataStart + 5 <= view.byteLength) {
       // precision(1) height(2) width(2)
@@ -95,7 +116,7 @@ function readJpeg(view: DataView): ImageOrientationInfo {
     offset = dataEnd
   }
 
-  return { orientation, encoded }
+  return { orientation, encoded, tiffStart }
 }
 
 /* ───────────────────────────── PNG ───────────────────────────── */
@@ -103,6 +124,7 @@ function readJpeg(view: DataView): ImageOrientationInfo {
 function readPng(view: DataView): ImageOrientationInfo {
   let orientation: Orientation = 1
   let encoded: { width: number; height: number } | null = null
+  let tiffStart: number | null = null
   let offset = 8
 
   while (offset + 8 <= view.byteLength) {
@@ -115,8 +137,11 @@ function readPng(view: DataView): ImageOrientationInfo {
       // IHDR
       encoded = { width: view.getUint32(dataStart), height: view.getUint32(dataStart + 4) }
     } else if (type === 0x65584966) {
-      // eXIf holds a bare TIFF block
-      orientation = readTiff(view, dataStart) ?? orientation
+      // eXIf holds a bare TIFF block; the first one wins, as with JPEG.
+      if (tiffStart === null) {
+        tiffStart = dataStart
+        orientation = readTiff(view, dataStart) ?? orientation
+      }
     } else if (type === 0x49444154) {
       break // IDAT: pixel data starts, ancillary chunks we care about are behind us
     }
@@ -124,7 +149,7 @@ function readPng(view: DataView): ImageOrientationInfo {
     offset = dataStart + length + 4 // + CRC
   }
 
-  return { orientation, encoded }
+  return { orientation, encoded, tiffStart }
 }
 
 /* ───────────────────────────── WebP ───────────────────────────── */
@@ -132,6 +157,7 @@ function readPng(view: DataView): ImageOrientationInfo {
 function readWebp(view: DataView): ImageOrientationInfo {
   let orientation: Orientation = 1
   let encoded: { width: number; height: number } | null = null
+  let found: number | null = null
   let offset = 12
 
   while (offset + 8 <= view.byteLength) {
@@ -156,14 +182,17 @@ function readWebp(view: DataView): ImageOrientationInfo {
       ) {
         tiffStart = dataStart + 6
       }
-      orientation = readTiff(view, tiffStart) ?? orientation
+      if (found === null) {
+        found = tiffStart
+        orientation = readTiff(view, tiffStart) ?? orientation
+      }
     }
 
     // RIFF chunks are padded to an even length.
     offset = dataStart + size + (size % 2)
   }
 
-  return { orientation, encoded }
+  return { orientation, encoded, tiffStart: found }
 }
 
 function readUint24LE(view: DataView, offset: number): number {
@@ -184,7 +213,9 @@ function readTiff(view: DataView, start: number): Orientation | null {
   else if (byteOrder === 0x4d4d) littleEndian = false
   else return null
 
-  if (view.getUint16(start + 2, littleEndian) !== 0x002a) return null
+  // 42 is TIFF's own; Panasonic writes 0x55 in an RW2 and is otherwise a TIFF.
+  const magic = view.getUint16(start + 2, littleEndian)
+  if (magic !== 0x002a && magic !== 0x0055) return null
 
   const ifdOffset = view.getUint32(start + 4, littleEndian)
   const ifd = start + ifdOffset

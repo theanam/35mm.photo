@@ -1,5 +1,6 @@
 import { extensionOf, isRawFile } from './formats'
 import { readOrientation, swapsAxes, type Orientation } from './exif'
+import { readShotInfo } from './exif-tags'
 import type { ImageMeta } from '../editor/edit-stack/types'
 import { uprightSize } from '../editor/gpu/transform'
 
@@ -74,12 +75,19 @@ export async function decodeFile(file: File, onStage?: OnStage): Promise<Decoded
   const effective = effectiveOrientation(orientation, encoded, bitmap)
   const upright = uprightSize(bitmap.width, bitmap.height, effective)
 
+  // Raw files get camera and lens from LibRaw; everything else had none at all,
+  // because this path only ever looked for the orientation tag. It is a read of
+  // the header the file has already been through once, so it costs nothing to
+  // pick up the rest while it is there.
+  const shot = await readShotInfo(file)
+
   return {
     bitmap,
     meta: {
       name: file.name,
       ext,
       isRaw: false,
+      ...shot,
       width: upright.width,
       height: upright.height,
       orientation: effective,
