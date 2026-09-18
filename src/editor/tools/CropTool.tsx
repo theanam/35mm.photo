@@ -1,21 +1,37 @@
+import { useRef, useState } from 'react'
 import { Slider } from '../../app/ui/Slider'
 import { useEditor } from '../edit-stack/store'
 import { displaySize, insetCropForAngle, outputSize } from '../gpu/transform'
+import { formatAspect, parseAspectRatio } from '../edit-stack/aspect'
+import { IconSwap } from '../../app/ui/icons'
 
-/** Aspect presets, in the design's order. `null` ratio means free-form. */
-const ASPECTS: { id: string; label: string; ratio: number | null }[] = [
-  { id: '3:2', label: '3:2', ratio: 3 / 2 },
-  { id: 'original', label: 'Original', ratio: null },
-  { id: '1:1', label: '1:1', ratio: 1 },
-  { id: '4:5', label: '4:5', ratio: 4 / 5 },
-  { id: '16:9', label: '16:9', ratio: 16 / 9 },
-  { id: 'free', label: 'Free', ratio: null },
+/** Aspect presets, in the design's order. The ratio comes from the id itself. */
+const ASPECTS: { id: string; label: string }[] = [
+  { id: '3:2', label: '3:2' },
+  { id: 'original', label: 'Original' },
+  { id: '1:1', label: '1:1' },
+  { id: '4:5', label: '4:5' },
+  { id: '16:9', label: '16:9' },
+  { id: 'free', label: 'Free' },
 ]
 
 export function CropTool() {
   const edits = useEditor((s) => s.edits)
   const photo = useEditor((s) => s.photo)
   const updateCrop = useEditor((s) => s.updateCrop)
+
+  const [customW, setCustomW] = useState('3')
+  const [customH, setCustomH] = useState('2')
+
+  /*
+   * Custom is a mode of its own rather than "the ratio matches no preset".
+   * Typing 3:2 into the fields lands on a ratio a preset already covers, and
+   * deriving the mode from the value would bounce the highlight over to that
+   * preset and take the fields away mid-edit.
+   */
+  const [customMode, setCustomMode] = useState(
+    () => Boolean(edits.crop.aspect) && !ASPECTS.some((a) => a.id === edits.crop.aspect),
+  )
 
   const meta = photo?.meta
   const frame = meta ? displaySize(meta.width, meta.height, edits.crop.rotate90) : null
@@ -27,8 +43,8 @@ export function CropTool() {
       return
     }
 
-    const preset = ASPECTS.find((a) => a.id === id)
-    if (!preset || preset.ratio === null) {
+    const ratio = parseAspectRatio(id)
+    if (ratio === null) {
       // "Original" and "Free" both release the lock; Original also resets the box.
       updateCrop(
         id === 'original' ? { aspect: id, x: 0, y: 0, w: 1, h: 1 } : { aspect: id },
@@ -39,9 +55,9 @@ export function CropTool() {
 
     const frameAspect = frame.width / frame.height
     // Largest centred box of the chosen ratio that fits the frame.
-    const w = preset.ratio >= frameAspect ? 1 : preset.ratio / frameAspect
-    const h = preset.ratio >= frameAspect ? frameAspect / preset.ratio : 1
-    const inset = insetCropForAngle(1, 1, edits.crop.angle, preset.ratio / frameAspect)
+    const w = ratio >= frameAspect ? 1 : ratio / frameAspect
+    const h = ratio >= frameAspect ? frameAspect / ratio : 1
+    const inset = insetCropForAngle(1, 1, edits.crop.angle, ratio / frameAspect)
 
     const finalW = Math.min(w, inset.w)
     const finalH = Math.min(h, inset.h)
@@ -49,6 +65,47 @@ export function CropTool() {
       { aspect: id, w: finalW, h: finalH, x: (1 - finalW) / 2, y: (1 - finalH) / 2 },
       'crop-aspect',
     )
+  }
+
+  /**
+   * Focus the width field when Custom is chosen — picking it is already a
+   * statement that a number is coming.
+   *
+   * The field does not exist at the moment of the click, so this cannot be a
+   * focus() in the handler, and an effect on the mode would also fire when the
+   * tool opens on a crop that is already custom, stealing focus from nothing
+   * the user did. Instead the click leaves a note, and the field claims focus
+   * as it mounts.
+   */
+  const widthEl = useRef<HTMLInputElement | null>(null)
+  const wantsFocus = useRef(false)
+
+  const attachWidth = (el: HTMLInputElement | null) => {
+    widthEl.current = el
+    if (el && wantsFocus.current) {
+      wantsFocus.current = false
+      // Selected, not just focused: the value is being replaced, not appended.
+      el.select()
+    }
+  }
+
+  const enterCustom = () => {
+    if (customMode) widthEl.current?.select()
+    else wantsFocus.current = true
+    setCustomMode(true)
+    applyCustom(customW, customH)
+  }
+
+  /** Apply a typed ratio, ignoring the half-finished states of typing one. */
+  const applyCustom = (w: string, h: string, swap = false) => {
+    if (swap) {
+      setCustomW(w)
+      setCustomH(h)
+    }
+    const width = Number(w)
+    const height = Number(h)
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
+    chooseAspect(formatAspect(width, height))
   }
 
   const setAngle = (angle: number) => {
@@ -90,14 +147,69 @@ export function CropTool() {
               <button
                 key={a.id}
                 className="chip"
-                data-active={edits.crop.aspect === a.id || undefined}
-                aria-pressed={edits.crop.aspect === a.id}
-                onClick={() => chooseAspect(a.id)}
+                data-active={(!customMode && edits.crop.aspect === a.id) || undefined}
+                aria-pressed={!customMode && edits.crop.aspect === a.id}
+                onClick={() => {
+                  setCustomMode(false)
+                  chooseAspect(a.id)
+                }}
               >
                 {a.label}
               </button>
             ))}
+            <button
+              className="chip"
+              data-active={customMode || undefined}
+              aria-pressed={customMode}
+              onClick={enterCustom}
+            >
+              Custom
+            </button>
+
+            {/* Inline with the chips, at chip height: the fields are part of
+                the same row of choices, not a panel that opens beneath it. */}
+            {customMode && (
+              <span className="aspect-custom">
+                <input
+                  ref={attachWidth}
+                  className="aspect-custom__field mono"
+                  type="number"
+                  min="0.1"
+                  step="any"
+                  value={customW}
+                  aria-label="Custom aspect width"
+                  onChange={(e) => {
+                    setCustomW(e.target.value)
+                    applyCustom(e.target.value, customH)
+                  }}
+                />
+                <span className="aspect-custom__colon" aria-hidden>
+                  :
+                </span>
+                <input
+                  className="aspect-custom__field mono"
+                  type="number"
+                  min="0.1"
+                  step="any"
+                  value={customH}
+                  aria-label="Custom aspect height"
+                  onChange={(e) => {
+                    setCustomH(e.target.value)
+                    applyCustom(customW, e.target.value)
+                  }}
+                />
+                <button
+                  className="aspect-custom__flip"
+                  onClick={() => applyCustom(customH, customW, true)}
+                  title="Swap width and height"
+                  aria-label="Swap width and height"
+                >
+                  <IconSwap size={14} />
+                </button>
+              </span>
+            )}
           </div>
+
           <p className="tool__hint">Drag the box or its handles directly on the photo.</p>
         </section>
 

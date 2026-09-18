@@ -1,17 +1,11 @@
 import { useRef } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
+import { parseAspectRatio } from '../editor/edit-stack/aspect'
 import { displaySize } from '../editor/gpu/transform'
 
 type Handle = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w' | 'move'
 
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
-
-const ASPECT_RATIO: Record<string, number> = {
-  '3:2': 3 / 2,
-  '1:1': 1,
-  '4:5': 4 / 5,
-  '16:9': 16 / 9,
-}
 
 /** Interactive crop box drawn over the full, uncropped frame. */
 export function CropOverlay({ width, height }: { width: number; height: number }) {
@@ -23,8 +17,8 @@ export function CropOverlay({ width, height }: { width: number; height: number }
   const frame = photo ? displaySize(photo.meta.width, photo.meta.height, crop.rotate90) : null
   // Ratio expressed in normalised units, so the maths stays in 0..1 space.
   const lockedRatio =
-    crop.aspect && ASPECT_RATIO[crop.aspect] && frame
-      ? ASPECT_RATIO[crop.aspect] / (frame.width / frame.height)
+    crop.aspect && parseAspectRatio(crop.aspect) && frame
+      ? parseAspectRatio(crop.aspect)! / (frame.width / frame.height)
       : null
 
   const onPointerDown = (handle: Handle) => (event: React.PointerEvent) => {
