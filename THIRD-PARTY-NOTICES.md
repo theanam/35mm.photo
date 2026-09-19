@@ -46,7 +46,9 @@ conversion used here comes from
 also Apache-2.0. It was trained on DUTS-TR.
 
 Apache-2.0 asks that the licence travel with the work, that changes be stated,
-and that any NOTICE file be preserved. The weights are shipped unmodified.
+and that any NOTICE file be preserved. The change here, stated: the weights are
+converted from the published float32 export to float16, which halves the file
+and leaves the output all but identical. Nothing else is altered.
 
 This model was chosen partly *because* of its licence. The obvious alternatives
 for this kind of task — NVIDIA's SegFormer checkpoints in particular — are
