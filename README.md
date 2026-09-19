@@ -52,11 +52,18 @@ original file is never rewritten unless you export.
 
 | | |
 | --- | --- |
-| **Photos** | JPEG, PNG, WEBP, AVIF, GIF, BMP |
+| **Photos** | JPEG, PNG, HEIC/HEIF, WEBP, AVIF, GIF, BMP |
 | **Camera raw** | RAF, RW2, CR2, CR3, CRW, NEF, ARW, SR2, DNG, ORF, PEF, SRW, MRW, ERF, DCR, 3FR, MOS and others LibRaw supports |
 | **Looks** | `.cube`, HALD and tiled LUT images |
 | **Presets** | `.xmp` and `.lrtemplate` from Lightroom Classic / Camera Raw |
 | **Camera profiles** | `.dcp` — the hue/saturation warps and tone curve are baked into a look |
+
+HEIC is the iPhone's default, and the one format on that list most browsers
+cannot decode: Chrome, Edge and Firefox all declined to ship a decoder for it,
+the format resting on HEVC. So 35mm carries one — [libheif](https://github.com/strukturag/libheif)
+compiled to WebAssembly, fetched the first time you open a HEIC on a browser
+that needs it and cached from then on. Safari and iOS decode HEIC themselves,
+and never download it at all.
 
 The built-in looks are original colour transforms, synthesised in the app from
 a hue-band description rather than shipped as baked cubes. They are named for

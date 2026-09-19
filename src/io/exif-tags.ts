@@ -199,12 +199,21 @@ async function readIfds(file: Blob): Promise<Ifds | null> {
   const { tiffStart } = await readOrientation(file)
   if (tiffStart == null) return null
 
-  const buffer = await file.slice(0, HEADER_BYTES).arrayBuffer()
+  // Read the window from the TIFF block rather than from the start of the file.
+  // A JPEG keeps its EXIF near the front, so for that the two are all but the
+  // same bytes — but a HEIC stores it as an item that can sit anywhere, behind
+  // the picture as often as not, and a window anchored at zero would miss it
+  // entirely. Anchoring at the block also spends the whole budget on EXIF
+  // instead of on whatever precedes it.
+  //
+  // Every pointer inside a TIFF block is measured from the block itself, so
+  // reading it at the start of the buffer makes the reader's base zero.
+  const buffer = await file.slice(tiffStart, tiffStart + HEADER_BYTES).arrayBuffer()
   const view = new DataView(buffer)
 
   let tiff: Tiff
   try {
-    tiff = new Tiff(view, tiffStart)
+    tiff = new Tiff(view, 0)
   } catch {
     return null
   }

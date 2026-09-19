@@ -1,4 +1,4 @@
-import { extensionOf, isRawFile } from './formats'
+import { extensionOf, isHeifFile, isRawFile } from './formats'
 import { readOrientation, swapsAxes, type Orientation } from './exif'
 import { readShotInfo } from './exif-tags'
 import type { ImageMeta, RawDevelopState } from '../editor/edit-stack/types'
@@ -11,7 +11,7 @@ export interface DecodedImage {
 
 export class UnsupportedFormatError extends Error {
   constructor(public readonly ext: string) {
-    super(`35mm cannot open .${ext.toUpperCase()} files. Try a JPEG, PNG, WebP or AVIF.`)
+    super(`35mm cannot open .${ext.toUpperCase()} files. Try a JPEG, PNG, HEIC, WebP or AVIF.`)
     this.name = 'UnsupportedFormatError'
   }
 }
@@ -46,7 +46,7 @@ export class RawDecodeError extends Error {
  * events to report, so the loader shows which stage is running instead of a
  * percentage it would have to invent.
  */
-export type DecodeStage = 'reading' | 'developing' | 'preview'
+export type DecodeStage = 'reading' | 'developing' | 'decoding' | 'preview'
 export type OnStage = (stage: DecodeStage) => void
 
 export async function decodeFile(
@@ -59,6 +59,14 @@ export async function decodeFile(
   if (isRawFile(file.name)) {
     const { decodeRaw } = await import('../raw/decode-raw')
     return decodeRaw(file, onStage, develop)
+  }
+
+  // HEIC has its own module because most browsers cannot decode it and it has
+  // to carry a decoder of its own. Imported dynamically so that neither that
+  // decoder nor the worker holding it is part of the initial bundle.
+  if (isHeifFile(file.name)) {
+    const { decodeHeic } = await import('./heic')
+    return decodeHeic(file, onStage)
   }
 
   const { orientation, encoded } = await readOrientation(file)

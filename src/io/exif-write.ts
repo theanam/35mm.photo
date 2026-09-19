@@ -161,12 +161,18 @@ export async function buildExifBlock(
     try {
       const { tiffStart } = await readOrientation(source)
       if (tiffStart != null) {
-        const view = new DataView(await source.slice(0, HEADER_BYTES).arrayBuffer())
-        const order = view.getUint16(tiffStart)
+        // Anchored at the block rather than at the start of the file, for the
+        // reason `readIfds` gives: a HEIC keeps its EXIF as an item that can
+        // sit past any window measured from zero, and an export that dropped
+        // the camera and the GPS fix on the floor would be a quiet loss.
+        const view = new DataView(
+          await source.slice(tiffStart, tiffStart + HEADER_BYTES).arrayBuffer(),
+        )
+        const order = view.getUint16(0)
         const srcLittle = order === 0x4949
         if (order === 0x4949 || order === 0x4d4d) {
-          const firstIfd = tiffStart + view.getUint32(tiffStart + 4, srcLittle)
-          ifd0 = readEntries(view, tiffStart, firstIfd, srcLittle)
+          const firstIfd = view.getUint32(4, srcLittle)
+          ifd0 = readEntries(view, 0, firstIfd, srcLittle)
 
           const pointer = (tag: number) => {
             const e = ifd0.find((x) => x.tag === tag)
@@ -175,8 +181,8 @@ export async function buildExifBlock(
           }
           const exifAt = pointer(TAG.exifPointer)
           const gpsAt = pointer(TAG.gpsPointer)
-          if (exifAt) exif = readEntries(view, tiffStart, tiffStart + exifAt, srcLittle)
-          if (gpsAt) gps = readEntries(view, tiffStart, tiffStart + gpsAt, srcLittle)
+          if (exifAt) exif = readEntries(view, 0, exifAt, srcLittle)
+          if (gpsAt) gps = readEntries(view, 0, gpsAt, srcLittle)
 
           // A block written big-endian cannot have its values reused verbatim
           // in a little-endian one, so in that case only the structure is kept

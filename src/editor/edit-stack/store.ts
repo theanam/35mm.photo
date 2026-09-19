@@ -218,6 +218,9 @@ const PRISTINE = defaultEdits()
 const STAGE_LABELS: Record<DecodeStage, string> = {
   reading: 'Reading the file',
   developing: 'Developing the raw',
+  // Only ever shown for a HEIC on a browser with no decoder of its own, where
+  // the first one also waits on the WASM being fetched.
+  decoding: 'Decoding the photo',
   preview: 'Building the preview',
 }
 

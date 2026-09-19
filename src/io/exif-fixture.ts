@@ -1,9 +1,13 @@
 /**
- * A JPEG carrying a full EXIF block, built byte by byte.
+ * Files carrying a full EXIF block, built byte by byte.
  *
  * Shared by the reader and writer suites. Built rather than checked in: a
  * fixture that states exactly what it contains is easier to trust than a photo
  * with something already inside it, and it keeps a binary out of the tree.
+ *
+ * The TIFF block is built once and wrapped two ways — in a JPEG's APP1 segment,
+ * and as an item in a HEIC's box tree — so that the two containers are tested
+ * against identical contents and any difference is the container's doing.
  */
 
 type Entry = [tag: number, type: number, count: number, payload: Uint8Array | number]
@@ -50,11 +54,12 @@ function buildIfd(entries: Entry[], heapBase: number) {
 
 const ifdSize = (n: number) => 2 + n * 12 + 4
 
-export function buildExifJpeg(): Blob {
+/** The TIFF block on its own, wrapped by whichever container wants it. */
+export function buildExifTiff(orientation = 1): Uint8Array {
   const ifd0: Entry[] = [
     [0x010f, 2, 9, ascii('FUJIFILM')],
     [0x0110, 2, 5, ascii('X-T3')],
-    [0x0112, 3, 1, 1],
+    [0x0112, 3, 1, orientation],
     [0x0131, 2, 9, ascii('Firmware')],
     [0x8298, 2, 7, ascii('(c) Me')],
   ]
@@ -90,13 +95,15 @@ export function buildExifJpeg(): Blob {
   const b = buildIfd(exif, heapAt + a.heap.length)
   const c = buildIfd(gps, heapAt + a.heap.length + b.heap.length)
 
-  const tiff = concat([
+  return concat([
     new Uint8Array([0x49, 0x49]), u16(42), u32(8),
     a.body, u32(0), b.body, u32(0), c.body, u32(0),
     a.heap, b.heap, c.heap,
   ])
+}
 
-  const app1 = concat([ascii('Exif'), new Uint8Array([0]), tiff])
+export function buildExifJpeg(): Blob {
+  const app1 = concat([ascii('Exif'), new Uint8Array([0]), buildExifTiff()])
   const length = new Uint8Array(2)
   new DataView(length.buffer).setUint16(0, app1.length + 2, false)
 
@@ -110,3 +117,76 @@ export function buildExifJpeg(): Blob {
   ])])
 }
 
+
+/* ────────────────────────── the HEIC container ────────────────────────── */
+
+const be16 = (v: number) => { const b = new Uint8Array(2); new DataView(b.buffer).setUint16(0, v, false); return b }
+const be32 = (v: number) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, v, false); return b }
+const fourcc = (s: string) => new Uint8Array([...s].map((c) => c.charCodeAt(0)))
+
+const box = (type: string, ...parts: Uint8Array[]) => {
+  const body = concat(parts)
+  return concat([be32(body.length + 8), fourcc(type), body])
+}
+
+/** A box whose first four payload bytes are a version and three flag bytes. */
+const fullBox = (type: string, version: number, ...parts: Uint8Array[]) =>
+  box(type, new Uint8Array([version, 0, 0, 0]), ...parts)
+
+/** The `Exif` item's id. Any number does; a real file rarely starts at one. */
+const EXIF_ITEM = 4
+
+export interface HeicOptions {
+  /**
+   * Bytes of `mdat` before the EXIF payload. A real photo puts its picture
+   * here, which is what pushes the metadata deep into the file — so this is
+   * how a reader gets tested against a block it cannot have already read.
+   */
+  padding?: number
+  /**
+   * The `exif_tiff_header_offset` the payload states: 0 for a bare TIFF block,
+   * 6 for one behind the JPEG-style "Exif\0\0" prefix. Both occur in the wild.
+   */
+  headerOffset?: 0 | 6
+  /** Written into the EXIF block, which a HEIC reader is expected to ignore. */
+  orientation?: number
+}
+
+/**
+ * A HEIC whose `meta` box declares an `Exif` item and whose `mdat` holds it.
+ *
+ * There is no picture in it — there is no HEVC encoder here, and none of the
+ * readers under test looks at pixels. What it does model is the part that
+ * matters: EXIF as an item located by absolute byte offset, so that `padding`
+ * can put it somewhere a reader has no business assuming it can reach.
+ */
+export function buildExifHeic(options: HeicOptions = {}): Blob {
+  const { padding = 0, headerOffset = 0, orientation = 1 } = options
+
+  const payload = concat([
+    be32(headerOffset),
+    headerOffset === 6 ? concat([ascii('Exif'), new Uint8Array([0])]) : new Uint8Array(0),
+    buildExifTiff(orientation),
+  ])
+
+  const ftyp = box('ftyp', fourcc('heic'), be32(0), fourcc('heic'), fourcc('mif1'))
+  const hdlr = fullBox('hdlr', 0, be32(0), fourcc('pict'), be32(0), be32(0), be32(0), new Uint8Array([0]))
+  const iinf = fullBox('iinf', 0, be16(1),
+    fullBox('infe', 2, be16(EXIF_ITEM), be16(0), fourcc('Exif'), new Uint8Array([0])))
+
+  // Widths packed a nibble each: offset 4, length 4, base offset 0, index 0.
+  const iloc = (at: number) =>
+    fullBox('iloc', 1, be16(0x4400), be16(1),
+      be16(EXIF_ITEM), be16(0), be16(0), be16(1), be32(at), be32(payload.length))
+
+  // The extent offset is absolute, and the box stating it lives inside `meta` —
+  // so `meta`'s own size has to be known before it can be written. The field is
+  // a fixed four bytes wide, so building it once against a placeholder measures
+  // the box exactly.
+  const withOffset = (at: number) => fullBox('meta', 0, hdlr, iinf, iloc(at))
+  const exifAt = ftyp.length + withOffset(0).length + 8 + padding
+
+  return new Blob([
+    concat([ftyp, withOffset(exifAt), box('mdat', new Uint8Array(padding), payload)]),
+  ])
+}

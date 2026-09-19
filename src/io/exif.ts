@@ -9,6 +9,14 @@
  * and apply it in the render graph.
  */
 
+import {
+  EXIF_PAYLOAD_HEAD,
+  findExifExtent,
+  isIsobmff,
+  tiffOffsetInPayload,
+  type Extent,
+} from './isobmff'
+
 /** EXIF Orientation, 1–8. 1 is upright; 5–8 also swap width and height. */
 export type Orientation = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
 
@@ -17,10 +25,15 @@ export interface ImageOrientationInfo {
   /** Dimensions as stored in the file, before any rotation. Null when unknown. */
   encoded: { width: number; height: number } | null
   /**
-   * Where the TIFF block begins, for readers that want more than orientation.
-   * Finding it is the awkward half of reading EXIF — it hides in a JPEG APP1
-   * segment, a PNG eXIf chunk or a WebP EXIF chunk — so having found it once,
-   * this hands the offset on rather than making the next reader look again.
+   * Where the TIFF block begins, as an offset into the file, for readers that
+   * want more than orientation. Finding it is the awkward half of reading EXIF
+   * — it hides in a JPEG APP1 segment, a PNG eXIf chunk, a WebP EXIF chunk or
+   * an ISOBMFF item — so having found it once, this hands the offset on rather
+   * than making the next reader look again.
+   *
+   * In the first three it lands near the front of the file. In a HEIC it can be
+   * anywhere, so a reader must not assume the block is inside whatever header
+   * window it happens to have already read.
    */
   tiffStart: number | null
 }
@@ -41,6 +54,7 @@ export async function readOrientation(file: Blob): Promise<ImageOrientationInfo>
     if (view.byteLength < 12) return fallback
 
     if (view.getUint16(0) === 0xffd8) return readJpeg(view)
+    if (isIsobmff(view)) return readIsobmff(file, view)
     if (view.getUint32(0) === 0x89504e47) return readPng(view)
     if (view.getUint32(0) === 0x52494646 && view.getUint32(8) === 0x57454250) return readWebp(view)
 
@@ -197,6 +211,52 @@ function readWebp(view: DataView): ImageOrientationInfo {
 
 function readUint24LE(view: DataView, offset: number): number {
   return view.getUint8(offset) | (view.getUint8(offset + 1) << 8) | (view.getUint8(offset + 2) << 16)
+}
+
+/* ─────────────────── HEIC, HEIF and AVIF (ISOBMFF) ─────────────────── */
+
+/**
+ * The orientation reported here is always 1, and that is deliberate.
+ *
+ * These containers do not express rotation the way a JPEG does. A quarter turn
+ * is an `irot` property attached to the image item, and it is part of how the
+ * item decodes rather than a note left for whoever displays it — so every
+ * decoder applies it on the way out. Safari does, and so does the libheif build
+ * in `heic.ts`. A HEIC that also carries an EXIF Orientation tag is repeating
+ * itself, and ISO 23008-12 gives the container property the final say.
+ *
+ * Reporting what that tag says would therefore turn a photo the decoder had
+ * already turned. The one thing worth having from the EXIF block is everything
+ * *else* in it — camera, lens, ISO, the date — so this locates the block and
+ * reports upright.
+ */
+async function readIsobmff(file: Blob, view: DataView): Promise<ImageOrientationInfo> {
+  const upright: ImageOrientationInfo = { orientation: 1, encoded: null, tiffStart: null }
+
+  const extent = findExifExtent(view)
+  if (!extent || extent.offset <= 0) return upright
+
+  const head = await payloadHead(file, view, extent)
+  if (!head) return upright
+
+  const skip = tiffOffsetInPayload(head)
+  return skip === null ? upright : { ...upright, tiffStart: extent.offset + skip }
+}
+
+/**
+ * The front of the EXIF payload. Served from the header window when the item
+ * happens to sit inside it, and read directly when it does not — which is the
+ * normal case for a photo, whose metadata trails the picture in `mdat`.
+ */
+async function payloadHead(file: Blob, view: DataView, extent: Extent): Promise<DataView | null> {
+  const want = Math.min(extent.length || EXIF_PAYLOAD_HEAD, EXIF_PAYLOAD_HEAD)
+
+  if (extent.offset + want <= view.byteLength) {
+    return new DataView(view.buffer, view.byteOffset + extent.offset, want)
+  }
+
+  const buffer = await file.slice(extent.offset, extent.offset + want).arrayBuffer()
+  return buffer.byteLength >= 4 ? new DataView(buffer) : null
 }
 
 /* ───────────────────────────── TIFF/IFD ───────────────────────────── */
