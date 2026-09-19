@@ -55,9 +55,13 @@ this repository at all: MIT grants downstream users commercial rights that
 35mm would not itself hold, and a project cannot pass on what it was never
 given. No amount of the project being unpaid changes that.
 
-The ONNX Runtime WebAssembly is **not** committed. It is copied out of
-`node_modules` by `scripts/sync-ort.mjs` before each dev run and build, and is
-reproducible from the version pinned in `package-lock.json`.
+The ONNX Runtime WebAssembly is **not** committed. The build emits it from
+`node_modules` as an ordinary hashed asset, so it is reproducible from the
+version pinned in `package-lock.json` and 13.6 MB never enters the history.
+
+35mm imports the `onnxruntime-web/wasm` entry point rather than the default
+one. The default carries the WebGPU build as well, at 28 MB against this one's
+13.6 MB, for a backend nothing here asks for.
 
 ### What is *not* shipped
 

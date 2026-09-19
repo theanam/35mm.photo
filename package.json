@@ -5,9 +5,8 @@
   "type": "module",
   "description": "A full-featured photo editor in your browser. Everything runs in the browser tab.",
   "scripts": {
-    "dev": "npm run sync:ort && vite",
-    "build": "npm run sync:ort && tsc -b && vite build",
-    "sync:ort": "node scripts/sync-ort.mjs",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",

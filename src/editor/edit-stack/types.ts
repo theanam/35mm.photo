@@ -211,7 +211,31 @@ export interface ColourMask extends MaskCommon {
   width: number
 }
 
-export type Mask = RadialMask | LinearMask | LuminanceMask | ColourMask
+/**
+ * The subject of the photograph, as a salient-object model sees it.
+ *
+ * The only mask whose shape is not described by its own fields. What is stored
+ * is the *intent* — find the subject, with this model — and the coverage map is
+ * derived from the picture and cached against the file. That keeps the edit
+ * stack what it has always been, a handful of numbers that ride through a
+ * sidecar, IndexedDB and a batch sync with no special serialiser; a bitmap in
+ * here would end that for every mask, not just this one.
+ *
+ * It also makes this the one mask worth syncing across a batch. A radial over a
+ * face lands on whatever happens to be in that corner of the next frame, which
+ * is why sync leaves geometry off by default — but "the subject" re-derives per
+ * photo, and means the same thing on all of them.
+ */
+export interface SubjectMask extends MaskCommon {
+  kind: 'subject'
+  /**
+   * Which detector produced the map. A cached mask from another one is a
+   * different answer, so this is part of the cache key rather than decoration.
+   */
+  model: string
+}
+
+export type Mask = RadialMask | LinearMask | LuminanceMask | ColourMask | SubjectMask
 
 export type MaskKind = Mask['kind']
 

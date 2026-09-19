@@ -3,6 +3,7 @@ import { cloneEdits, defaultEdits, editsEqual } from './defaults'
 import { emptyHistory, pushHistory, shouldPush, touchHistory, type History } from './history'
 import { countEdits, type PanelId } from './summary'
 import { createMask, replaceMask, replaceMaskAdjust } from './masks'
+import { rememberSubject, subjectFor } from '../../subject/detect'
 import { applySyncScope, type SyncGroup } from './sync'
 import { MAX_MASKS, type EditState, type Frame, type ImageMeta, type Mask, type MaskAdjust, type MaskKind } from './types'
 import type { Orientation } from '../../io/exif'
@@ -101,6 +102,12 @@ interface EditorState {
   activeMaskId: string | null
   /** Paint the selected mask over the picture while the tool is open. */
   maskOverlay: boolean
+  /**
+   * Bumped when a derived mask map changes. Subject coverage lives outside the
+   * edit stack — it is pixels, not numbers — so there is nothing in `edits` for
+   * the viewport to notice, and nothing that should reach undo either.
+   */
+  maskMapsAt: number
   exportOpen: boolean
   aboutOpen: boolean
   batch: BatchState
@@ -156,6 +163,10 @@ interface EditorState {
   /** Full-resolution pixels, developing them first if this open came from cache. */
   ensureFullSource: () => Promise<ImageBitmap | null>
   addMask: (kind: MaskKind) => void
+  /** Run the detector for a subject mask, or re-run it after a model change. */
+  detectSubjectMask: (id: string) => Promise<void>
+  /** True while a detection is in flight, so the tool can say so. */
+  detecting: boolean
   removeMask: (id: string) => void
   selectMask: (id: string | null) => void
   updateMask: (id: string, patch: Partial<Mask>, coalesceKey?: string) => void
@@ -253,6 +264,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   cropping: false,
   activeMaskId: null,
   maskOverlay: true,
+  maskMapsAt: 0,
+  detecting: false,
   exportOpen: false,
   aboutOpen: false,
   syncOpen: false,
@@ -826,6 +839,31 @@ export const useEditor = create<EditorState>((set, get) => ({
     const mask = createMask(kind, aspect, edits.masks)
     get().update({ masks: [...edits.masks, mask] }, `mask-add-${mask.id}`)
     set({ activeMaskId: mask.id })
+  },
+
+  async detectSubjectMask(id) {
+    const { edits, photo, activeFrameId } = get()
+    const mask = edits.masks.find((m) => m.id === id)
+    if (!mask || mask.kind !== 'subject' || !photo || !activeFrameId) return
+    if (get().detecting) return
+
+    set({ detecting: true })
+    try {
+      // The preview, not the full-resolution source. The detector sees a 320px
+      // copy either way, and a photo restored from the develop cache has no
+      // full-resolution pixels to offer without developing the raw again.
+      const map = await subjectFor(activeFrameId, mask.model, photo.preview)
+      // The photo may have been changed underneath a slow detection.
+      if (get().activeFrameId !== activeFrameId) return
+      rememberSubject(activeFrameId, mask.model, map)
+      // Nothing in the edit stack changed, so nudge the frame counter instead:
+      // the viewport redraws on it, and this must not land in undo.
+      set({ maskMapsAt: Date.now() })
+    } catch (err) {
+      get().toast(err instanceof Error ? err.message : 'Could not find a subject', 'error')
+    } finally {
+      set({ detecting: false })
+    }
   },
 
   removeMask(id) {

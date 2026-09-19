@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
-import * as ort from 'onnxruntime-web'
+import * as ort from 'onnxruntime-web/wasm'
+import { refineMask } from './refine'
 
 /**
  * Salient object detection, off the main thread (spec §3.3).
@@ -16,12 +17,14 @@ import * as ort from 'onnxruntime-web'
 
 interface DetectRequest {
   id: string
-  /** Where to fetch the model and the runtime from, resolved against the base. */
+  /** Where to fetch the model from, resolved against the build's base path. */
   modelUrl: string
-  wasmPath: string
-  /** The photo, already scaled to `SIZE` and laid out as RGBA. */
+  /** The photo, already scaled to the detector's input and laid out as RGBA. */
   rgba: Uint8ClampedArray
   size: number
+  /** Luminance of the same picture, square, for refining the coarse result. */
+  guide: Float32Array
+  guideSize: number
 }
 
 /** ImageNet statistics, which is what U²-Net was trained against. */
@@ -30,12 +33,18 @@ const STD = [0.229, 0.224, 0.225]
 
 let session: Promise<ort.InferenceSession> | null = null
 
-function load(modelUrl: string, wasmPath: string): Promise<ort.InferenceSession> {
+function load(modelUrl: string): Promise<ort.InferenceSession> {
   if (!session) {
-    // Served from our own origin — see `scripts/sync-ort.mjs`. Left unset, the
-    // runtime reaches for a CDN, which the service worker will not cache and
-    // which would take the feature offline with it.
-    ort.env.wasm.wasmPaths = wasmPath
+    // No wasmPaths: the `onnxruntime-web/wasm` entry point references its
+    // WebAssembly as a module asset, so the bundler emits it alongside
+    // everything else and it is fetched from our own origin with a hash in its
+    // name. Left to its own devices the default entry reaches for a CDN, which
+    // the service worker will not cache and which would take the feature
+    // offline with it — and tell a third party who is using it.
+    //
+    // That entry also matters for size: the default one carries the WebGPU
+    // (jsep) build, which is 28 MB against this one's 13.6 MB, for a backend
+    // nothing here asks for.
     // GitHub Pages cannot send the COOP/COEP headers that SharedArrayBuffer
     // needs, so threads are not available. Asking for them anyway costs a
     // failed probe and a console error on every load.
@@ -57,10 +66,10 @@ function load(modelUrl: string, wasmPath: string): Promise<ort.InferenceSession>
 }
 
 self.addEventListener('message', async (event: MessageEvent<DetectRequest>) => {
-  const { id, modelUrl, wasmPath, rgba, size } = event.data
+  const { id, modelUrl, rgba, size, guide, guideSize } = event.data
 
   try {
-    const model = await load(modelUrl, wasmPath)
+    const model = await load(modelUrl)
 
     // NCHW, normalised. The alpha channel is dropped; a salient-object model
     // has no use for it and the source is opaque in any case.
@@ -96,12 +105,17 @@ self.addEventListener('message', async (event: MessageEvent<DetectRequest>) => {
     }
     const span = hi - lo
 
-    const mask = new Uint8ClampedArray(plane)
+    const coarse = new Uint8ClampedArray(plane)
     for (let i = 0; i < plane; i++) {
-      mask[i] = span > 1e-6 ? Math.round(((data[i] - lo) / span) * 255) : 0
+      coarse[i] = span > 1e-6 ? Math.round(((data[i] - lo) / span) * 255) : 0
     }
 
-    self.postMessage({ id, ok: true, mask, size }, [mask.buffer])
+    // Cut the coarse map along the edges the photograph already has. Without
+    // this the result is unusable on anything with fine structure — see
+    // `refine.ts` for what it is doing and why it is not a blur.
+    const mask = refineMask(coarse, size, guide, guideSize)
+
+    self.postMessage({ id, ok: true, mask, size: guideSize }, [mask.buffer])
   } catch (err) {
     self.postMessage({
       id,

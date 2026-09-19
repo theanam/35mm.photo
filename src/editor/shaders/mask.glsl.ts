@@ -20,13 +20,25 @@ uniform int   uMaskCount;
 uniform mat3  uMaskTransform;  // output uv (y-down) → upright image uv
 uniform float uMaskAspect;     // upright width ÷ height
 
-// 0 radial, 1 linear, 2 luminance, 3 colour.
+// 0 radial, 1 linear, 2 luminance, 3 colour, 4 subject.
 uniform int  uMaskKind[MAX_MASKS];
 // radial: centre.xy, radii.zw | linear: from.xy, to.zw
 // luminance: lo, hi | colour: hue (turns), half-width (turns)
+// subject: channel of uSubject (0..3), then the two ends of the alpha remap
 uniform vec4 uMaskGeom[MAX_MASKS];
+
 // angle (radians), feather 0..1, invert 0/1, amount 0..1
 uniform vec4 uMaskShape[MAX_MASKS];
+/**
+ * Coverage maps for subject masks, four to a texture — one per channel, which
+ * is as many as anyone has reason to put on one photograph.
+ *
+ * Stored in upright image uv, the same space maskUv returns, so the map stays
+ * on the thing it was found on when the crop or the straighten moves underneath
+ * it. Sampled with LINEAR: the map is smaller than the frame, and the detail in
+ * its edges came from the refinement that produced it, not from its resolution.
+ */
+uniform sampler2D uSubject;
 
 /**
  * Where this fragment sits on the picture. The intermediate passes interpolate
@@ -71,6 +83,14 @@ float maskWeight(int index, vec2 p, vec3 c) {
     float y = luma(clamp(c, 0.0, 1.0));
     float f = max(feather * 0.25, 0.002);
     w = smoothstep(g.x - f, g.x + f, y) * (1.0 - smoothstep(g.y - f, g.y + f, y));
+  } else if (kind == 4) {
+    // The detector's own output is soft — a guided filter recovers the edges
+    // but leaves the whole map low in contrast, so the sky sits at 0.7 rather
+    // than 1.0 and the adjustment leaks onto everything. These two ends drive
+    // it back to the full range, and feather is what sets how far apart they
+    // are: wide is a gentle hand-off, narrow is nearly a cutout.
+    float a = texture(uSubject, clamp(p, 0.0, 1.0))[int(g.x)];
+    w = smoothstep(g.y, g.z, a);
   } else {
     vec3 hsv = rgb2hsv(clamp(c, 0.0, 1.0));
     float d = abs(hsv.x - g.x);

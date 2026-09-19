@@ -13,10 +13,10 @@ mask. 4.4 MB, 320×320 in, a single 320×320 probability map out.
 | ONNX export | https://huggingface.co/BritishWerewolf/U-2-Netp |
 | Trained on | DUTS-TR |
 
-Committed rather than fetched, unlike the ONNX Runtime WebAssembly next door in
-`public/ort`. That one is reproducible from `package-lock.json`; this is not on
-npm, and a build that reaches the network for a required asset is a build that
-breaks the day the host does.
+Committed rather than fetched, unlike the ONNX Runtime WebAssembly, which the
+build emits straight out of `node_modules`. That one is reproducible from
+`package-lock.json`; this is not on npm, and a build that reaches the network
+for a required asset is a build that breaks the day the host does.
 
 It is float32. Quantising to int8 would take it to roughly 1.2 MB — worth doing,
 and it needs a Python toolchain this repository does not otherwise require.

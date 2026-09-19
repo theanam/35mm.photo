@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Slider, formatSigned } from '../../app/ui/Slider'
 import { useEditor } from '../edit-stack/store'
 import {
@@ -10,10 +11,11 @@ import {
   maskKindHint,
   maskSummary,
 } from '../edit-stack/masks'
-import { MAX_MASKS, type Mask, type MaskKind } from '../edit-stack/types'
+import { MAX_MASKS, type Mask, type MaskKind, type SubjectMask } from '../edit-stack/types'
+import { cachedSubject, isModelCached } from '../../subject/detect'
 import { IconCross, IconEye, IconEyeOff } from '../../app/ui/icons'
 
-const KINDS: MaskKind[] = ['radial', 'linear', 'luminance', 'colour']
+const KINDS: MaskKind[] = ['radial', 'linear', 'luminance', 'colour', 'subject']
 
 /**
  * Local adjustments. The list on the left is the mask stack; everything to the
@@ -106,7 +108,7 @@ export function MasksTool() {
             <p className="tool__hint">
               A mask decides <strong>where</strong> an adjustment lands. Radial and linear
               are shapes you place on the picture; luminance and colour pick the picture out
-              by what is already in it.
+              by what is already in it; subject finds what the photograph is of.
             </p>
           )}
         </section>
@@ -294,6 +296,8 @@ function ShapeGroup({ mask }: { mask: Mask }) {
         />
       )}
 
+      {mask.kind === 'subject' && <SubjectControls mask={mask} />}
+
       {isRadial(mask) && (
         <Slider
           label="Angle"
@@ -353,5 +357,52 @@ function ShapeGroup({ mask }: { mask: Mask }) {
 
       <p className="tool__hint">{maskKindHint(mask.kind)}.</p>
     </section>
+  )
+}
+
+/**
+ * The detect button, and the one honest thing to say before it is pressed.
+ *
+ * The model and its runtime are about 8 MB, which is far more than the rest of
+ * the app put together, so the first press is a download and not merely a wait.
+ * That is the user's to agree to: the size is on the button until the fetch has
+ * happened, and after that it says what it actually costs, which is a second.
+ */
+function SubjectControls({ mask }: { mask: SubjectMask }) {
+  const detectSubjectMask = useEditor((s) => s.detectSubjectMask)
+  const detecting = useEditor((s) => s.detecting)
+  const activeFrameId = useEditor((s) => s.activeFrameId)
+  const maskMapsAt = useEditor((s) => s.maskMapsAt)
+
+  const [cached, setCached] = useState(false)
+  useEffect(() => {
+    let live = true
+    void isModelCached().then((yes) => live && setCached(yes))
+    return () => {
+      live = false
+    }
+  }, [])
+
+  // Recomputed against the ticker, because a detection changes nothing in the
+  // edit stack that this could otherwise watch.
+  const found = Boolean(activeFrameId && maskMapsAt >= 0 && cachedSubject(activeFrameId, mask.model))
+
+  return (
+    <div className="field">
+      <button
+        className="button"
+        onClick={() => void detectSubjectMask(mask.id)}
+        disabled={detecting || !activeFrameId}
+      >
+        {detecting ? 'Looking…' : found ? 'Find the subject again' : 'Find the subject'}
+      </button>
+      <p className="tool__hint">
+        {found
+          ? 'Feather sets how hard the edge is held, not how far it is blurred — the edge itself comes from the picture.'
+          : cached
+            ? 'A second or so, on this machine, with nothing leaving it.'
+            : 'Downloads about 8 MB the first time, then works offline. Nothing leaves your machine.'}
+      </p>
+    </div>
   )
 }

@@ -7,6 +7,7 @@ import type {
   MaskKind,
   RadialMask,
 } from './types'
+import { DETECT_VERSION } from '../../subject/detect'
 
 /** A mask that changes nothing yet — a fresh one starts here. */
 export function neutralMaskAdjust(): MaskAdjust {
@@ -31,6 +32,7 @@ export const MASK_KIND_LABEL: Record<MaskKind, string> = {
   linear: 'Linear',
   luminance: 'Luminance',
   colour: 'Colour',
+  subject: 'Subject',
 }
 
 const MASK_KIND_HINT: Record<MaskKind, string> = {
@@ -38,6 +40,7 @@ const MASK_KIND_HINT: Record<MaskKind, string> = {
   linear: 'a gradient from one edge into the frame',
   luminance: 'wherever the picture sits in a band of brightness',
   colour: 'wherever the picture holds one range of hues',
+  subject: 'whatever the picture is of, found for you',
 }
 
 export function maskKindHint(kind: MaskKind): string {
@@ -79,6 +82,11 @@ export function createMask(kind: MaskKind, aspect: number, existing: Mask[] = []
       return { ...base, kind, lo: 65, hi: 100 }
     case 'colour':
       return { ...base, kind, hue: 210, width: 25 }
+    case 'subject':
+      // No feather: the edge comes from the refinement against the real pixels,
+      // and softening it further only undoes that work. `feather` instead sets
+      // how hard the recovered alpha is driven to its ends — see `mask.glsl`.
+      return { ...base, kind, feather: 50, model: DETECT_VERSION }
   }
 }
 

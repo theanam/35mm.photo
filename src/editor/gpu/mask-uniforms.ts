@@ -9,6 +9,7 @@ const KIND: Record<Mask['kind'], number> = {
   linear: 1,
   luminance: 2,
   colour: 3,
+  subject: 4,
 }
 
 /**
@@ -23,6 +24,22 @@ const KELVIN_PER_UNIT = 25
 
 /** Widest slice of the wheel one colour mask can claim, either side of centre. */
 const MAX_HUE_HALF_WIDTH = 0.25
+
+/**
+ * Subject coverage maps ride four to a texture, one per RGBA channel. Past the
+ * fourth the mask is packed inert rather than reading somebody else's channel,
+ * which would put an adjustment on the wrong part of the picture.
+ */
+export const MAX_SUBJECT_MASKS = 4
+
+/**
+ * How far apart the two ends of the subject alpha remap sit at feather 0 and
+ * at feather 100, either side of the midpoint the guided filter leaves things
+ * around. Narrow is nearly a cutout; wide hands over gently.
+ */
+const SUBJECT_REMAP_MID = 0.5
+const SUBJECT_REMAP_MIN_SPAN = 0.04
+const SUBJECT_REMAP_MAX_SPAN = 0.7
 
 export interface PackedMasks {
   /** Masks uploaded, i.e. how far the shader loop runs. */
@@ -74,9 +91,14 @@ export function packMasks(masks: Mask[]): PackedMasks {
     detailNeeds: { wide: false, mid: false, tight: false },
   }
 
+  let subjectChannel = 0
+
   used.forEach((mask, i) => {
     const g = i * 4
-    const live = mask.enabled && mask.amount > 0
+    // A subject mask past the fourth has no channel to read, so it is packed
+    // as present-but-inert rather than aimed at another mask's coverage.
+    const overflow = mask.kind === 'subject' && subjectChannel >= MAX_SUBJECT_MASKS
+    const live = mask.enabled && mask.amount > 0 && !overflow
 
     packed.kind[i] = KIND[mask.kind]
 
@@ -97,6 +119,19 @@ export function packMasks(masks: Mask[]): PackedMasks {
           g,
         )
         break
+      case 'subject': {
+        // Channel is assigned by order of appearance among subject masks, which
+        // is the same order `renderer.ts` writes them into the texture.
+        const channel = subjectChannel++
+        const span =
+          SUBJECT_REMAP_MIN_SPAN +
+          (mask.feather / 100) * (SUBJECT_REMAP_MAX_SPAN - SUBJECT_REMAP_MIN_SPAN)
+        packed.geom.set(
+          [channel, SUBJECT_REMAP_MID - span / 2, SUBJECT_REMAP_MID + span / 2, 0],
+          g,
+        )
+        break
+      }
     }
 
     packed.shape[g + 1] = mask.feather / 100

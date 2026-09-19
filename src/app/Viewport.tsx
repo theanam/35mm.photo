@@ -4,6 +4,7 @@ import { Renderer } from '../editor/gpu/renderer'
 import { outputSize } from '../editor/gpu/transform'
 import { getLut, peekLut } from '../editor/presets/lutCache'
 import { getLook } from '../editor/presets/catalogue'
+import { cachedSubject } from '../subject/detect'
 import { HistogramClient } from '../editor/histogram'
 import { detectCapabilities } from '../editor/gpu/caps'
 import { CropOverlay } from './CropOverlay'
@@ -36,6 +37,10 @@ export function Viewport() {
   const masking = useEditor((s) => s.activeTool === 'masks')
   const activeMaskId = useEditor((s) => s.activeMaskId)
   const maskOverlay = useEditor((s) => s.maskOverlay)
+  const activeFrameId = useEditor((s) => s.activeFrameId)
+  // Derived coverage maps change without the edit stack changing, so the draw
+  // has to be told separately that there is something new to upload.
+  const maskMapsAt = useEditor((s) => s.maskMapsAt)
   const setHistogram = useEditor((s) => s.setHistogram)
   const setViewScale = useEditor((s) => s.setViewScale)
   const setZoom = useEditor((s) => s.setZoom)
@@ -454,6 +459,16 @@ export function Viewport() {
     if (canvas.width !== bufferW) canvas.width = bufferW
     if (canvas.height !== bufferH) canvas.height = bufferH
 
+    // Subject coverage is derived rather than edited, so it is uploaded here
+    // from the session cache rather than read off the edit stack. The order is
+    // the order the masks appear in, which is the order `packMasks` assigns
+    // channels in — the two must not drift apart.
+    renderer.setSubjectMaps(
+      renderEdits.masks
+        .filter((m) => m.kind === 'subject')
+        .map((m) => (activeFrameId ? cachedSubject(activeFrameId, m.model) : null)),
+    )
+
     const look = getLook(renderEdits.look.id)
     // The overlay is a tool affordance, so it only exists while the tool is
     // open — an export or a histogram readback never sees it.
@@ -468,7 +483,7 @@ export function Viewport() {
     })
   }, [
     cssWidth, cssHeight, renderEdits, splitCompare, splitAt, cropping,
-    masking, maskOverlay, activeMaskId,
+    masking, maskOverlay, activeMaskId, activeFrameId, maskMapsAt,
   ])
 
   useEffect(() => {

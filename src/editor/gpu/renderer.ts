@@ -10,6 +10,13 @@ import { FINISH_FRAG } from '../shaders/finish.glsl'
 import { LOCAL_FRAG } from '../shaders/local.glsl'
 import { PASSTHROUGH_VERT, QUAD_VERT } from '../shaders/quad.glsl'
 import { RenderTarget, SCRATCH_UNIT, Uniforms, createProgram, createQuad } from './gl'
+
+/**
+ * Where the subject coverage atlas is bound. The detail pass already holds
+ * units 0–4 and `SCRATCH_UNIT` is borrowed by the upload helpers, so this is
+ * the first one going spare.
+ */
+const SUBJECT_UNIT = 5
 import {
   buildUprightTransform,
   buildUvTransform,
@@ -17,7 +24,7 @@ import {
   mat3Identity,
   uprightSize,
 } from './transform'
-import { packMasks, type PackedMasks } from './mask-uniforms'
+import { MAX_SUBJECT_MASKS, packMasks, type PackedMasks } from './mask-uniforms'
 import type { Orientation } from '../../io/exif'
 import { whiteBalanceGain } from './whitebalance'
 
@@ -71,6 +78,7 @@ export class Renderer {
   private imageTexture: WebGLTexture | null = null
   private curveTexture: WebGLTexture
   private lutTexture: WebGLTexture | null = null
+  private subjectTexture: WebGLTexture | null = null
   private lutSize = 0
 
   /** Dimensions of the image the right way up — what the transform works in. */
@@ -252,6 +260,47 @@ export class Renderer {
     return true
   }
 
+  /**
+   * Coverage maps for subject masks, four to an RGBA texture — one per channel.
+   *
+   * Uploaded here rather than derived here: finding a subject is a model in a
+   * worker (see `subject/detect.ts`), and the render graph only ever samples
+   * the answer. The maps arrive square, in stretched upright uv, which is the
+   * space `maskUv` hands the shader, so no further mapping is needed.
+   */
+  setSubjectMaps(maps: ({ data: Uint8ClampedArray; size: number } | null)[]) {
+    const gl = this.gl
+    const live = maps.slice(0, MAX_SUBJECT_MASKS)
+    const size = live.find((m) => m)?.size ?? 0
+
+    if (!size) {
+      if (this.subjectTexture) gl.deleteTexture(this.subjectTexture)
+      this.subjectTexture = null
+      return
+    }
+
+    // One interleaved RGBA buffer, because four single-channel textures would
+    // be four samplers and four binding points for what is one lookup.
+    const rgba = new Uint8Array(size * size * 4)
+    live.forEach((map, channel) => {
+      if (!map || map.size !== size) return
+      for (let i = 0; i < size * size; i++) rgba[i * 4 + channel] = map.data[i]
+    })
+
+    if (!this.subjectTexture) this.subjectTexture = gl.createTexture()
+    gl.activeTexture(gl.TEXTURE0 + SCRATCH_UNIT)
+    gl.bindTexture(gl.TEXTURE_2D, this.subjectTexture)
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba)
+    // LINEAR: the map is smaller than the frame, and its edges came from the
+    // refinement rather than from its resolution, so smoothing between samples
+    // is right where NEAREST would show the grid.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  }
+
   /* ─────────────────────────── drawing ─────────────────────────── */
 
   private draw() {
@@ -368,6 +417,13 @@ export class Renderer {
   ) {
     u.i('uMaskCount', packed.count)
     if (packed.count === 0) return
+
+    // Unit 5: the detail pass already holds 0–4, and 7 is the scratch unit the
+    // upload helpers borrow. Bound for every mask-reading pass whether or not a
+    // subject mask is present, because a sampler left pointing at nothing is
+    // undefined behaviour in some drivers rather than simply unused.
+    this.bindTexture(SUBJECT_UNIT, this.gl.TEXTURE_2D, this.subjectTexture)
+    u.i('uSubject', SUBJECT_UNIT)
 
     u.mat3(
       'uMaskTransform',
@@ -669,6 +725,7 @@ export class Renderer {
     }
     if (this.imageTexture) gl.deleteTexture(this.imageTexture)
     if (this.lutTexture) gl.deleteTexture(this.lutTexture)
+    if (this.subjectTexture) gl.deleteTexture(this.subjectTexture)
     gl.deleteTexture(this.curveTexture)
     gl.deleteVertexArray(this.quad.vao)
     gl.deleteBuffer(this.quad.buffer)
