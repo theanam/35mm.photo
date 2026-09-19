@@ -5,8 +5,9 @@
   "type": "module",
   "description": "A full-featured photo editor in your browser. Everything runs in the browser tab.",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "npm run sync:ort && vite",
+    "build": "npm run sync:ort && tsc -b && vite build",
+    "sync:ort": "node scripts/sync-ort.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
@@ -15,6 +16,7 @@
   "dependencies": {
     "libheif-js": "^1.17.1",
     "libraw-wasm": "^1.6.0",
+    "onnxruntime-web": "^1.30.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^4.5.5"

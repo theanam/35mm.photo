@@ -22,6 +22,8 @@ dependencies — is not covered here. None of it is shipped to the browser.
 | [LibRaw](https://www.libraw.org/) (via [libraw-wasm](https://github.com/ybouane/LibRaw-Wasm)) | 1.6.0 wrapper | **LGPL-2.1-or-later or CDDL-1.0** | LibRaw/LibRaw |
 | [React](https://react.dev/) and React DOM | 18.3.1 | MIT | facebook/react |
 | [zustand](https://github.com/pmndrs/zustand) | 4.5.7 | MIT | pmndrs/zustand |
+| [ONNX Runtime Web](https://onnxruntime.ai/) | 1.30.0 | MIT | microsoft/onnxruntime |
+| [U²-Netp](https://github.com/xuebinqin/U-2-Net) weights (`public/models/u2netp.onnx`) | — | **Apache-2.0** | xuebinqin/U-2-Net |
 
 ### A note on the LibRaw wrapper
 
@@ -33,6 +35,29 @@ relicense LibRaw, which is compiled into the `libraw.wasm` the package ships.
 LibRaw is distributed by its authors under a choice of **LGPL-2.1-or-later** or
 **CDDL-1.0**. 35mm treats the shipped `libraw.wasm` as LGPL-2.1, which is the
 more demanding of the two, and meets the conditions below on that basis.
+
+### The subject-detection model
+
+`public/models/u2netp.onnx` is U²-Net "portable", from Qin et al., *U²-Net:
+Going Deeper with Nested U-Structure for Salient Object Detection* (Pattern
+Recognition 106, 2020), released by its authors under **Apache-2.0**. The ONNX
+conversion used here comes from
+[BritishWerewolf/U-2-Netp](https://huggingface.co/BritishWerewolf/U-2-Netp),
+also Apache-2.0. It was trained on DUTS-TR.
+
+Apache-2.0 asks that the licence travel with the work, that changes be stated,
+and that any NOTICE file be preserved. The weights are shipped unmodified.
+
+This model was chosen partly *because* of its licence. The obvious alternatives
+for this kind of task — NVIDIA's SegFormer checkpoints in particular — are
+released for non-commercial research use, and could not be distributed from
+this repository at all: MIT grants downstream users commercial rights that
+35mm would not itself hold, and a project cannot pass on what it was never
+given. No amount of the project being unpaid changes that.
+
+The ONNX Runtime WebAssembly is **not** committed. It is copied out of
+`node_modules` by `scripts/sync-ort.mjs` before each dev run and build, and is
+reproducible from the version pinned in `package-lock.json`.
 
 ### What is *not* shipped
 

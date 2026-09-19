@@ -8,3 +8,6 @@ testing/
 
 # Working spec, not part of the published source.
 photo-editor-spec.md
+
+# Copied from node_modules by scripts/sync-ort.mjs; too large to track.
+public/ort/
