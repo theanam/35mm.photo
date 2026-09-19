@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="A raw Fujifilm file open in 35mm, with the looks grid and histogram" width="900">
+  <img src="docs/screenshot.png" alt="A photograph open in 35mm, with the looks grid previewing on it and a live histogram" width="900">
 </p>
 
 ---
@@ -17,6 +17,42 @@
 browser tab. There is no backend and no account. Editing is non-destructive: the
 pipeline is parametric end to end, so every adjustment stays adjustable and the
 original file is never rewritten unless you export.
+
+## A few of the things it does
+
+### Nineteen looks, previewed on your own photograph
+
+Not a filmstrip of somebody else's sample. Every look in the grid is rendered
+from the photo that is open, through the same pipeline that will export it, so
+what you pick is what you get. They are original colour transforms synthesised
+from a hue-band description rather than baked cubes — see
+[Looks](#looks-and-presets) below.
+
+<p align="center">
+  <img src="docs/feature-looks.png" alt="The looks grid, each swatch rendered from the open photograph" width="620">
+</p>
+
+### Mask the subject, found for you
+
+A salient-object model runs in a worker, entirely on your machine, and a guided
+filter re-cuts its answer along the edges the photograph already has. What gets
+stored is the *intent* — find the subject — and never the pixels, so a subject
+mask travels through a sidecar and a batch sync like every other mask, and
+finds each photo's own subject rather than inheriting somebody else's outline.
+
+<p align="center">
+  <img src="docs/feature-subject.png" alt="A subject mask isolating a figure, with exposure raised only on her" width="900">
+</p>
+
+### Crop and straighten that stay anchored
+
+Masks are stored in upright image coordinates, before the crop and the quarter
+turns — so re-crop or straighten afterwards and every adjustment stays on the
+thing it was placed over.
+
+<p align="center">
+  <img src="docs/feature-crop.png" alt="The crop overlay with handles and thirds, mid-straighten" width="900">
+</p>
 
 ## Features
 
@@ -32,8 +68,9 @@ original file is never rewritten unless you export.
 - **Tone curves**, RGB and per-channel
 - **Colour mixer** — hue, saturation and luminance across eight bands
 - **Colour grading** — split toning across shadows, midtones and highlights
-- **Masks and local adjustments** — radial, linear, and luminance or colour
-  range, each carrying its own tone, colour and detail
+- **Masks and local adjustments** — radial, linear, luminance or colour range,
+  and **subject**, found by a salient-object model that runs on your own
+  machine; each carries its own tone, colour and detail
 - **Detail** — texture, clarity, dehaze, sharpening, luminance and chroma
   noise reduction
 - **Looks** — nineteen built-ins across six groups — everyday, reversal,
@@ -64,6 +101,8 @@ the format resting on HEVC. So 35mm carries one — [libheif](https://github.com
 compiled to WebAssembly, fetched the first time you open a HEIC on a browser
 that needs it and cached from then on. Safari and iOS decode HEIC themselves,
 and never download it at all.
+
+<a id="looks-and-presets"></a>
 
 The built-in looks are original colour transforms, synthesised in the app from
 a hue-band description rather than shipped as baked cubes. They are named for
@@ -185,10 +224,13 @@ about a photo is sent anywhere.
 A WebGPU backend — capability detection exists, but WebGL2 is the only
 implemented one.
 
-Masks are parametric shapes and ranges. There is no brush: a painted mask is a
-bitmap, and a bitmap is the one thing this edit state cannot carry as a few
-numbers in a sidecar. Eight masks per photo is the ceiling, because every pass
-that reads them evaluates every one of them per pixel.
+There is no brush. A painted mask is a bitmap, and a bitmap is the one thing
+this edit state cannot carry as a few numbers in a sidecar — the subject mask
+sidesteps that by storing the intent and deriving the coverage, which a brush
+stroke cannot do, since its pixels *are* the intent. Vector strokes would fit,
+and are not built. Eight masks per photo is the ceiling, because every pass that
+reads them evaluates every one of them per pixel, and four of those may be
+subject masks, which share one texture's worth of channels.
 
 Batch export needs the File System Access API to write a folder; browsers
 without it fall back to exporting one photo at a time.
@@ -202,7 +244,8 @@ saturation and tone rendering carry over but its absolute colour does not.
 
 ## Licence
 
-35mm is [MIT licensed](LICENSE).
+35mm is [MIT licensed](LICENSE). The photographs in the screenshots are CC0 and
+credited in [docs/CREDITS.md](docs/CREDITS.md).
 
 It ships two LGPL decoders compiled to WebAssembly — [LibRaw](https://www.libraw.org/)
 for camera raw, and [libheif](https://github.com/strukturag/libheif) with libde265
