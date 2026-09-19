@@ -134,3 +134,20 @@ function clampToFrame(b: Bounds): Bounds {
     y: Math.min(Math.max(b.y, 0), 1 - h),
   }
 }
+
+/**
+ * Shift a box off the subject it was fitted to, as a fraction of its own size.
+ *
+ * Composition, not detection — which is why it is a separate step. A portrait
+ * usually wants the face above centre rather than in the middle of the frame,
+ * and a subject looking one way wants room on that side to look into. Measured
+ * against the box rather than the frame so the same setting means the same
+ * thing whether the subject is close or distant.
+ */
+export function offsetBounds(bounds: Bounds, dx: number, dy: number): Bounds {
+  return clampToFrame({
+    ...bounds,
+    x: bounds.x + bounds.w * dx,
+    y: bounds.y + bounds.h * dy,
+  })
+}

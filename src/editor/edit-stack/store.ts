@@ -10,7 +10,7 @@ import {
   rememberSubject,
   subjectFor,
 } from '../../subject/detect'
-import { fitAspect, subjectBounds } from '../../subject/bounds'
+import { fitAspect, offsetBounds, subjectBounds } from '../../subject/bounds'
 import { displaySize } from '../gpu/transform'
 import { parseAspectRatio } from './aspect'
 import { applySyncScope, type SyncGroup } from './sync'
@@ -43,6 +43,15 @@ export interface Toast {
 }
 
 export type ZoomMode = 'fit' | number
+
+/** How a subject crop should be placed, once the subject itself is found. */
+export interface SubjectCropOptions {
+  /** Breathing room around the subject, as a fraction of its own box. */
+  margin?: number
+  /** Shift off the subject, as a fraction of the box. Negative is left/up. */
+  offsetX?: number
+  offsetY?: number
+}
 
 export interface OpenPhoto {
   frameId: string
@@ -109,6 +118,12 @@ interface EditorState {
    * belongs in a sidecar.
    */
   activeMaskId: string | null
+  /**
+   * True while a crop handle is under the pointer. The viewport scales itself
+   * to the crop box, and rescaling mid-drag would slide the picture out from
+   * under the finger doing the dragging — so the zoom settles on release.
+   */
+  cropDragging: boolean
   /** Paint the selected mask over the picture while the tool is open. */
   maskOverlay: boolean
   /**
@@ -177,13 +192,14 @@ interface EditorState {
   /** Find every subject this photo's masks ask for, if the model is loaded. */
   autoDetectSubjects: () => Promise<void>
   /** Set the crop rectangle to the subject of the photograph. */
-  cropToSubject: () => Promise<void>
+  cropToSubject: (options?: SubjectCropOptions) => Promise<void>
   /** True while a detection is in flight, so the tool can say so. */
   detecting: boolean
   removeMask: (id: string) => void
   selectMask: (id: string | null) => void
   updateMask: (id: string, patch: Partial<Mask>, coalesceKey?: string) => void
   updateMaskAdjust: (id: string, patch: Partial<MaskAdjust>, coalesceKey?: string) => void
+  setCropDragging: (on: boolean) => void
   setMaskOverlay: (on: boolean) => void
   replaceEdits: (edits: EditState, coalesceKey?: string) => void
   undo: () => void
@@ -276,6 +292,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   toolSnapshot: null,
   cropping: false,
   activeMaskId: null,
+  cropDragging: false,
   maskOverlay: true,
   maskMapsAt: 0,
   detecting: false,
@@ -918,14 +935,15 @@ export const useEditor = create<EditorState>((set, get) => ({
    * second pipeline. The aspect lock wins if there is one: someone who has
    * asked for 4:5 wants 4:5 around the subject, not the subject's own shape.
    */
-  async cropToSubject() {
+  async cropToSubject(options = {}) {
+    const { margin = 0.06, offsetX = 0, offsetY = 0 } = options
     const { photo, activeFrameId, edits } = get()
     if (!photo || !activeFrameId || get().detecting) return
 
     set({ detecting: true })
     try {
       const map = await subjectFor(activeFrameId, DETECT_VERSION, photo.preview)
-      const found = subjectBounds(map)
+      const found = subjectBounds(map, { margin })
       if (!found) {
         get().toast('No subject to crop to in this photo', 'warn')
         return
@@ -934,7 +952,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 
       const frame = displaySize(photo.meta.width, photo.meta.height, edits.crop.rotate90)
       const ratio = parseAspectRatio(edits.crop.aspect)
-      const box = ratio === null ? found : fitAspect(found, ratio / (frame.width / frame.height))
+      // Offset before the ratio, so growing to the lock happens around where
+      // the box has actually been placed rather than where it was found.
+      const placed = offsetBounds(found, offsetX, offsetY)
+      const box = ratio === null ? placed : fitAspect(placed, ratio / (frame.width / frame.height))
 
       get().updateCrop({ x: box.x, y: box.y, w: box.w, h: box.h }, 'crop-subject')
     } catch (err) {
@@ -968,6 +989,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   updateMaskAdjust(id, patch, coalesceKey) {
     get().update({ masks: replaceMaskAdjust(get().edits.masks, id, patch) }, coalesceKey)
+  },
+
+  setCropDragging(on) {
+    if (get().cropDragging !== on) set({ cropDragging: on })
   },
 
   setMaskOverlay(on) {

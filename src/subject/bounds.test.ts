@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fitAspect, subjectBounds, type Bounds } from './bounds'
+import { fitAspect, offsetBounds, subjectBounds, type Bounds } from './bounds'
 import type { SubjectMap } from './detect'
 
 /** A map with one solid rectangle of coverage, given in pixel coordinates. */
@@ -120,5 +120,29 @@ describe('fitAspect', () => {
     near(fitAspect(square, 1), square, 1e-6)
     expect(fitAspect(square, 0)).toEqual(square)
     expect(fitAspect(square, NaN)).toEqual(square)
+  })
+})
+
+describe('offsetBounds', () => {
+  it('shifts by a fraction of the box, not of the frame', () => {
+    const b = offsetBounds({ x: 0.4, y: 0.4, w: 0.2, h: 0.1 }, 0.5, -1)
+    expect(b.x).toBeCloseTo(0.5, 6)   // half of 0.2
+    expect(b.y).toBeCloseTo(0.3, 6)   // one whole 0.1, upward
+    expect(b.w).toBeCloseTo(0.2, 6)
+    expect(b.h).toBeCloseTo(0.1, 6)
+  })
+
+  it('does nothing at zero', () => {
+    const b = { x: 0.1, y: 0.2, w: 0.3, h: 0.4 }
+    expect(offsetBounds(b, 0, 0)).toEqual(b)
+  })
+
+  it('stops at the frame rather than sliding out of it', () => {
+    const b = offsetBounds({ x: 0.8, y: 0.8, w: 0.2, h: 0.2 }, 5, 5)
+    expect(b.x).toBeCloseTo(0.8, 6)   // already flush; cannot go further
+    expect(b.y).toBeCloseTo(0.8, 6)
+    const c = offsetBounds({ x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, -5, -5)
+    expect(c.x).toBe(0)
+    expect(c.y).toBe(0)
   })
 })

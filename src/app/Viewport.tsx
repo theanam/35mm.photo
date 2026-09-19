@@ -17,6 +17,12 @@ const HISTOGRAM_THROTTLE_MS = 140
 const MAX_BUFFER_EDGE = 4096
 /** Furthest the wheel will take you in. */
 const MAX_ZOOM = 8
+/** How much of the stage a crop box is given, leaving the rest for context. */
+const CROP_FIT_MARGIN = 0.82
+
+/** Ceiling on the crop-driven zoom, as a multiple of the whole-frame fit. */
+const MAX_CROP_ZOOM = 12
+
 /** Wheel delta → zoom factor. Exponential so each notch feels the same. */
 const WHEEL_SENSITIVITY = 0.0015
 /** Trackpad pinch arrives as ctrl+wheel with small deltas; it needs more gain. */
@@ -37,6 +43,7 @@ export function Viewport() {
   const masking = useEditor((s) => s.activeTool === 'masks')
   const activeMaskId = useEditor((s) => s.activeMaskId)
   const maskOverlay = useEditor((s) => s.maskOverlay)
+  const cropDragging = useEditor((s) => s.cropDragging)
   const activeFrameId = useEditor((s) => s.activeFrameId)
   // Derived coverage maps change without the edit stack changing, so the draw
   // has to be told separately that there is something new to upload.
@@ -185,10 +192,44 @@ export function Viewport() {
     return outputSize(photo.meta.width, photo.meta.height, renderEdits.crop)
   }, [photo, renderEdits.crop])
 
-  const fitScale = useMemo(() => {
+  const wholeFit = useMemo(() => {
     if (!output.width || !stage.width) return 1
     return Math.min(stage.width / output.width, stage.height / output.height)
   }, [output, stage])
+
+  /**
+   * While cropping, "fit" means fit the *crop box*, not the frame.
+   *
+   * The viewport shows the whole picture with the box drawn over it, so a crop
+   * down to a tenth of the frame is a tenth of the screen to work on, and the
+   * handles land within a few pixels of each other. Scaling to the box instead
+   * gives a small crop the room a small crop needs, and the rest of the picture
+   * keeps going past the edges where it can still be seen and dragged into.
+   *
+   * Never below the whole-frame fit — a crop that already fits needs no help —
+   * and capped, because at some point the limit on precision is the pointer and
+   * not the pixels.
+   */
+  const cropFit = useMemo(() => {
+    if (!cropping || !output.width || !stage.width) return wholeFit
+    const box = edits.crop
+    const w = Math.max(box.w, 0.02) * output.width
+    const h = Math.max(box.h, 0.02) * output.height
+    const toBox = Math.min(stage.width / w, stage.height / h) * CROP_FIT_MARGIN
+    return Math.min(Math.max(wholeFit, toBox), wholeFit * MAX_CROP_ZOOM)
+  }, [cropping, output, stage, edits.crop, wholeFit])
+
+  /**
+   * Held still for the duration of a drag. Rescaling while a handle is under
+   * the pointer moves the picture the pointer is aiming at, which turns a
+   * steady drag into a chase; this settles a frame after the release instead.
+   */
+  const [settledCropFit, setSettledCropFit] = useState(1)
+  useEffect(() => {
+    if (!cropDragging) setSettledCropFit(cropFit)
+  }, [cropFit, cropDragging])
+
+  const fitScale = cropping ? settledCropFit : wholeFit
 
   const scale = zoom === 'fit' ? fitScale : zoom
   const cssWidth = Math.max(1, Math.round(output.width * scale))
@@ -202,6 +243,28 @@ export function Viewport() {
   useEffect(() => {
     fitScaleRef.current = fitScale
   }, [fitScale])
+
+  /**
+   * Keep the crop box in the middle of the stage.
+   *
+   * Once the scale follows the box, the frame is larger than the stage and the
+   * box can be anywhere in it — so without this, dragging one toward a corner
+   * walks it straight off the screen. Following during the drag as well as
+   * after it means the box stays put and the picture slides underneath, which
+   * is how every crop on a phone behaves and is far less disorienting than the
+   * box wandering away.
+   *
+   * The drag maths is all client-space deltas from a snapshot taken on pointer
+   * down, so scrolling underneath it changes nothing about where the box lands.
+   */
+  useEffect(() => {
+    if (!cropping) return
+    const el = stageRef.current
+    if (!el) return
+    const box = edits.crop
+    el.scrollLeft = (box.x + box.w / 2) * cssWidth - el.clientWidth / 2
+    el.scrollTop = (box.y + box.h / 2) * cssHeight - el.clientHeight / 2
+  }, [cropping, edits.crop, cssWidth, cssHeight])
 
   /* ── zoom plumbing ── */
 

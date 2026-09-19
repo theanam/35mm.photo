@@ -12,6 +12,7 @@ export function CropOverlay({ width, height }: { width: number; height: number }
   const stored = useEditor((s) => s.edits.crop)
   const photo = useEditor((s) => s.photo)
   const updateCrop = useEditor((s) => s.updateCrop)
+  const setCropDragging = useEditor((s) => s.setCropDragging)
 
   // Draw and drag the box that is actually rendered. While straightened that is
   // the stored rect held inside the rotated frame, and handles that sat on the
@@ -30,6 +31,7 @@ export function CropOverlay({ width, height }: { width: number; height: number }
     event.preventDefault()
     event.stopPropagation()
     dragRef.current = { handle, startX: event.clientX, startY: event.clientY, start: { ...crop } }
+    setCropDragging(true)
     const target = event.currentTarget as Element
     target.setPointerCapture(event.pointerId)
 
@@ -42,6 +44,7 @@ export function CropOverlay({ width, height }: { width: number; height: number }
     }
     const up = () => {
       dragRef.current = null
+      setCropDragging(false)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
     }

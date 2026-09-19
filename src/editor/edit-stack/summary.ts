@@ -179,12 +179,19 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
   }
 
   if (hasCropEdits(edits)) {
+    const { aspect, angle, w, h } = edits.crop
+    // A locked ratio names itself. Failing that, say how much of the frame is
+    // left — "custom" was the word here before, and it describes every crop
+    // that is not a preset without saying anything about any of them.
+    const kept = Math.round(w * h * 100)
     const value =
-      edits.crop.aspect && edits.crop.aspect !== 'original' && edits.crop.aspect !== 'free'
-        ? edits.crop.aspect
-        : edits.crop.angle !== 0
-          ? `${signed(edits.crop.angle, 1)}°`
-          : 'custom'
+      aspect && aspect !== 'original' && aspect !== 'free'
+        ? aspect
+        : kept < 100
+          ? `${kept}% kept`
+          : angle !== 0
+            ? `${signed(angle, 1)}°`
+            : 'full'
     chips.push({ id: 'crop', label: 'Crop', value, panel: 'crop' })
   }
 

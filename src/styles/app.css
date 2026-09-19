@@ -1969,6 +1969,49 @@ kbd {
  */
 .aspect-custom { display: inline-flex; align-items: center; gap: 5px; }
 
+/* Inline with the chips and at chip height, like the custom aspect fields:
+   the crop settings share the row rather than opening a panel beneath it,
+   because anything that opens beneath takes the height from the viewport the
+   crop is being judged in. */
+.subject-crop { display: inline-flex; align-items: center; gap: 8px; }
+
+.subject-crop__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.subject-crop__label { text-transform: uppercase; letter-spacing: 0.04em; }
+
+.subject-crop__input {
+  width: 46px;
+  font-size: 13px;
+  padding: 5px 6px;
+  color: var(--text);
+  background: var(--bg-app);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+
+.subject-crop__unit { color: var(--text-dim); }
+
+/* A chip that opens something, rather than one that chooses. Marked by the
+   text going bright and a caret, not by the filled treatment the aspect chips
+   use for the one that is selected — two chips lit the same way in one row
+   would read as two ratios chosen at once. */
+.chip--mode[data-open]::after { content: ' \25BE'; }
+.chip--mode[data-open] { color: var(--accent); border-color: var(--line-strong); }
+
+/* The chip that does something, rather than the ones that only choose. */
+.chip--go {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chip--go:disabled { opacity: 0.55; }
+
 .aspect-custom__field {
   width: 52px;
   /* Matches .chip exactly — same font, padding and border, so the row keeps

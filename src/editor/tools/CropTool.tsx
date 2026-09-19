@@ -28,6 +28,11 @@ export function CropTool() {
    * pull several megabytes down — someone who wants that has the Masks tool,
    * which asks first. So this appears for people who have already said yes.
    */
+  const [subjectMode, setSubjectMode] = useState(false)
+  const [margin, setMargin] = useState(0.06)
+  const [offsetX, setOffsetX] = useState(0)
+  const [offsetY, setOffsetY] = useState(0)
+
   const [modelReady, setModelReady] = useState(false)
   useEffect(() => {
     let live = true
@@ -49,6 +54,24 @@ export function CropTool() {
   const [customMode, setCustomMode] = useState(
     () => Boolean(edits.crop.aspect) && !ASPECTS.some((a) => a.id === edits.crop.aspect),
   )
+
+  /**
+   * Which chip is lit.
+   *
+   * Not simply `crop.aspect`, because "Original" is two claims at once: no
+   * ratio is locked, *and* the box is still the whole frame. Dragging a handle
+   * — or cropping to the subject — breaks the second while leaving the stored
+   * id alone, and the chip went on claiming the frame was uncropped. Once the
+   * box is no longer the full frame, the honest label for an unlocked crop is
+   * Free, which is what it has become.
+   */
+  const activeAspect = (() => {
+    if (customMode) return null
+    const { aspect, w, h } = edits.crop
+    const whole = w >= 0.999 && h >= 0.999
+    if (aspect === 'original') return whole ? 'original' : 'free'
+    return aspect
+  })()
 
   const meta = photo?.meta
   const frame = meta ? displaySize(meta.width, meta.height, edits.crop.rotate90) : null
@@ -149,8 +172,8 @@ export function CropTool() {
               <button
                 key={a.id}
                 className="chip"
-                data-active={(!customMode && edits.crop.aspect === a.id) || undefined}
-                aria-pressed={!customMode && edits.crop.aspect === a.id}
+                data-active={activeAspect === a.id || undefined}
+                aria-pressed={activeAspect === a.id}
                 onClick={() => {
                   setCustomMode(false)
                   chooseAspect(a.id)
@@ -159,6 +182,18 @@ export function CropTool() {
                 {a.label}
               </button>
             ))}
+            {/* A disclosure, not a ratio — it opens the row below and leaves
+                whatever aspect is chosen alone, so it must not look like one
+                of the choices it is sitting among. */}
+            <button
+              className="chip chip--mode"
+              data-open={subjectMode || undefined}
+              aria-expanded={subjectMode}
+              onClick={() => setSubjectMode((on) => !on)}
+              title="Fit the crop around whatever the photo is of"
+            >
+              Subject
+            </button>
             <button
               className="chip"
               data-active={customMode || undefined}
@@ -212,23 +247,30 @@ export function CropTool() {
             )}
           </div>
 
-          {modelReady && (
-            <div className="button-row">
+          {subjectMode && (
+            <span className="subject-crop">
+              <SubjectField label="Margin" title="Room around the subject, as a fraction of its own size"
+                value={margin} min={0} max={60} onChange={setMargin} />
+              <SubjectField label="X" title="Shift sideways — room for a subject to look into"
+                value={offsetX} min={-50} max={50} onChange={setOffsetX} />
+              <SubjectField label="Y" title="Shift up or down — negative leaves headroom"
+                value={offsetY} min={-50} max={50} onChange={setOffsetY} />
               <button
-                className="button"
-                onClick={() => void cropToSubject()}
+                className="chip chip--go"
+                onClick={() => void cropToSubject({ margin, offsetX, offsetY })}
                 disabled={detecting}
-                title="Fit the crop around whatever the photo is of"
+                title={
+                  modelReady
+                    ? 'Fit the crop around the subject'
+                    : 'Fit the crop around the subject. Downloads about 8 MB the first time, then works offline.'
+                }
               >
                 {detecting ? 'Looking…' : 'Crop to subject'}
               </button>
-            </div>
+            </span>
           )}
 
-          <p className="tool__hint">
-            Drag the box or its handles directly on the photo.
-            {modelReady && ' Crop to subject fits the box around what the photo is of, keeping the aspect if one is locked.'}
-          </p>
+          <p className="tool__hint">Drag the box or its handles directly on the photo.</p>
         </section>
 
         <section className="tool__group">
@@ -281,3 +323,47 @@ export function CropTool() {
   )
 }
 
+/**
+ * One number on the crop-to-subject row.
+ *
+ * A field rather than a slider because all three have to share a line with the
+ * aspect chips: three slider rows cost a quarter of the viewport's height, and
+ * the viewport is the thing you are cropping in. Values are percentages of the
+ * subject's own box, so they are small whole numbers and typing one is no
+ * hardship.
+ */
+function SubjectField({
+  label,
+  title,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string
+  title: string
+  value: number
+  min: number
+  max: number
+  onChange: (v: number) => void
+}) {
+  return (
+    <label className="subject-crop__field" title={title}>
+      <span className="subject-crop__label">{label}</span>
+      <input
+        className="subject-crop__input mono"
+        type="number"
+        min={min}
+        max={max}
+        step={1}
+        value={Math.round(value * 100)}
+        aria-label={`${title} (per cent)`}
+        onChange={(e) => {
+          const n = Number(e.target.value)
+          if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)) / 100)
+        }}
+      />
+      <span className="subject-crop__unit" aria-hidden>%</span>
+    </label>
+  )
+}
