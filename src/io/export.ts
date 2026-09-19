@@ -4,6 +4,7 @@ import { getLut } from '../editor/presets/lutCache'
 import { getLook } from '../editor/presets/catalogue'
 import type { EditState, ImageMeta } from '../editor/edit-stack/types'
 import { saveBlob, writeToHandle } from './file-system'
+import { extensionOf } from './formats'
 import { attachExif } from './exif-write'
 
 export type ExportFormat = 'jpeg' | 'png' | 'webp'
@@ -25,6 +26,41 @@ const MIME: Record<ExportFormat, string> = {
 }
 
 const EXT: Record<ExportFormat, string> = { jpeg: 'jpg', png: 'png', webp: 'webp' }
+
+/**
+ * The export format a file's own extension claims, or null for a file this app
+ * can open but not write.
+ *
+ * Which is most of them. 35mm reads every raw LibRaw handles, plus HEIC, TIFF,
+ * AVIF, GIF and BMP, and encodes exactly three — so for nearly everything that
+ * can be opened there is no such thing as writing it back.
+ */
+export function formatOfFile(name: string): ExportFormat | null {
+  switch (extensionOf(name)) {
+    case 'jpg':
+    case 'jpeg':
+      return 'jpeg'
+    case 'png':
+      return 'png'
+    case 'webp':
+      return 'webp'
+    default:
+      return null
+  }
+}
+
+/**
+ * Whether this photo can be written back over itself in the chosen format.
+ *
+ * The extension has to name the format being encoded, not merely be one of the
+ * three that can be encoded at all. Overwriting a .RAF with a JPEG destroys a
+ * negative to leave a mislabelled positive in its place, and overwriting a .jpg
+ * with PNG bytes is the same mistake with less at stake: in both cases the file
+ * stops being what its name says it is, and the original is not coming back.
+ */
+export function canOverwriteOriginal(name: string, format: ExportFormat): boolean {
+  return formatOfFile(name) === format
+}
 
 export interface ExportRequest {
   /** The original full-resolution decode, not the preview. */
@@ -54,6 +90,18 @@ export interface ExportResult {
  */
 export async function exportImage(request: ExportRequest): Promise<ExportResult> {
   const { source, meta, edits, settings, onProgress } = request
+
+  // Refused here rather than where the button is drawn, because this is the one
+  // call in the app that destroys the file it is handed and the guard belongs
+  // where every caller meets it. Before the render rather than after, because
+  // the answer does not depend on the pixels and a full-resolution export is
+  // seconds of work to throw away.
+  if (request.overwriteHandle && !canOverwriteOriginal(meta.name, settings.format)) {
+    throw new Error(
+      `35mm cannot write ${settings.format.toUpperCase()} over a ` +
+        `.${extensionOf(meta.name).toUpperCase()} file. Export a copy instead.`,
+    )
+  }
 
   onProgress?.('Preparing')
   const full = outputSize(meta.width, meta.height, edits.crop)

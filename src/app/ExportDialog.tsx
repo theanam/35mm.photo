@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
-import { exportFilename, exportImage, type ExportFormat } from '../io/export'
+import {
+  canOverwriteOriginal,
+  exportFilename,
+  exportImage,
+  formatOfFile,
+  type ExportFormat,
+} from '../io/export'
 import { outputSize } from '../editor/gpu/transform'
 
 const FORMATS: { id: ExportFormat; label: string; note: string }[] = [
@@ -44,6 +50,17 @@ export function ExportDialog() {
   const scale = settings.maxEdge ? Math.min(1, settings.maxEdge / Math.max(full.width, full.height)) : 1
   const width = Math.round(full.width * scale)
   const height = Math.round(full.height * scale)
+
+  // Writing back in place is only offered when the file's own extension names
+  // the format being encoded. Nearly everything 35mm opens it cannot write —
+  // every raw, HEIC, TIFF — and overwriting one of those would trade the
+  // original for a JPEG wearing its name.
+  const originalFormat = formatOfFile(photo.meta.name)
+  const canOverwrite = canOverwriteOriginal(photo.meta.name, settings.format)
+  const whyNot =
+    originalFormat === null
+      ? `35mm can open .${photo.meta.ext.toUpperCase()} but not write it, so the original has to be kept.`
+      : `The original is ${originalFormat.toUpperCase()}. Choose ${originalFormat.toUpperCase()} to write over it in place.`
 
   const run = async (overwrite: boolean) => {
     setBusy('Preparing')
@@ -162,11 +179,18 @@ export function ExportDialog() {
             The full pipeline re-runs at this size — the export is rendered from the original file,
             not from what is on screen.
           </p>
+
+          {photo.handle && !canOverwrite && <p className="modal__note">{whyNot}</p>}
         </div>
 
         <footer className="modal__footer">
           {photo.handle && (
-            <button className="button" onClick={() => run(true)} disabled={Boolean(busy)}>
+            <button
+              className="button"
+              onClick={() => run(true)}
+              disabled={Boolean(busy) || !canOverwrite}
+              title={canOverwrite ? undefined : whyNot}
+            >
               Overwrite original
             </button>
           )}
