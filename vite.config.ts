@@ -86,7 +86,14 @@ export default defineConfig(({ command }) => ({
    * leaves that sibling behind, so the URL resolves to a file that is not there
    * and the worker 404s — in dev only; the production build resolves it fine.
    * Serving the package unbundled keeps the two files next to each other.
+   *
+   * onnxruntime-web is here for exactly the same reason, and it fails more
+   * quietly: its WebAssembly is a sibling of the module, the optimizer leaves
+   * it behind, and the dev server answers the request with index.html rather
+   * than a 404 — so the runtime receives an HTML page where a module should be
+   * and reports something unrelated. Also dev-only; the build emits the 13.6 MB
+   * artefact correctly either way.
    */
-  optimizeDeps: { exclude: ['libraw-wasm'] },
+  optimizeDeps: { exclude: ['libraw-wasm', 'onnxruntime-web'] },
   build: { target: 'es2022', assetsInlineLimit: 0 },
 }))
