@@ -199,3 +199,16 @@ relies on one says so on import rather than pretending. Camera profiles are
 applied as a look rather than colorimetrically: raw development has already
 mapped the sensor to sRGB by the time the profile is reached, so its hue,
 saturation and tone rendering carry over but its absolute colour does not.
+
+## Licence
+
+35mm is [MIT licensed](LICENSE).
+
+It ships two LGPL decoders compiled to WebAssembly — [LibRaw](https://www.libraw.org/)
+for camera raw, and [libheif](https://github.com/strukturag/libheif) with libde265
+for HEIC. Using them does not make 35mm itself LGPL, but it carries conditions that
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) sets out in full, along with every
+other component that reaches the browser.
+
+The libheif build here is decode-only and deliberately carries no HEVC encoder;
+the notices explain why that line matters.

@@ -135,8 +135,11 @@ export function AboutDialog() {
           <DevelopCache />
 
           <p className="modal__note">
-            Raw development uses <a href="https://www.libraw.org/" target="_blank" rel="noreferrer noopener">LibRaw</a>{' '}
-            compiled to WebAssembly. Source is on{' '}
+            Raw development uses <a href="https://www.libraw.org/" target="_blank" rel="noreferrer noopener">LibRaw</a>,
+            and HEIC uses <a href="https://github.com/strukturag/libheif" target="_blank" rel="noreferrer noopener">libheif</a>{' '}
+            with libde265 — both compiled to WebAssembly, and both used under the{' '}
+            <a href="https://www.gnu.org/licenses/lgpl-3.0.html" target="_blank" rel="noreferrer noopener">LGPL</a>.
+            35mm itself is MIT. Source, licences and the full notices are on{' '}
             <a href={REPO_URL} target="_blank" rel="noreferrer noopener">GitHub</a>.
           </p>
         </div>
