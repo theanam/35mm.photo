@@ -164,6 +164,9 @@ export async function runBatchExport(request: BatchRequest): Promise<BatchResult
             height: Math.max(1, Math.round(full.height * scale)),
             renderer,
             sourceFile: item.file.file,
+            // So a subject mask synced onto this photo finds *this* photo's
+            // subject, and reuses it if the frame has already been opened.
+            frameId: item.frameId,
             onProgress: (stage) => onProgress({ frameId: item.frameId, status: 'working', stage }),
           })
           if (!blob) throw new Error('the browser could not encode it')

@@ -6,6 +6,7 @@ import type { EditState, ImageMeta } from '../editor/edit-stack/types'
 import { saveBlob, writeToHandle } from './file-system'
 import { extensionOf } from './formats'
 import { attachExif } from './exif-write'
+import { ensureSubjectMaps } from '../subject/detect'
 
 export type ExportFormat = 'jpeg' | 'png' | 'webp'
 
@@ -70,6 +71,8 @@ export interface ExportRequest {
   settings: ExportSettings
   /** The file the photo came from, so its EXIF can travel to the export. */
   sourceFile?: Blob
+  /** Identifies the photo to the subject-mask cache; see `RenderRequest`. */
+  frameId?: string
   /** Set to overwrite the file the photo came from instead of prompting. */
   overwriteHandle?: FileSystemFileHandle
   onProgress?: (stage: string) => void
@@ -120,6 +123,7 @@ export async function exportImage(request: ExportRequest): Promise<ExportResult>
     height,
     onProgress,
     sourceFile: request.sourceFile,
+    frameId: request.frameId,
   })
   {
 
@@ -149,6 +153,12 @@ export interface RenderRequest {
   onProgress?: (stage: string) => void
   /** Original file, for carrying its EXIF into the encoded output. */
   sourceFile?: Blob
+  /**
+   * Identifies the photo to the subject-mask cache, so an export reuses the
+   * coverage the viewport already found instead of running the model again.
+   * Without it a subject mask still renders — it is simply detected here.
+   */
+  frameId?: string
   /**
    * Reuse a renderer across many exports. A browser caps how many live WebGL
    * contexts it will hand out — around sixteen — so a batch that built one per
@@ -185,6 +195,19 @@ export async function renderToBlob(
   }
 
   try {
+    // Before the render, and inside it rather than at the call site: a subject
+    // mask that drew in the viewport and not in the file would be the app
+    // lying about what it was about to write. Detection is skipped entirely
+    // when no mask asks for it.
+    if (edits.masks.some((m) => m.kind === 'subject')) {
+      onProgress?.('Finding the subject')
+      renderer.setSubjectMaps(
+        await ensureSubjectMaps(edits.masks, request.frameId ?? meta.name, source),
+      )
+    } else {
+      renderer.setSubjectMaps([])
+    }
+
     onProgress?.('Rendering')
     renderer.setImage(source, meta.orientation)
 

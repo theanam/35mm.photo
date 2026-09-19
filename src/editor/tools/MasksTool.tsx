@@ -383,9 +383,11 @@ function SubjectControls({ mask }: { mask: SubjectMask }) {
     }
   }, [])
 
-  // Recomputed against the ticker, because a detection changes nothing in the
-  // edit stack that this could otherwise watch.
-  const found = Boolean(activeFrameId && maskMapsAt >= 0 && cachedSubject(activeFrameId, mask.model))
+  // `maskMapsAt` is subscribed to purely so that finishing a detection
+  // re-renders this: coverage lives outside the edit stack, so there is
+  // nothing else here that changes when one is found.
+  void maskMapsAt
+  const found = Boolean(activeFrameId && cachedSubject(activeFrameId, mask.model))
 
   return (
     <div className="field">

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { boxBlur, guidedFilter, refineMask, resample } from './refine'
+import { forgetSubjects, rememberSubject, subjectMapsFor } from './detect'
+import { createMask } from '../editor/edit-stack/masks'
+import type { Mask, SubjectMask } from '../editor/edit-stack/types'
 
 /** A guide with one hard vertical edge: dark on the left, bright on the right. */
 function edgeGuide(size: number, at = size / 2): Float32Array {
@@ -143,5 +146,65 @@ describe('refineMask', () => {
     expect(out[row + 4]).toBeLessThan(90)
     expect(out[row + 60]).toBeGreaterThan(165)
     expect(out[row + 60] - out[row + 4]).toBeGreaterThan(90)
+  })
+})
+
+/**
+ * Channel order. `packMasks` assigns a texture channel by position among the
+ * subject masks, and the renderer writes the maps into the atlas in the order
+ * this returns them — so if the two ever disagree, an adjustment lands on
+ * another mask's subject.
+ */
+describe('subjectMapsFor', () => {
+  const map = (v: number) => ({ data: new Uint8ClampedArray(4).fill(v), size: 2 })
+  const subject = () => createMask('subject', 1) as SubjectMask
+
+  it('returns one entry per subject mask, in list order', () => {
+    forgetSubjects()
+    const a = subject()
+    const b = subject()
+    rememberSubject('frame-1', a.model, map(10))
+    rememberSubject('frame-1', b.model, map(10))
+
+    const masks: Mask[] = [createMask('radial', 1), a, createMask('colour', 1), b]
+    const maps = subjectMapsFor(masks, 'frame-1')
+
+    // Two subject masks in, two maps out — the radial and colour take no slot.
+    expect(maps).toHaveLength(2)
+    expect(maps.every((m) => m !== null)).toBe(true)
+  })
+
+  it('gives null for a subject not yet found, rather than shifting the rest along', () => {
+    forgetSubjects()
+    const masks = [subject(), subject()]
+    const maps = subjectMapsFor(masks, 'frame-2')
+
+    expect(maps).toHaveLength(2)
+    expect(maps[0]).toBeNull()
+    expect(maps[1]).toBeNull()
+  })
+
+  it('has nothing to say about a photo that is not open', () => {
+    expect(subjectMapsFor([subject()], null)).toEqual([null])
+  })
+
+  it('does not hand one photo-s subject to another', () => {
+    forgetSubjects()
+    const a = subject()
+    rememberSubject('frame-a', a.model, map(200))
+
+    expect(subjectMapsFor([a], 'frame-a')[0]).not.toBeNull()
+    expect(subjectMapsFor([a], 'frame-b')[0]).toBeNull()
+  })
+
+  it('forgets one photo without forgetting the others', () => {
+    forgetSubjects()
+    const a = subject()
+    rememberSubject('keep', a.model, map(1))
+    rememberSubject('drop', a.model, map(1))
+
+    forgetSubjects('drop')
+    expect(subjectMapsFor([a], 'keep')[0]).not.toBeNull()
+    expect(subjectMapsFor([a], 'drop')[0]).toBeNull()
   })
 })

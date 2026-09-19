@@ -82,6 +82,7 @@ export function ExportDialog() {
         edits,
         settings,
         sourceFile: photo.file,
+        frameId: photo.frameId,
         overwriteHandle: overwrite ? photo.handle : undefined,
         onProgress: setBusy,
       })

@@ -4,7 +4,7 @@ import { Renderer } from '../editor/gpu/renderer'
 import { outputSize } from '../editor/gpu/transform'
 import { getLut, peekLut } from '../editor/presets/lutCache'
 import { getLook } from '../editor/presets/catalogue'
-import { cachedSubject } from '../subject/detect'
+import { subjectMapsFor } from '../subject/detect'
 import { HistogramClient } from '../editor/histogram'
 import { detectCapabilities } from '../editor/gpu/caps'
 import { CropOverlay } from './CropOverlay'
@@ -463,11 +463,7 @@ export function Viewport() {
     // from the session cache rather than read off the edit stack. The order is
     // the order the masks appear in, which is the order `packMasks` assigns
     // channels in — the two must not drift apart.
-    renderer.setSubjectMaps(
-      renderEdits.masks
-        .filter((m) => m.kind === 'subject')
-        .map((m) => (activeFrameId ? cachedSubject(activeFrameId, m.model) : null)),
-    )
+    renderer.setSubjectMaps(subjectMapsFor(renderEdits.masks, activeFrameId))
 
     const look = getLook(renderEdits.look.id)
     // The overlay is a tool affordance, so it only exists while the tool is

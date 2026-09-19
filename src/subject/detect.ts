@@ -29,6 +29,8 @@
  * decision to make, once, and `MasksTool` asks before the first detection.
  */
 
+import type { Mask } from '../editor/edit-stack/types'
+
 /** What the model reads. Larger inputs cost quadratically and resolve no better. */
 export const DETECT_SIZE = 320
 
@@ -94,6 +96,10 @@ function modelUrl(): string {
  * between "this will cost a download" and "this is a second of compute".
  */
 export async function isModelCached(): Promise<boolean> {
+  // A detection already run this session is the most reliable answer, and the
+  // only one available in dev — `pwa/register.ts` skips the service worker
+  // there, so the Cache API is empty however many times the model has loaded.
+  if (warm) return true
   if (typeof caches === 'undefined') return false
   try {
     const hit = await caches.match(modelUrl())
@@ -239,6 +245,55 @@ export function forgetSubjects(frameId?: string): void {
 }
 
 /** Find the subject, or hand back what was found earlier. */
+/**
+ * Coverage for every subject mask in a stack, in list order — which is the
+ * order `packMasks` hands out texture channels in, so the two line up.
+ *
+ * Synchronous and cache-only, for the viewport, which redraws far too often to
+ * start a model on. Anything not yet found comes back null and simply covers
+ * nothing until it is.
+ */
+export function subjectMapsFor(masks: Mask[], frameId: string | null): (SubjectMap | null)[] {
+  return masks
+    .filter((m) => m.kind === 'subject')
+    .map((m) => (frameId ? cachedSubject(frameId, m.model) : null))
+}
+
+/**
+ * The same, but it will run the detector for anything missing.
+ *
+ * This is what an export calls. A mask that renders in the viewport and not in
+ * the file would be the worst kind of wrong, so the resolution lives inside the
+ * render path rather than at each call site where it can be forgotten — which
+ * it duly was, by me, until an audit found exports dropping subject masks on
+ * the floor.
+ */
+export async function ensureSubjectMaps(
+  masks: Mask[],
+  frameId: string,
+  source: ImageBitmap,
+): Promise<(SubjectMap | null)[]> {
+  const out: (SubjectMap | null)[] = []
+  for (const mask of masks) {
+    if (mask.kind !== 'subject') continue
+    try {
+      out.push(await subjectFor(frameId, mask.model, source))
+    } catch {
+      // One mask that cannot be found must not fail the whole export; it
+      // covers nothing, exactly as it does before it has been detected.
+      out.push(null)
+    }
+  }
+  return out
+}
+
+/** True once the model has been fetched and compiled at least once. */
+export function modelIsWarm(): boolean {
+  return warm
+}
+
+let warm = false
+
 export async function subjectFor(
   frameId: string,
   model: string,
@@ -248,6 +303,7 @@ export async function subjectFor(
   if (hit) return hit
 
   const map = await detectSubject(source)
+  warm = true
   rememberSubject(frameId, model, map)
   return map
 }

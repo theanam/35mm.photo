@@ -3,7 +3,13 @@ import { cloneEdits, defaultEdits, editsEqual } from './defaults'
 import { emptyHistory, pushHistory, shouldPush, touchHistory, type History } from './history'
 import { countEdits, type PanelId } from './summary'
 import { createMask, replaceMask, replaceMaskAdjust } from './masks'
-import { rememberSubject, subjectFor } from '../../subject/detect'
+import {
+  DETECT_VERSION,
+  forgetSubjects,
+  modelIsWarm,
+  rememberSubject,
+  subjectFor,
+} from '../../subject/detect'
 import { applySyncScope, type SyncGroup } from './sync'
 import { MAX_MASKS, type EditState, type Frame, type ImageMeta, type Mask, type MaskAdjust, type MaskKind } from './types'
 import type { Orientation } from '../../io/exif'
@@ -165,6 +171,8 @@ interface EditorState {
   addMask: (kind: MaskKind) => void
   /** Run the detector for a subject mask, or re-run it after a model change. */
   detectSubjectMask: (id: string) => Promise<void>
+  /** Find every subject this photo's masks ask for, if the model is loaded. */
+  autoDetectSubjects: () => Promise<void>
   /** True while a detection is in flight, so the tool can say so. */
   detecting: boolean
   removeMask: (id: string) => void
@@ -411,6 +419,11 @@ export const useEditor = create<EditorState>((set, get) => ({
       if (opened.handle) void db.saveHandle(key, opened.handle)
       void cacheThumbnail(key, id, preview, meta.orientation, set, get)
       void get().refreshRecents()
+      // Edits restored from a sidecar or arrived by sync can carry a subject
+      // mask that has never been resolved on this photo. It covers nothing
+      // until it has been, so resolve it — silently, and only if the model is
+      // already loaded.
+      void get().autoDetectSubjects()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not open that file'
       set({
@@ -526,6 +539,9 @@ export const useEditor = create<EditorState>((set, get) => ({
 
     for (const frame of frames) {
       if (!drop.has(frame.id)) continue
+      // The coverage found for this photo describes a photo that is no longer
+      // in the strip, and its id will never be asked for again.
+      forgetSubjects(frame.id)
       // The strip is the only holder of these, so let them go with it. The
       // file on disk and anything saved about it in IndexedDB are untouched —
       // reopening the photo brings its edits back.
@@ -634,6 +650,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   closePhoto() {
     const photo = get().photo
     if (photo) {
+      forgetSubjects(photo.frameId)
       photo.source.close()
       if (photo.preview !== photo.source) photo.preview.close()
     }
@@ -839,6 +856,28 @@ export const useEditor = create<EditorState>((set, get) => ({
     const mask = createMask(kind, aspect, edits.masks)
     get().update({ masks: [...edits.masks, mask] }, `mask-add-${mask.id}`)
     set({ activeMaskId: mask.id })
+
+    // A fresh subject mask covers nothing until the detector has run, so run
+    // it — unless that would mean downloading the model, which the tool asks
+    // about rather than assumes.
+    if (mask.kind === 'subject' && modelIsWarm()) void get().detectSubjectMask(mask.id)
+  },
+
+  /**
+   * Find the subject without being asked — but only once the model is already
+   * here.
+   *
+   * The first detection of a session is an 8 MB download, and starting one on
+   * somebody's behalf because they opened a photo, or because a mask arrived
+   * on it from a sync, is not a decision to make for them. After that it is a
+   * second of compute and asking again is just a click in the way.
+   */
+  async autoDetectSubjects() {
+    if (!modelIsWarm()) return
+    const pending = get().edits.masks.filter(
+      (m) => m.kind === 'subject' && m.enabled && m.amount > 0,
+    )
+    for (const mask of pending) await get().detectSubjectMask(mask.id)
   },
 
   async detectSubjectMask(id) {
@@ -1273,7 +1312,15 @@ function migrate(edits: Partial<EditState>): EditState {
     perspective: { ...base.perspective, ...(edits.perspective ?? {}) },
     lens: { ...base.lens, ...(edits.lens ?? {}) },
     colorGrade: { ...base.colorGrade, ...(edits.colorGrade ?? {}) },
-    masks: edits.masks ?? base.masks,
+    // A subject mask names the detector that produced it, and a sidecar can
+    // name one this build no longer has. Point it at what is actually here:
+    // the alternative is a mask that never finds anything, because the cache
+    // is keyed by a model nothing will ever derive.
+    masks: (edits.masks ?? base.masks).map((mask) =>
+      mask.kind === 'subject' && mask.model !== DETECT_VERSION
+        ? { ...mask, model: DETECT_VERSION }
+        : mask,
+    ),
     dynamicRange: edits.dynamicRange ?? base.dynamicRange,
     raw: { ...base.raw, ...(edits.raw ?? {}) },
     look: { ...base.look, ...(edits.look ?? {}) },
