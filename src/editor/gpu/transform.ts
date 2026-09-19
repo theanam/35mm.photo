@@ -40,11 +40,50 @@ export function displaySize(width: number, height: number, rotate90: number) {
 
 /** Pixel dimensions of the final cropped output at full resolution. */
 export function outputSize(imgW: number, imgH: number, crop: CropState) {
-  const d = displaySize(imgW, imgH, crop.rotate90)
+  const c = effectiveCrop(imgW, imgH, crop)
+  const d = displaySize(imgW, imgH, c.rotate90)
   return {
-    width: Math.max(1, Math.round(d.width * crop.w)),
-    height: Math.max(1, Math.round(d.height * crop.h)),
+    width: Math.max(1, Math.round(d.width * c.w)),
+    height: Math.max(1, Math.round(d.height * c.h)),
   }
+}
+
+/**
+ * The crop as it is actually rendered: the stored rect, held within the largest
+ * box of its own shape that fits inside the straightened frame.
+ *
+ * Straighten *constrains* the crop rather than editing it, and the distinction
+ * is the whole point of this function. The constraint used to be written back
+ * into the stored rect every time the angle moved, which meant each pass could
+ * only ever take away — straighten one way and back again and the box came home
+ * smaller than it left, a little more with every nudge of the slider. Holding
+ * the rect here instead leaves what the user set alone, so an angle always
+ * produces the same box, and returning to zero returns the whole frame.
+ */
+export function effectiveCrop(imgW: number, imgH: number, crop: CropState): CropState {
+  if (crop.angle === 0) return crop
+
+  const d = displaySize(imgW, imgH, crop.rotate90)
+  const boxAspect = (crop.w * d.width) / (crop.h * d.height)
+  if (!Number.isFinite(boxAspect) || boxAspect <= 0) return crop
+
+  const inset = insetCropForAngle(1, 1, crop.angle, boxAspect)
+  if (crop.w <= inset.w && crop.h <= inset.h) return crop
+
+  const w = Math.min(crop.w, inset.w)
+  const h = Math.min(crop.h, inset.h)
+  // Shrink about the centre, so a constrained box stays over what it framed.
+  return {
+    ...crop,
+    w,
+    h,
+    x: clamp01(crop.x + (crop.w - w) / 2, w),
+    y: clamp01(crop.y + (crop.h - h) / 2, h),
+  }
+}
+
+function clamp01(v: number, size: number) {
+  return Math.min(Math.max(v, 0), Math.max(0, 1 - size))
 }
 
 /**
@@ -130,9 +169,12 @@ export function buildUvTransform(
 export function buildUprightTransform(
   imgW: number,
   imgH: number,
-  crop: CropState,
+  stored: CropState,
   perspective?: PerspectiveState,
 ): Mat3 {
+  // Everything below reads the constrained rect, never the stored one — see
+  // `effectiveCrop`. The straighten slider writes only the angle.
+  const crop = effectiveCrop(imgW, imgH, stored)
   const d = displaySize(imgW, imgH, crop.rotate90)
   const aspect = d.width / d.height
 

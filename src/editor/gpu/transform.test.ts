@@ -7,6 +7,8 @@ import {
   mat3Identity,
   mat3Invert,
   mat3Mul,
+  effectiveCrop,
+  insetCropForAngle,
   outputSize,
   uprightSize,
 } from './transform'
@@ -182,5 +184,87 @@ describe('buildUprightTransform', () => {
     // Same content, so the output position shifts exactly as the crop does.
     expect(tight[0]).toBeCloseTo((wide[0] - 0.25) / 0.5, 6)
     expect(tight[1]).toBeCloseTo((wide[1] - 0.2) / 0.5, 6)
+  })
+})
+
+/**
+ * Straighten constrains the crop; it does not rewrite it. The distinction is
+ * invisible until the angle comes back, which is why it went unnoticed: the box
+ * used to be shrunk to fit and the shrink written into the stored rect, so
+ * every pass of the slider could only subtract and the frame was never returned.
+ */
+describe('straighten and the crop', () => {
+  const W = 6000
+  const H = 4000
+  const full = (angle: number) => ({ ...crop(), angle })
+
+  it('holds the box inside the rotated frame', () => {
+    const c = effectiveCrop(W, H, full(10))
+    const inset = insetCropForAngle(1, 1, 10, W / H)
+
+    expect(c.w).toBeCloseTo(inset.w, 6)
+    expect(c.h).toBeCloseTo(inset.h, 6)
+    expect(c.w).toBeLessThan(1)
+    // Shrunk about the centre, so it still frames what it framed.
+    expect(c.x + c.w / 2).toBeCloseTo(0.5, 6)
+    expect(c.y + c.h / 2).toBeCloseTo(0.5, 6)
+  })
+
+  it('gives the whole frame back at zero', () => {
+    expect(effectiveCrop(W, H, full(0))).toEqual(crop())
+  })
+
+  it('treats left and right as the same amount of turn', () => {
+    const left = effectiveCrop(W, H, full(-7))
+    const right = effectiveCrop(W, H, full(7))
+
+    expect(left.w).toBeCloseTo(right.w, 10)
+    expect(left.h).toBeCloseTo(right.h, 10)
+  })
+
+  /** The reported bug: the crop shrank a little on every pass of the slider. */
+  it('does not ratchet when straightened back and forth', () => {
+    const stored = crop()
+    const sizes: number[] = []
+    for (const angle of [0, 6, -6, 12, -12, 3, -3, 0, 9, -9, 0]) {
+      // What the slider writes: the angle, and nothing else.
+      sizes.push(effectiveCrop(W, H, { ...stored, angle }).w)
+    }
+
+    // Back at zero the whole frame is there, however much turning came first.
+    expect(sizes[0]).toBe(1)
+    expect(sizes[7]).toBe(1)
+    expect(sizes[10]).toBe(1)
+    // And one angle always gives one answer, whatever preceded it.
+    expect(sizes[1]).toBeCloseTo(sizes[2], 10)
+    expect(sizes[3]).toBeCloseTo(sizes[4], 10)
+  })
+
+  it('leaves a box that already fits completely alone', () => {
+    const small = { ...crop(), x: 0.3, y: 0.3, w: 0.4, h: 0.4, angle: 8 }
+    expect(effectiveCrop(W, H, small)).toEqual(small)
+  })
+
+  it('reports the constrained size, not the stored one', () => {
+    const straight = outputSize(W, H, full(0))
+    const turned = outputSize(W, H, full(10))
+
+    expect(straight).toEqual({ width: W, height: H })
+    expect(turned.width).toBeLessThan(W)
+    // And coming back gives the full frame again, rather than a smaller one.
+    expect(outputSize(W, H, full(0))).toEqual(straight)
+  })
+
+  it('samples inside the picture once straightened', () => {
+    // Every corner of the output must land within the source, or the crop is
+    // showing the empty wedge the rotation leaves behind.
+    const m = buildUvTransform(W, H, full(12))
+    for (const [u, v] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+      const p = apply(m, u, v)
+      expect(p.u).toBeGreaterThanOrEqual(-1e-6)
+      expect(p.u).toBeLessThanOrEqual(1 + 1e-6)
+      expect(p.v).toBeGreaterThanOrEqual(-1e-6)
+      expect(p.v).toBeLessThanOrEqual(1 + 1e-6)
+    }
   })
 })

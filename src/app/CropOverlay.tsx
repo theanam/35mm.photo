@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
 import { parseAspectRatio } from '../editor/edit-stack/aspect'
-import { displaySize } from '../editor/gpu/transform'
+import { displaySize, effectiveCrop } from '../editor/gpu/transform'
 
 type Handle = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w' | 'move'
 
@@ -9,9 +9,14 @@ const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 
 /** Interactive crop box drawn over the full, uncropped frame. */
 export function CropOverlay({ width, height }: { width: number; height: number }) {
-  const crop = useEditor((s) => s.edits.crop)
+  const stored = useEditor((s) => s.edits.crop)
   const photo = useEditor((s) => s.photo)
   const updateCrop = useEditor((s) => s.updateCrop)
+
+  // Draw and drag the box that is actually rendered. While straightened that is
+  // the stored rect held inside the rotated frame, and handles that sat on the
+  // stored rect instead would be offset from the picture they appear to cut.
+  const crop = photo ? effectiveCrop(photo.meta.width, photo.meta.height, stored) : stored
   const dragRef = useRef<{ handle: Handle; startX: number; startY: number; start: typeof crop } | null>(null)
 
   const frame = photo ? displaySize(photo.meta.width, photo.meta.height, crop.rotate90) : null

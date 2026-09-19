@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Slider } from '../../app/ui/Slider'
 import { useEditor } from '../edit-stack/store'
-import { displaySize, insetCropForAngle, outputSize } from '../gpu/transform'
+import { displaySize, outputSize } from '../gpu/transform'
 import { formatAspect, parseAspectRatio } from '../edit-stack/aspect'
 import { IconSwap } from '../../app/ui/icons'
 
@@ -54,17 +54,14 @@ export function CropTool() {
     }
 
     const frameAspect = frame.width / frame.height
-    // Largest centred box of the chosen ratio that fits the frame.
+    // Largest centred box of the chosen ratio that fits the frame. The
+    // straighten angle is not accounted for here on purpose: `effectiveCrop`
+    // holds the box inside the rotated frame, and baking the inset in would
+    // make the ratio picked at an angle stay small after straightening back.
     const w = ratio >= frameAspect ? 1 : ratio / frameAspect
     const h = ratio >= frameAspect ? frameAspect / ratio : 1
-    const inset = insetCropForAngle(1, 1, edits.crop.angle, ratio / frameAspect)
 
-    const finalW = Math.min(w, inset.w)
-    const finalH = Math.min(h, inset.h)
-    updateCrop(
-      { aspect: id, w: finalW, h: finalH, x: (1 - finalW) / 2, y: (1 - finalH) / 2 },
-      'crop-aspect',
-    )
+    updateCrop({ aspect: id, w, h, x: (1 - w) / 2, y: (1 - h) / 2 }, 'crop-aspect')
   }
 
   /**
@@ -108,27 +105,15 @@ export function CropTool() {
     chooseAspect(formatAspect(width, height))
   }
 
-  const setAngle = (angle: number) => {
-    if (!frame) {
-      updateCrop({ angle }, 'straighten')
-      return
-    }
-    // Shrink the box just enough that straightening never exposes a corner.
-    const boxAspect = (edits.crop.w * frame.width) / (edits.crop.h * frame.height)
-    const inset = insetCropForAngle(1, 1, angle, boxAspect)
-    const w = Math.min(edits.crop.w, inset.w)
-    const h = Math.min(edits.crop.h, inset.h)
-    updateCrop(
-      {
-        angle,
-        w,
-        h,
-        x: clampInside(edits.crop.x + (edits.crop.w - w) / 2, w),
-        y: clampInside(edits.crop.y + (edits.crop.h - h) / 2, h),
-      },
-      'straighten',
-    )
-  }
+  /**
+   * Straighten writes the angle and nothing else.
+   *
+   * Keeping the box inside the rotated frame is `effectiveCrop`'s job now. It
+   * used to be done here, by shrinking the stored rect to fit — which could
+   * only ever subtract, so straightening one way and back again ratcheted the
+   * crop smaller every pass and there was no way to get the frame back.
+   */
+  const setAngle = (angle: number) => updateCrop({ angle }, 'straighten')
 
   return (
     <div className="tool">
@@ -263,6 +248,3 @@ export function CropTool() {
   )
 }
 
-function clampInside(v: number, size: number) {
-  return Math.min(Math.max(v, 0), Math.max(0, 1 - size))
-}
