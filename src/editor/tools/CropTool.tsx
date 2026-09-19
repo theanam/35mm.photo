@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Slider } from '../../app/ui/Slider'
 import { useEditor } from '../edit-stack/store'
 import { displaySize, outputSize } from '../gpu/transform'
 import { formatAspect, parseAspectRatio } from '../edit-stack/aspect'
 import { IconSwap } from '../../app/ui/icons'
+import { isModelCached } from '../../subject/detect'
 
 /** Aspect presets, in the design's order. The ratio comes from the id itself. */
 const ASPECTS: { id: string; label: string }[] = [
@@ -19,6 +20,22 @@ export function CropTool() {
   const edits = useEditor((s) => s.edits)
   const photo = useEditor((s) => s.photo)
   const updateCrop = useEditor((s) => s.updateCrop)
+  const cropToSubject = useEditor((s) => s.cropToSubject)
+  const detecting = useEditor((s) => s.detecting)
+
+  /*
+   * Offered only once the detector is already here. Cropping is not a reason to
+   * pull several megabytes down — someone who wants that has the Masks tool,
+   * which asks first. So this appears for people who have already said yes.
+   */
+  const [modelReady, setModelReady] = useState(false)
+  useEffect(() => {
+    let live = true
+    void isModelCached().then((yes) => live && setModelReady(yes))
+    return () => {
+      live = false
+    }
+  }, [])
 
   const [customW, setCustomW] = useState('3')
   const [customH, setCustomH] = useState('2')
@@ -195,7 +212,23 @@ export function CropTool() {
             )}
           </div>
 
-          <p className="tool__hint">Drag the box or its handles directly on the photo.</p>
+          {modelReady && (
+            <div className="button-row">
+              <button
+                className="button"
+                onClick={() => void cropToSubject()}
+                disabled={detecting}
+                title="Fit the crop around whatever the photo is of"
+              >
+                {detecting ? 'Looking…' : 'Crop to subject'}
+              </button>
+            </div>
+          )}
+
+          <p className="tool__hint">
+            Drag the box or its handles directly on the photo.
+            {modelReady && ' Crop to subject fits the box around what the photo is of, keeping the aspect if one is locked.'}
+          </p>
         </section>
 
         <section className="tool__group">

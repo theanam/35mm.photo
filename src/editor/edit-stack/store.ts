@@ -10,6 +10,9 @@ import {
   rememberSubject,
   subjectFor,
 } from '../../subject/detect'
+import { fitAspect, subjectBounds } from '../../subject/bounds'
+import { displaySize } from '../gpu/transform'
+import { parseAspectRatio } from './aspect'
 import { applySyncScope, type SyncGroup } from './sync'
 import { MAX_MASKS, type EditState, type Frame, type ImageMeta, type Mask, type MaskAdjust, type MaskKind } from './types'
 import type { Orientation } from '../../io/exif'
@@ -173,6 +176,8 @@ interface EditorState {
   detectSubjectMask: (id: string) => Promise<void>
   /** Find every subject this photo's masks ask for, if the model is loaded. */
   autoDetectSubjects: () => Promise<void>
+  /** Set the crop rectangle to the subject of the photograph. */
+  cropToSubject: () => Promise<void>
   /** True while a detection is in flight, so the tool can say so. */
   detecting: boolean
   removeMask: (id: string) => void
@@ -898,6 +903,40 @@ export const useEditor = create<EditorState>((set, get) => ({
       // Nothing in the edit stack changed, so nudge the frame counter instead:
       // the viewport redraws on it, and this must not land in undo.
       set({ maskMapsAt: Date.now() })
+    } catch (err) {
+      get().toast(err instanceof Error ? err.message : 'Could not find a subject', 'error')
+    } finally {
+      set({ detecting: false })
+    }
+  },
+
+  /**
+   * Crop to whatever the photograph is of.
+   *
+   * Reuses the detector the subject mask already carries — the coverage map is
+   * in the same upright uv a crop rect is, so this is a bounding box and not a
+   * second pipeline. The aspect lock wins if there is one: someone who has
+   * asked for 4:5 wants 4:5 around the subject, not the subject's own shape.
+   */
+  async cropToSubject() {
+    const { photo, activeFrameId, edits } = get()
+    if (!photo || !activeFrameId || get().detecting) return
+
+    set({ detecting: true })
+    try {
+      const map = await subjectFor(activeFrameId, DETECT_VERSION, photo.preview)
+      const found = subjectBounds(map)
+      if (!found) {
+        get().toast('No subject to crop to in this photo', 'warn')
+        return
+      }
+      if (get().activeFrameId !== activeFrameId) return
+
+      const frame = displaySize(photo.meta.width, photo.meta.height, edits.crop.rotate90)
+      const ratio = parseAspectRatio(edits.crop.aspect)
+      const box = ratio === null ? found : fitAspect(found, ratio / (frame.width / frame.height))
+
+      get().updateCrop({ x: box.x, y: box.y, w: box.w, h: box.h }, 'crop-subject')
     } catch (err) {
       get().toast(err instanceof Error ? err.message : 'Could not find a subject', 'error')
     } finally {
