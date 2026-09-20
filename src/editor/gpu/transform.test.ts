@@ -133,6 +133,37 @@ describe('buildPerspective', () => {
     expect(out.u).toBeCloseTo(0.42, 6)
     expect(out.v).toBeCloseTo(0.63, 6)
   })
+
+  /*
+   * A keystone asks for source the picture does not have — that is the whole
+   * point of it, and it is why the colour pass carries a coverage matte rather
+   * than clamping. Clamping instead smeared the last row of the photo down
+   * over the bottom tenth of the frame.
+   */
+  it('reaches past the source once the keystone is strong', () => {
+    const m = buildUvTransform(1500, 2000, crop(), 1, { ...neutral(), vertical: -100 })
+
+    expect(apply(m, 0.5, 0.5).v).toBeCloseTo(0.5, 6)
+    expect(apply(m, 0.5, 1).v).toBeGreaterThan(1)
+    expect(apply(m, 0, 1).u).toBeLessThan(0)
+    expect(apply(m, 1, 1).u).toBeGreaterThan(1)
+  })
+
+  it('stays inside the source when scale pushes the frame back out', () => {
+    const m = buildUvTransform(1500, 2000, crop(), 1, {
+      ...neutral(),
+      vertical: -100,
+      scale: 150,
+    })
+
+    for (const [u, v] of [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 1]] as const) {
+      const out = apply(m, u, v)
+      expect(out.u).toBeGreaterThanOrEqual(0)
+      expect(out.u).toBeLessThanOrEqual(1)
+      expect(out.v).toBeGreaterThanOrEqual(0)
+      expect(out.v).toBeLessThanOrEqual(1)
+    }
+  })
 })
 
 describe('mat3Invert', () => {

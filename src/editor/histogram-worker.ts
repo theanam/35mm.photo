@@ -23,9 +23,16 @@ self.addEventListener('message', (event: MessageEvent) => {
 
   let shadows = 0
   let highlights = 0
-  const count = data.length / 4
+  let count = 0
 
   for (let i = 0; i < data.length; i += 4) {
+    // Alpha is the render's coverage matte: a keystone or a lens correction
+    // leaves corners the source never reached. They are not black pixels the
+    // photo has, so counting them would light the clipping warning on every
+    // straightened building.
+    if (data[i + 3] === 0) continue
+    count++
+
     const pr = data[i]
     const pg = data[i + 1]
     const pb = data[i + 2]

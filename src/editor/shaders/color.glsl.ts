@@ -7,8 +7,9 @@ import { GLSL_COMMON } from './common.glsl'
  * Tone and saturation themselves live in `common.glsl`, because the local pass
  * runs the identical maths on whatever the masks resolve to.
  *
- * Edge sampling is clamped rather than wrapped; with a straighten angle the
- * transform can reach just outside the source rect.
+ * Geometry can reach outside the source rect — a straighten angle by a hair, a
+ * keystone or a distortion correction by a good deal more. Those fragments are
+ * blanked rather than clamped to the edge texel; see `coverage`.
  */
 export const COLOR_FRAG = /* glsl */ `#version 300 es
 precision highp float;
@@ -146,12 +147,31 @@ vec2 lensRemap(vec2 uv, float amount) {
   return 0.5 + (d * k) / vec2(uFrameAspect, 1.0);
 }
 
+/**
+ * How much of the source covers this fragment: 1 inside, 0 outside, feathered
+ * across one output pixel so the edge a keystone opens up is a clean line
+ * rather than a staircase. fwidth is the right width for that feather because
+ * it measures the coordinate's own rate of change, which a projective divide
+ * makes vary across the frame.
+ */
+float coverage(vec2 p) {
+  vec2 e = max(fwidth(p), vec2(1e-5)) * 0.5;
+  vec2 inside = smoothstep(-e, e, p) * (1.0 - smoothstep(1.0 - e, 1.0 + e, p));
+  return inside.x * inside.y;
+}
+
 void main() {
   // The divide the vertex shader deliberately did not do. Without a keystone
   // vUvH.z is 1 and this costs nothing.
-  vec2 uv = clamp(vUvH.xy / vUvH.z, vec2(0.0), vec2(1.0));
+  vec2 wanted = lensRemap(vUvH.xy / vUvH.z, uDistortion);
 
-  uv = clamp(lensRemap(uv, uDistortion), vec2(0.0), vec2(1.0));
+  // A keystone or a distortion correction asks for source outside the picture,
+  // and there is nothing there to show. Clamping alone answers with the edge
+  // texel, which smears the last row or column across everything past it; the
+  // coverage below blanks that region instead, leaving the empty corners the
+  // Scale slider exists to push back over.
+  float cover = coverage(wanted);
+  vec2 uv = clamp(wanted, vec2(0.0), vec2(1.0));
 
   vec4 src;
   if (uCa != 0.0) {
@@ -201,6 +221,6 @@ void main() {
     c = mix(c, looked, uLookStrength);
   }
 
-  fragColor = vec4(clamp(c, 0.0, 1.0), src.a);
+  fragColor = vec4(clamp(c, 0.0, 1.0) * cover, src.a * cover);
 }
 `
