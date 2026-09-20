@@ -456,7 +456,16 @@
   user-select: none;
   -webkit-touch-callout: none;
 }
+/* `safe center` matters as much as the scrolling: plain centring on an
+   overflowing flex item pushes the excess off the top and left, where no
+   amount of scrolling reaches it. */
 .viewport__stage[data-zoomed] { overflow: auto; align-items: safe center; justify-content: safe center; }
+
+/* While cropping the stage scrolls itself to follow the box and panning is
+   off, so scrollbars are noise — and worse, they resize the stage as the box
+   grows and shrinks, which moves the very thing being aimed at. */
+.viewport__stage[data-cropping] { scrollbar-width: none; }
+.viewport__stage[data-cropping]::-webkit-scrollbar { display: none; }
 
 /* Wheel zoom replaces scrolling here, so dragging is how you reach the edges. */
 .viewport__stage[data-pannable] { cursor: grab; }

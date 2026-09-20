@@ -632,10 +632,17 @@ export function Viewport() {
 
   return (
     <div className="viewport">
+      {/* `data-zoomed` follows whether the frame overflows, not whether the
+          user asked to zoom. Cropping scales to the box while the zoom setting
+          is still "fit", so keying it on the setting left the stage
+          overflow:hidden and hard-centred — which pushes whatever does not fit
+          out past the edges with no way to scroll to it, and slides the crop
+          box up under the toolbar. */}
       <div
         ref={stageRef}
         className="viewport__stage"
-        data-zoomed={zoom !== 'fit' || undefined}
+        data-zoomed={overflows || undefined}
+        data-cropping={cropping || undefined}
         data-pannable={pannable || undefined}
         data-panning={panning || undefined}
         onPointerDown={onStagePointerDown}
