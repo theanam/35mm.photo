@@ -68,14 +68,22 @@ describe('packMasks', () => {
     const sharpen = packMasks([withAdjust(radial(), { sharpen: 40 })])
     expect(sharpen.hasDetail).toBe(true)
     expect(sharpen.hasTone).toBe(false)
-    expect(sharpen.detailNeeds).toEqual({ wide: false, mid: false, tight: true })
+    expect(sharpen.detailNeeds).toEqual({ wide: false, mid: false, tight: true, soft: false })
 
     const clarity = packMasks([withAdjust(radial(), { clarity: -20 })])
-    expect(clarity.detailNeeds).toEqual({ wide: true, mid: false, tight: false })
+    expect(clarity.detailNeeds).toEqual({ wide: true, mid: false, tight: false, soft: false })
+
+    // Blur is the expensive one — three chained blurs — so it must not ride
+    // along with a mask that only sharpens, and nothing else may drag it in.
+    const blur = packMasks([withAdjust(radial(), { blur: 70 })])
+    expect(blur.hasDetail).toBe(true)
+    expect(blur.hasTone).toBe(false)
+    expect(blur.detailNeeds).toEqual({ wide: false, mid: false, tight: false, soft: true })
+    expect(blur.detail[3]).toBeCloseTo(0.7, 6)
 
     const none = packMasks([radial()])
     expect(none.hasDetail).toBe(false)
-    expect(none.detailNeeds).toEqual({ wide: false, mid: false, tight: false })
+    expect(none.detailNeeds).toEqual({ wide: false, mid: false, tight: false, soft: false })
   })
 
   it('refuses to overrun the uniform arrays', () => {

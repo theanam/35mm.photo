@@ -154,6 +154,12 @@ export interface MaskAdjust {
   clarity: number // −100..100
   texture: number // −100..100
   sharpen: number // 0..100
+  /**
+   * 0..100, toward a defocused copy of the region. Not the negative half of
+   * `texture`, which takes detail out and leaves the shapes: this takes the
+   * shapes too, which is what a background wants.
+   */
+  blur: number
 }
 
 interface MaskCommon {

@@ -55,6 +55,14 @@ describe('hasMaskDetail', () => {
     expect(hasMaskTone({ ...neutralMaskAdjust(), sharpen: 20 })).toBe(false)
     expect(hasMaskTone({ ...neutralMaskAdjust(), temperature: -10 })).toBe(true)
   })
+
+  it('counts blur, which the detail pass owns too', () => {
+    expect(hasMaskDetail({ ...neutralMaskAdjust(), blur: 60 })).toBe(true)
+    expect(hasMaskTone({ ...neutralMaskAdjust(), blur: 60 })).toBe(false)
+    // A mask that only blurs still has to read as doing something, or it would
+    // never reach the render at all.
+    expect(maskIsActive({ ...createMask('radial', 1.5), adjust: { ...neutralMaskAdjust(), blur: 60 } })).toBe(true)
+  })
 })
 
 describe('defaultGeometry', () => {

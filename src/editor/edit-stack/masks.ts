@@ -24,6 +24,7 @@ export function neutralMaskAdjust(): MaskAdjust {
     clarity: 0,
     texture: 0,
     sharpen: 0,
+    blur: 0,
   }
 }
 
@@ -125,7 +126,7 @@ export function hasMaskAdjust(adjust: MaskAdjust): boolean {
 
 /** True when a mask's adjustments reach the detail pass rather than the local one. */
 export function hasMaskDetail(adjust: MaskAdjust): boolean {
-  return adjust.clarity !== 0 || adjust.texture !== 0 || adjust.sharpen !== 0
+  return adjust.clarity !== 0 || adjust.texture !== 0 || adjust.sharpen !== 0 || adjust.blur !== 0
 }
 
 /** True when a mask's adjustments are tone and colour, which the local pass owns. */
@@ -159,6 +160,7 @@ export function maskSummary(mask: Mask): string {
   else if (adjust.clarity !== 0) parts.push(`clarity ${signed(adjust.clarity)}`)
   else if (adjust.texture !== 0) parts.push(`texture ${signed(adjust.texture)}`)
   else if (adjust.sharpen !== 0) parts.push(`sharpen ${Math.round(adjust.sharpen)}`)
+  else if (adjust.blur !== 0) parts.push(`blur ${Math.round(adjust.blur)}`)
   else parts.push('adjusted')
 
   if (mask.invert) parts.push('inverted')

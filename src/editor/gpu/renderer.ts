@@ -28,6 +28,36 @@ import { MAX_SUBJECT_MASKS, packMasks, type PackedMasks } from './mask-uniforms'
 import type { Orientation } from '../../io/exif'
 import { whiteBalanceGain } from './whitebalance'
 
+/**
+ * Where the defocused copy a mask's blur reads from is bound. The detail pass
+ * holds 0–4, `SUBJECT_UNIT` takes 5 and `SCRATCH_UNIT` is 7, so this is the
+ * last one going spare.
+ */
+const SOFT_UNIT = 6
+
+/**
+ * Where the nearer of the two defocused copies is bound. WebGL2 guarantees at
+ * least 16 texture units to a fragment shader, so this is well inside the
+ * budget even though it is past the scratch unit.
+ */
+const SOFT_NEAR_UNIT = 8
+
+/**
+ * Short edge, in pixels, of the reduced copy a mask's blur is computed at.
+ *
+ * Constant rather than a fraction of the frame, and that is the whole point.
+ * The blur's reach in the finished picture is its reach at this level scaled
+ * back up by however much the frame was reduced — so fixing the level's size
+ * makes the reach a fixed *share of the photograph*, and a preview blurs what
+ * the export will blur. A level that was itself a fraction of the frame would
+ * instead give a fixed number of pixels, which is a preview that lies by the
+ * ratio between it and the export.
+ */
+const SOFT_LEVEL_EDGE = 300
+
+/** Blur passes at that level for the long throw. The short one is the first. */
+const SOFT_FAR_PASSES = 9
+
 export interface RenderOptions {
   edits: EditState
   look: LookConfig | null
@@ -72,6 +102,8 @@ export class Renderer {
   private rtMid: RenderTarget
   private rtTight: RenderTarget
   private rtHalo: RenderTarget
+  private rtSoftNear: RenderTarget
+  private rtSoft: RenderTarget
   private rtDetail: RenderTarget
   private rtRead: RenderTarget
 
@@ -133,6 +165,8 @@ export class Renderer {
     this.rtMid = mk()
     this.rtTight = mk()
     this.rtHalo = mk()
+    this.rtSoftNear = mk()
+    this.rtSoft = mk()
     this.rtDetail = mk()
     this.rtRead = mk()
 
@@ -509,13 +543,15 @@ export class Renderer {
     edits: EditState,
     packed: PackedMasks,
   ): RenderTarget {
-    const masked = packed.hasDetail ? packed.detailNeeds : { wide: false, mid: false, tight: false }
+    const masked = packed.hasDetail
+      ? packed.detailNeeds
+      : { wide: false, mid: false, tight: false, soft: false }
     const needsWide = edits.clarity !== 0 || edits.dehaze !== 0 || masked.wide
     const needsTone = edits.dynamicRange !== 0
     const needsMid = edits.texture !== 0 || masked.mid
     const needsTight =
       edits.sharpen > 0 || edits.denoiseLuma > 0 || edits.denoiseChroma > 0 || masked.tight
-    if (!needsWide && !needsMid && !needsTight && !needsTone) return source
+    if (!needsWide && !needsMid && !needsTight && !needsTone && !masked.soft) return source
 
     const gl = this.gl
     // Clarity and the dehaze veil estimate both want a radius that scales with
@@ -532,6 +568,55 @@ export class Renderer {
       this.blurInto(this.rtTone, source.texture, width, height, Math.max(12, Math.min(width, height) / 14))
     }
 
+    /*
+     * The two defocused copies a mask's blur travels between.
+     *
+     * Built by shrinking the frame rather than by widening the kernel. A blur
+     * pass is nine taps however far it reaches, so asking one for a defocus
+     * radius spaces those taps tens of pixels apart and the nine copies show
+     * as a grid over everything blurred — plainly visible at any strength
+     * worth having. Every pass here keeps its taps about a pixel apart at its
+     * own resolution and takes the reach from that resolution being low, which
+     * is the only way nine taps cover that much ground smoothly. Sampling the
+     * small copies back at full size costs nothing: the hardware's LINEAR
+     * filter does it, and by then there is no detail left to lose.
+     *
+     * Two copies rather than one because the slider has to mean *more blur*,
+     * not *more of the blur*. Fading the sharp frame into a single far copy is
+     * the Orton glow — two pictures at once — for the whole of its first half.
+     * The short throw gives the shader somewhere to pass through, so the low
+     * half of the slider shortens the focal distance and only the high half
+     * deepens it.
+     */
+    if (masked.soft) {
+      // Down by halves while there is a long way to go: each step averages
+      // where one long jump would point-sample, and aliasing the frame's own
+      // noise into blotches is the one thing a blur cannot undo afterwards.
+      let w = width
+      let h = height
+      let small = source.texture
+      while (Math.min(w, h) > SOFT_LEVEL_EDGE * 2) {
+        w = Math.max(1, Math.round(w / 2))
+        h = Math.max(1, Math.round(h / 2))
+        this.blurInto(this.rtSoftNear, small, w, h, 1)
+        small = this.rtSoftNear.texture
+      }
+
+      // Then the rest of the way in one step, which is now short enough to take.
+      const scale = Math.min(1, SOFT_LEVEL_EDGE / Math.max(1, Math.min(w, h)))
+      const lw = Math.max(1, Math.round(w * scale))
+      const lh = Math.max(1, Math.round(h * scale))
+
+      this.blurInto(this.rtSoftNear, small, lw, lh, 1)
+      // The long throw grows out of the short one, so the two sit on one axis
+      // and the slider travels along it rather than crossfading between two
+      // unrelated pictures.
+      this.blurInto(this.rtSoft, this.rtSoftNear.texture, lw, lh, 1)
+      for (let i = 2; i < SOFT_FAR_PASSES; i++) {
+        this.blurInto(this.rtSoft, this.rtSoft.texture, lw, lh, 1)
+      }
+    }
+
     this.rtDetail.resize(width, height)
     this.rtDetail.bind()
     gl.useProgram(this.detailProgram)
@@ -541,11 +626,15 @@ export class Renderer {
     this.bindTexture(2, gl.TEXTURE_2D, this.rtTight.texture)
     this.bindTexture(3, gl.TEXTURE_2D, this.rtMid.texture)
     this.bindTexture(4, gl.TEXTURE_2D, this.rtTone.texture)
+    this.bindTexture(SOFT_UNIT, gl.TEXTURE_2D, this.rtSoft.texture)
+    this.bindTexture(SOFT_NEAR_UNIT, gl.TEXTURE_2D, this.rtSoftNear.texture)
     this.detailU.i('uImage', 0)
     this.detailU.i('uWideBlur', 1)
     this.detailU.i('uTightBlur', 2)
     this.detailU.i('uMidBlur', 3)
     this.detailU.i('uToneBlur', 4)
+    this.detailU.i('uSoftBlur', SOFT_UNIT)
+    this.detailU.i('uSoftNear', SOFT_NEAR_UNIT)
     this.detailU.f('uClarity', edits.clarity / 100)
     this.detailU.f('uTexture', edits.texture / 100)
     this.detailU.f('uDehaze', edits.dehaze / 100)
@@ -713,7 +802,7 @@ export class Renderer {
 
     for (const rt of [
       this.rtColor, this.rtLocal, this.rtPing, this.rtWide, this.rtTone, this.rtMid,
-      this.rtTight, this.rtHalo, this.rtDetail, this.rtRead,
+      this.rtTight, this.rtHalo, this.rtSoftNear, this.rtSoft, this.rtDetail, this.rtRead,
     ]) {
       rt.dispose()
     }

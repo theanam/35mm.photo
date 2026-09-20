@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { cloneEdits, defaultEdits, editsEqual } from './defaults'
 import { emptyHistory, pushHistory, shouldPush, touchHistory, type History } from './history'
 import { countEdits, type PanelId } from './summary'
-import { createMask, replaceMask, replaceMaskAdjust } from './masks'
+import { createMask, neutralMaskAdjust, replaceMask, replaceMaskAdjust } from './masks'
 import {
   DETECT_VERSION,
   forgetSubjects,
@@ -1380,11 +1380,15 @@ function migrate(edits: Partial<EditState>): EditState {
     // name one this build no longer has. Point it at what is actually here:
     // the alternative is a mask that never finds anything, because the cache
     // is keyed by a model nothing will ever derive.
-    masks: (edits.masks ?? base.masks).map((mask) =>
-      mask.kind === 'subject' && mask.model !== DETECT_VERSION
-        ? { ...mask, model: DETECT_VERSION }
-        : mask,
-    ),
+    masks: (edits.masks ?? base.masks).map((mask) => {
+      // An adjustment added after this record was written is absent rather than
+      // zero, and absent is not a number: it would reach the uniform arrays as
+      // NaN, and `hasMaskAdjust` would call an untouched mask adjusted.
+      const filled = { ...mask, adjust: { ...neutralMaskAdjust(), ...mask.adjust } }
+      return filled.kind === 'subject' && filled.model !== DETECT_VERSION
+        ? { ...filled, model: DETECT_VERSION }
+        : filled
+    }),
     dynamicRange: edits.dynamicRange ?? base.dynamicRange,
     raw: { ...base.raw, ...(edits.raw ?? {}) },
     look: { ...base.look, ...(edits.look ?? {}) },

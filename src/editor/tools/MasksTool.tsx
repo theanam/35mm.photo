@@ -216,6 +216,13 @@ export function MasksTool() {
                 max={100}
                 onChange={(v) => updateMaskAdjust(mask.id, { sharpen: v }, `mask-shp-${mask.id}`)}
               />
+              <Slider
+                label="Blur"
+                value={mask.adjust.blur}
+                min={0}
+                max={100}
+                onChange={(v) => updateMaskAdjust(mask.id, { blur: v }, `mask-blur-${mask.id}`)}
+              />
             </section>
           </>
         ) : (

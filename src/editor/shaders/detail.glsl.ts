@@ -7,11 +7,12 @@ import { GLSL_MASK } from './mask.glsl'
  * bloom colour; sharpening is masked away from flat areas so noise does not get
  * amplified along with detail.
  *
- * Masks reach this pass because clarity, texture and sharpening are the three
+ * Masks reach this pass because clarity, texture, sharpening and blur are the
  * local adjustments that need a blurred copy to work against, and those copies
- * belong to this stage. Each one adds its masked amount to the global slider
- * before the maths runs, so a mask asking for +40 clarity over a frame already
- * set to +20 gets +60 there and +20 everywhere else.
+ * belong to this stage. The first three add their masked amount to the global
+ * slider before the maths runs, so a mask asking for +40 clarity over a frame
+ * already set to +20 gets +60 there and +20 everywhere else. Blur has no global
+ * slider to add to.
  */
 export const DETAIL_FRAG = /* glsl */ `#version 300 es
 precision highp float;
@@ -25,6 +26,8 @@ uniform sampler2D uWideBlur;   // clarity radius, and the dehaze veil estimate
 uniform sampler2D uToneBlur;   // much wider: the local tone operator's neighbourhood
 uniform sampler2D uMidBlur;    // texture radius
 uniform sampler2D uTightBlur;  // sharpen radius
+uniform sampler2D uSoftNear;   // defocus, the short throw
+uniform sampler2D uSoftBlur;   // defocus, the long one
 uniform float uClarity;        // -1..1
 uniform float uTexture;        // -1..1
 uniform float uDehaze;         // -1..1
@@ -33,7 +36,7 @@ uniform float uDenoiseLuma;    // 0..1
 uniform float uDenoiseChroma;  // 0..1
 uniform float uDynamicRange;   // -1..1
 
-// clarity, texture, sharpen, unused
+// clarity, texture, sharpen, blur
 uniform vec4 uMaskDetail[8];
 
 ${GLSL_COMMON}
@@ -49,6 +52,9 @@ void main() {
   float clarity = uClarity;
   float texAmount = uTexture;
   float sharpen = uSharpen;
+  // Blur has no global slider behind it — blurring the whole frame is not an
+  // edit anyone reaches for, and every use of it is local by nature.
+  float blur = 0.0;
   if (uMaskCount > 0) {
     vec2 p = maskUv(vUv);
     for (int i = 0; i < MAX_MASKS; i++) {
@@ -59,6 +65,7 @@ void main() {
       clarity   += d.x * w;
       texAmount += d.y * w;
       sharpen   += d.z * w;
+      blur      += d.w * w;
     }
   }
 
@@ -186,6 +193,25 @@ void main() {
     vec3 detail = c - base;
     float edge = smoothstep(0.004, 0.05, length(detail));
     c += detail * sharpen * 2.0 * edge;
+  }
+
+  /*
+   * Blur, last, so it has the final say over the region it covers: a mask that
+   * blurs is asking for that part of the picture to stop competing, and any
+   * clarity or sharpening the frame carries would be arguing with it. Global
+   * detail work outside the mask is untouched, because the weight there is zero.
+   *
+   * Travelled in two legs, through the nearer copy. Fading straight from sharp
+   * to the far one would put half the slider in the region where both are
+   * visible at once, which is a soft-focus glow and not a blur; going by way of
+   * a shorter throw means the first half is genuinely a smaller blur.
+   */
+  if (blur > 0.0) {
+    float t = clamp(blur, 0.0, 1.0);
+    vec3 near = texture(uSoftNear, vUv).rgb;
+    c = t < 0.5
+      ? mix(c, near, t * 2.0)
+      : mix(near, texture(uSoftBlur, vUv).rgb, (t - 0.5) * 2.0);
   }
 
   fragColor = vec4(clamp(c, 0.0, 1.0), src.a);

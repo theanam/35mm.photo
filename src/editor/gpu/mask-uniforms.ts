@@ -60,7 +60,7 @@ export interface PackedMasks {
    * passes apiece, so a mask that only sharpens must not drag the wide blur
    * that clarity would have wanted along with it.
    */
-  detailNeeds: { wide: boolean; mid: boolean; tight: boolean }
+  detailNeeds: { wide: boolean; mid: boolean; tight: boolean; soft: boolean }
 }
 
 /**
@@ -88,7 +88,7 @@ export function packMasks(masks: Mask[]): PackedMasks {
     detail: new Float32Array(MAX_MASKS * 4),
     hasTone: false,
     hasDetail: false,
-    detailNeeds: { wide: false, mid: false, tight: false },
+    detailNeeds: { wide: false, mid: false, tight: false, soft: false },
   }
 
   let subjectChannel = 0
@@ -147,13 +147,14 @@ export function packMasks(masks: Mask[]): PackedMasks {
       whiteBalanceGain(NEUTRAL_TEMPERATURE + a.temperature * KELVIN_PER_UNIT, a.tint),
       i * 3,
     )
-    packed.detail.set([a.clarity / 100, a.texture / 100, a.sharpen / 100, 0], g)
+    packed.detail.set([a.clarity / 100, a.texture / 100, a.sharpen / 100, a.blur / 100], g)
 
     if (hasMaskTone(a)) packed.hasTone = true
     if (hasMaskDetail(a)) packed.hasDetail = true
     if (a.clarity !== 0) packed.detailNeeds.wide = true
     if (a.texture !== 0) packed.detailNeeds.mid = true
     if (a.sharpen !== 0) packed.detailNeeds.tight = true
+    if (a.blur !== 0) packed.detailNeeds.soft = true
   })
 
   return packed
