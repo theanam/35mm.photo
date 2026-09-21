@@ -1,0 +1,359 @@
+/*
+ * The phone shell.
+ *
+ * Imported after app.css and scoped under `.phone`, which only the phone tree
+ * ever renders — so nothing in this file can reach the desktop layout, and the
+ * `@media (max-width: 900px)` stacking rules in app.css stay the tablet's
+ * business rather than becoming a second, competing phone layout.
+ */
+
+.phone {
+  /*
+   * The sheet's three heights, and the only place they are written down in
+   * CSS. `dvh` rather than a number from JS because it tracks iOS's collapsing
+   * toolbar on its own; the matching constants in useSheetDrag decide which
+   * detent a release lands on, and the two are meant to agree.
+   */
+  --sheet-collapsed: 116px;
+  --sheet-half: 38dvh;
+  --sheet-full: 68dvh;
+  --tabs-h: 62px;
+  /* Overridden below by whichever detent is open; 0 when no tool is. */
+  --detent-h: 0px;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-app);
+
+  /* The status bar and the home indicator. `viewport-fit=cover` in index.html
+     is what makes these resolve to anything but zero. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+
+  /* A long press on a tab or a drag of the sheet header should move the
+     control, not select its label or raise the iOS callout. The viewport
+     already does this for itself; everything else here needs it too. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Takes the room the bars leave. `min-height: 0` so it can be shortened rather
+   than pushing the sheet off the bottom. */
+.phone__stage {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ───────────────────────────── top bar ───────────────────────────── */
+
+/*
+ * One row, and it has to survive 320 points. The filename is the only thing
+ * that may shrink, so it is the only flexible child; everything else is a
+ * fixed 40-point target and the whole row is laid out from the right.
+ */
+.phone-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.phone-bar__name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 6px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.phone-bar__name:disabled { cursor: default; }
+.phone-bar__name:not(:disabled):active { background: var(--surface); }
+
+.phone-bar__name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* How many others there are, which is also what says the name can be tapped. */
+.phone-bar__count {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--surface);
+  border-radius: 9px;
+}
+
+.phone-bar__menu { position: relative; display: flex; }
+
+/* The one filled button on the screen. Export is the point of the app, and a
+   bare icon among four other bare icons would not read as the way out. */
+.phone-bar__export {
+  color: var(--bg-app);
+  background: var(--accent);
+  border-color: transparent;
+  margin-left: 4px;
+}
+.phone-bar__export:hover:not(:disabled) { background: var(--accent-hover); }
+
+/* Anchored to the bar's right edge rather than the button's, so a menu wider
+   than the button cannot run off the screen. */
+.phone-bar .menu { right: 0; min-width: 200px; }
+
+/* ───────────────────────────── stage ───────────────────────────── */
+
+/* The desktop stage keeps 36px of air around the picture. At 390 points that
+   is a fifth of the width spent on margin. */
+.phone .viewport__stage { padding: 10px; }
+
+/* ───────────────────────────── tool tabs ───────────────────────────── */
+
+.phone-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  padding: 4px 6px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+  /* Horizontal only, and the swipe must not turn into a page gesture at the
+     ends of the strip. */
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.phone-tabs::-webkit-scrollbar { display: none; }
+
+.phone-tab {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 62px;
+  padding: 8px 10px 7px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.phone-tab[data-open] { color: var(--accent-text); background: var(--accent-tint); }
+.phone-tab__label { white-space: nowrap; }
+
+/* Top-right of the icon, where it cannot be mistaken for part of the label. */
+.phone-tab__dot {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ───────────────────────────── tool sheet ───────────────────────────── */
+
+/*
+ * Height comes from the detent, except mid-drag, when the drag writes
+ * `--sheet-h` straight onto the element and wins. Removing the property on
+ * release hands control back to the detent and lets the transition play.
+ */
+.phone-sheet {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: var(--sheet-h, var(--detent-h));
+  background: var(--bg-panel);
+  border-top: 1px solid var(--line);
+  transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+
+/* The finger is already doing the animating. */
+.phone-sheet[data-dragging] { transition: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .phone-sheet { transition: none; }
+}
+
+.phone-sheet__head {
+  flex: 0 0 auto;
+  padding: 0 10px 8px 14px;
+  border-bottom: 1px solid var(--line-hair);
+  /* This is a drag target we own outright; the browser must not read a vertical
+     swipe here as a scroll first. */
+  touch-action: none;
+}
+
+/* The grabber. Inert for now; it becomes the drag target. */
+.phone-sheet__grab {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 7px auto 6px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+.phone-sheet__row { display: flex; align-items: center; gap: 10px; }
+.phone-sheet__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-sheet__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+  /* Scrolling to the end of a tool must not drag the whole app off the top of
+     the screen behind it. */
+  overscroll-behavior-y: contain;
+  /* A native range input resolves a horizontal drag itself and hands the
+     vertical one back to this scroller — but only if it is allowed to. */
+  touch-action: pan-y;
+}
+
+/* Tool content is written for a column that could be wide; here it never is.
+   The same collapse the rail already does. */
+.phone-sheet .tool { gap: 14px; }
+.phone-sheet .tool__columns { grid-template-columns: 1fr; gap: 14px; }
+.phone-sheet .tool__group--curve { max-width: none; }
+.phone-sheet .tool__footer-row { flex-direction: column; align-items: stretch; gap: 10px; }
+.phone-sheet .tool__footer-row > * { flex: 0 0 auto; }
+.phone-sheet .tool__hint--inline { min-width: 0; }
+
+/* Opted out of the sheet drag, so they stay buttons rather than handles. */
+.phone-sheet__actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+
+/* ───────────────────────────── odds and ends ───────────────────────────── */
+
+/*
+ * A toast pinned 70px up clears the desktop's bottom bar; here it would land
+ * behind the sheet. Measured from the bottom of the window through the tabs,
+ * the sheet and the home indicator, so it rides up as the sheet grows.
+ */
+.phone .toasts {
+  bottom: calc(env(safe-area-inset-bottom) + var(--tabs-h) + var(--detent-h) + 14px);
+  width: calc(100% - 24px);
+}
+
+/*
+ * Resolved on the shell rather than on the sheet, so siblings can read it too.
+ * Without `:has` support every branch simply fails to match and `--detent-h`
+ * stays 0 — the toast then sits lower than ideal rather than disappearing.
+ */
+.phone:has(.phone-sheet[data-detent='collapsed']) { --detent-h: var(--sheet-collapsed); }
+.phone:has(.phone-sheet[data-detent='half']) { --detent-h: var(--sheet-half); }
+.phone:has(.phone-sheet[data-detent='full']) { --detent-h: var(--sheet-full); }
+
+/* ───────────────────────────── landscape ───────────────────────────── */
+
+/*
+ * Held sideways there is no height to give away, so the sheet moves alongside
+ * the picture instead of under it. A grid rather than a flipped flex direction:
+ * the bar and the tool strip still want the full width, and only the middle
+ * band becomes two columns. The stage is still a real box that shrinks, so the
+ * viewport keeps measuring the room it actually has.
+ */
+@media (orientation: landscape) {
+  .phone {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'bar   bar'
+      'stage sheet'
+      'tabs  tabs';
+  }
+
+  .phone-bar { grid-area: bar; }
+  .phone__stage { grid-area: stage; min-width: 0; }
+  .phone-tabs { grid-area: tabs; }
+
+  /* Fixed width, full height of the band, and no drag — the header is just a
+     header here. */
+  .phone-sheet {
+    grid-area: sheet;
+    width: min(46vw, 320px);
+    height: auto;
+    min-height: 0;
+    border-top: none;
+    border-left: 1px solid var(--line);
+    transition: none;
+  }
+  .phone-sheet__head { touch-action: auto; }
+  .phone-sheet__grab { display: none; }
+
+  /* The sheet is beside the toast, not under it. */
+  .phone .toasts { bottom: calc(env(safe-area-inset-bottom) + var(--tabs-h) + 14px); }
+
+  /* Short screen: the strip loses its labels before it loses its icons. */
+  .phone-tabs { padding: 2px 6px; }
+  .phone-tab { min-width: 54px; padding: 6px 9px 5px; }
+}
+
+/* ───────────────────────────── library ───────────────────────────── */
+
+.phone-library { position: fixed; inset: 0; z-index: 45; display: flex; align-items: flex-end; }
+.phone-library__scrim { position: absolute; inset: 0; background: rgba(11, 10, 8, 0.72); }
+
+.phone-library__panel {
+  position: relative;
+  width: 100%;
+  max-height: 62dvh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--bg-panel);
+  border-top: 1px solid var(--line-strong);
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.55);
+}
+
+.phone-library__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 10px 10px 16px;
+  border-bottom: 1px solid var(--line-hair);
+}
+.phone-library__title { flex: 1; margin: 0; font-size: 15px; font-weight: 700; }
+.phone-library__count { font-size: 12px; color: var(--text-dim); }
+
+/* A grid rather than the desktop's single column: a phone is holding the
+   whole roll in the space the desktop gives to one rail. */
+.phone-library__list {
+  list-style: none;
+  margin: 0;
+  padding: 12px 14px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.phone-library__list .thumb { width: 100%; }

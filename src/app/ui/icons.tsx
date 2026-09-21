@@ -332,6 +332,24 @@ export const IconPlus = ({ size = 16 }: Props) => (
   </svg>
 )
 
+/** Overflow. Three dots, because a phone bar has room for one more button. */
+export const IconMore = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <circle cx="3.4" cy="8" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="12.6" cy="8" r="1.1" fill="currentColor" stroke="none" />
+  </svg>
+)
+
+/** Export: out of the app and onto the device. */
+export const IconDownload = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M8 1.8v8.4" />
+    <path d="M4.6 7 8 10.4 11.4 7" />
+    <path d="M2.4 11.6v1.4a1.2 1.2 0 0 0 1.2 1.2h8.8a1.2 1.2 0 0 0 1.2-1.2v-1.4" />
+  </svg>
+)
+
 export const IconChevron = ({ size = 16 }: Props) => (
   <svg {...base(size)}>
     <path d="M4.6 6.4 8 9.8l3.4-3.4" />

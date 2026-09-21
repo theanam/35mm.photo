@@ -1395,6 +1395,8 @@
   position: fixed;
   left: 50%;
   bottom: 70px;
+  /* Clears the desktop's bottom bar. The phone shell overrides this: there the
+     sheet and the tool tabs are what it has to clear, and they move. */
   z-index: 50;
   transform: translateX(-50%);
   display: flex;

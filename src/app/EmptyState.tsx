@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
+import { useIsPhone } from './phone/useLayoutMode'
 import { ADVERTISED_FORMATS } from '../io/formats'
 import { canOpenDirectories, pickDirectory, pickFiles } from '../io/file-system'
 import * as db from '../storage/indexeddb'
@@ -9,6 +10,7 @@ export function EmptyState({ dragging }: { dragging: boolean }) {
   const refreshRecents = useEditor((s) => s.refreshRecents)
   const clearRecents = useEditor((s) => s.clearRecents)
   const openFiles = useEditor((s) => s.openFiles)
+  const phone = useIsPhone()
   const toast = useEditor((s) => s.toast)
 
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
@@ -67,11 +69,16 @@ export function EmptyState({ dragging }: { dragging: boolean }) {
   return (
     <div className="empty" data-dragging={dragging || undefined}>
       <div className="dropzone">
-        <div className="dropzone__icon" aria-hidden>
-          ↓
-        </div>
+        {/* The arrow and the headline are both instructions to drag a file in,
+            which is a gesture a phone does not have. There the button below is
+            the only way in, so the copy points at it instead. */}
+        {!phone && (
+          <div className="dropzone__icon" aria-hidden>
+            ↓
+          </div>
+        )}
         <div className="dropzone__copy">
-          <h1>Drop a photo to start</h1>
+          <h1>{phone ? 'Pick a photo to start' : 'Drop a photo to start'}</h1>
           <p>Raw development, GPU colour grading and export, right in this browser tab. Nothing to install.</p>
         </div>
         <div className="dropzone__actions">

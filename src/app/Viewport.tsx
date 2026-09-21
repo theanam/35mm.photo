@@ -44,6 +44,7 @@ export function Viewport() {
   const activeMaskId = useEditor((s) => s.activeMaskId)
   const maskOverlay = useEditor((s) => s.maskOverlay)
   const cropDragging = useEditor((s) => s.cropDragging)
+  const sheetDragging = useEditor((s) => s.sheetDragging)
   const activeFrameId = useEditor((s) => s.activeFrameId)
   // Derived coverage maps change without the edit stack changing, so the draw
   // has to be told separately that there is something new to upload.
@@ -191,10 +192,24 @@ export function Viewport() {
 
   /* ── layout ── */
 
+  /*
+   * The stage's own box is the only thing fit, pan limits and the crop box's
+   * centring are derived from.
+   *
+   * It is held still while the phone's sheet is being dragged. The sheet takes
+   * real layout height — which is what keeps all of those correct — so every
+   * frame of a drag would resize the stage, and every resize reallocates the
+   * drawing buffer. The size is re-read on the falling edge instead, which is
+   * the same bargain `settledCropFit` strikes a few lines below.
+   */
+  const sheetDraggingRef = useRef(false)
+  sheetDraggingRef.current = sheetDragging
+
   useEffect(() => {
     const el = stageRef.current
     if (!el) return
     const observer = new ResizeObserver(([entry]) => {
+      if (sheetDraggingRef.current) return
       const { width, height } = entry.contentRect
       setStage({ width, height })
     })
@@ -406,6 +421,28 @@ export function Viewport() {
     cssWidth > Math.ceil(stage.width) + 1 || cssHeight > Math.ceil(stage.height) + 1
   const pannable = overflows && !cropping
 
+  /*
+   * Swipe to the next photo, in the slot the pan gesture leaves empty.
+   *
+   * One finger only pans when `pannable`, and `pannable` is false whenever the
+   * picture already fits — which is the ordinary case. So a horizontal drag
+   * across a fitted photo did nothing at all, and there was no touch route to
+   * the next frame: the arrow keys were the only one. Living inside the stage's
+   * own handlers rather than in a wrapper matters, because the stage sets
+   * `touch-action: none` and captures the pointer, and anything layered over it
+   * would be fighting both.
+   */
+  const swipeRef = useRef<{ x: number; y: number; at: number } | null>(null)
+
+  const stepFrame = useCallback((direction: -1 | 1) => {
+    const s = useEditor.getState()
+    const index = s.frames.findIndex((f) => f.id === s.activeFrameId)
+    if (index === -1) return
+    const next = index + direction
+    if (next < 0 || next >= s.frames.length) return
+    void s.selectFrame(s.frames[next].id)
+  }, [])
+
   const endGesture = useCallback(() => {
     pointersRef.current.clear()
     pinchRef.current = null
@@ -446,6 +483,12 @@ export function Viewport() {
       event.preventDefault()
       return
     }
+
+    // Only a lone finger on a picture that has nowhere to pan can be a swipe.
+    swipeRef.current =
+      points.length === 1 && !pannable && event.pointerType !== 'mouse'
+        ? { x: event.clientX, y: event.clientY, at: performance.now() }
+        : null
 
     if (points.length === 1 && pannable) {
       anchorRef.current = null
@@ -510,6 +553,27 @@ export function Viewport() {
 
     const points = [...pointersRef.current.entries()]
     if (points.length < 2) pinchRef.current = null
+
+    /*
+     * Deliberately strict. A photo is a thing people put a finger on to look
+     * at, so anything that could be a tap, a slow drag or a two-finger gesture
+     * must not change what they are looking at: it has to be mostly sideways,
+     * far enough to be meant, and quick enough to be a flick.
+     */
+    const swipe = swipeRef.current
+    swipeRef.current = null
+    if (swipe && points.length === 0) {
+      const dx = event.clientX - swipe.x
+      const dy = event.clientY - swipe.y
+      const quick = performance.now() - swipe.at < 600
+      if (quick && Math.abs(dx) > 64 && Math.abs(dy) < 44 && Math.abs(dx) > Math.abs(dy) * 1.8) {
+        // Drag left to bring the next photo in from the right, like a stack of
+        // prints being pushed along.
+        stepFrame(dx < 0 ? 1 : -1)
+        endGesture()
+        return
+      }
+    }
 
     if (points.length === 1 && el && pannable) {
       // Lifting one finger of a pinch hands the gesture to the other.

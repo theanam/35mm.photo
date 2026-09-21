@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useEditor } from '../edit-stack/store'
+import { useMediaQuery } from '../../app/phone/useLayoutMode'
 import { IDENTITY_CURVE } from '../edit-stack/defaults'
 import { CURVE_LUT_SIZE, sampleCurve } from '../presets/curve'
 import type { CurveChannel, CurvePoint } from '../edit-stack/types'
@@ -40,6 +41,18 @@ export function CurvesTool() {
   const edits = useEditor((s) => s.edits)
   const update = useEditor((s) => s.update)
   const histogram = useEditor((s) => s.histogram)
+
+  /*
+   * Both of the shortcuts the hint used to name — double-click to drop a point,
+   * arrow keys to nudge one — need hardware a touch screen does not have. The
+   * Remove point button above covers the first; there is no equivalent for the
+   * second, so a coarse pointer is told what it can do rather than what it
+   * cannot.
+   */
+  const coarse = useMediaQuery('(pointer: coarse)')
+  const pointerHint = coarse
+    ? 'Tap a point to select it, then Remove point to drop it.'
+    : 'Double-click a point to drop it, or select one and use the arrow keys — hold shift for bigger steps.'
 
   const [channel, setChannel] = useState<CurveChannel>('rgb')
   const [selected, setSelected] = useState<number | null>(null)
@@ -289,8 +302,7 @@ export function CurvesTool() {
           </div>
 
           <p className="tool__hint">
-            Drag on the grid to add a point and place it in one go. Double-click a point to drop
-            it, or select one and use the arrow keys — hold shift for bigger steps.
+            Drag on the grid to add a point and place it in one go. {pointerHint}
           </p>
         </section>
 

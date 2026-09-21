@@ -124,6 +124,14 @@ interface EditorState {
    * under the finger doing the dragging — so the zoom settles on release.
    */
   cropDragging: boolean
+  /**
+   * True while the phone's tool sheet is being dragged between its heights.
+   * Same problem as `cropDragging`, one level up: the sheet shortens the stage
+   * as it grows, and re-fitting the picture on every frame of the drag would
+   * reallocate the drawing buffer sixty times a second. The stage measurement
+   * is held still and re-read once, on release.
+   */
+  sheetDragging: boolean
   /** Paint the selected mask over the picture while the tool is open. */
   maskOverlay: boolean
   /**
@@ -202,6 +210,7 @@ interface EditorState {
   updateMask: (id: string, patch: Partial<Mask>, coalesceKey?: string) => void
   updateMaskAdjust: (id: string, patch: Partial<MaskAdjust>, coalesceKey?: string) => void
   setCropDragging: (on: boolean) => void
+  setSheetDragging: (on: boolean) => void
   setMaskOverlay: (on: boolean) => void
   replaceEdits: (edits: EditState, coalesceKey?: string) => void
   undo: () => void
@@ -296,6 +305,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   cropping: false,
   activeMaskId: null,
   cropDragging: false,
+  sheetDragging: false,
   maskOverlay: true,
   maskMapsAt: 0,
   detecting: false,
@@ -998,6 +1008,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setCropDragging(on) {
     if (get().cropDragging !== on) set({ cropDragging: on })
+  },
+
+  setSheetDragging(on) {
+    if (get().sheetDragging !== on) set({ sheetDragging: on })
   },
 
   setMaskOverlay(on) {

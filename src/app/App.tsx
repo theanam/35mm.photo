@@ -18,6 +18,8 @@ import { BatchBar } from './BatchBar'
 import { Toasts } from './Toasts'
 import { useKeyboard } from './useKeyboard'
 import { useDropTarget } from './useDropTarget'
+import { useIsPhone } from './phone/useLayoutMode'
+import { PhoneShell } from './phone/PhoneShell'
 import { useEditor } from '../editor/edit-stack/store'
 import { LOOKS } from '../editor/presets/looks'
 import { warmLuts } from '../editor/presets/lutCache'
@@ -26,6 +28,7 @@ import { storageBlocked } from '../storage/indexeddb'
 export function App() {
   const photo = useEditor((s) => s.photo)
   const activeTool = useEditor((s) => s.activeTool)
+  const isPhone = useIsPhone()
   const viewScale = useEditor((s) => s.viewScale)
   const fitScale = useEditor((s) => s.fitScale)
   const dragging = useDropTarget()
@@ -62,6 +65,16 @@ export function App() {
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [])
+
+  /*
+   * A hard branch, not a class on one tree that CSS hides half of.
+   *
+   * Both trees mounted at once would mean two live WebGL contexts on top of
+   * the viewport's — the look previews build their own renderer — on exactly
+   * the device with the least GPU memory to spare. The effects above stay
+   * shared: they are about the document, not the layout.
+   */
+  if (isPhone) return <PhoneShell />
 
   return (
     <div className="app" data-dragging={dragging || undefined}>
