@@ -8,6 +8,7 @@ import { ColorGradeTool } from '../editor/tools/ColorGradeTool'
 import { LensTool } from '../editor/tools/LensTool'
 import { DetailTool } from '../editor/tools/DetailTool'
 import { GrainTool } from '../editor/tools/GrainTool'
+import { FrameTool } from '../editor/tools/FrameTool'
 import { RawTool } from '../editor/tools/RawTool'
 import { useEditor } from '../editor/edit-stack/store'
 import { getTool } from '../editor/tools/registry'
@@ -76,6 +77,12 @@ export function RightRail() {
 
       <Panel id="grain" title="Grain & vignette" collapsible active={dirty('grain')}>
         <GrainTool />
+      </Panel>
+
+      {/* Last, because it is the last thing the render does: the mat goes on
+          around everything above it. */}
+      <Panel id="frame" title="Frame" collapsible active={dirty('frame')}>
+        <FrameTool />
       </Panel>
     </aside>
   )

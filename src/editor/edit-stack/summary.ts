@@ -15,6 +15,7 @@ export type PanelId =
   | 'lens'
   | 'detail'
   | 'grain'
+  | 'frame'
   | 'masks'
   | 'raw'
 
@@ -30,6 +31,11 @@ export interface StackChip {
 
 const signed = (v: number, digits = 0) =>
   `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(digits)}`
+
+/** One decimal, without a trailing '.0' on a round number. */
+function round1(v: number): string {
+  return String(Math.round(v * 10) / 10)
+}
 
 export function hasCropEdits(edits: EditState): boolean {
   const c = edits.crop
@@ -112,6 +118,16 @@ export function rawSummary(edits: EditState): string {
 
 export function hasFinishEdits(edits: EditState): boolean {
   return edits.grain !== 0 || edits.vignette !== 0 || edits.halation !== 0
+}
+
+/**
+ * A colour on its own is not an edit: the border has to have a width before any
+ * of it is visible, so a photo whose only non-default is a mat colour nobody can
+ * see is not a photo that has been edited.
+ */
+export function hasFrameEdits(edits: EditState): boolean {
+  const f = edits.frame
+  return f.top > 0 || f.right > 0 || f.bottom > 0 || f.left > 0
 }
 
 /**
@@ -249,6 +265,18 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
           ? `halation ${Math.round(edits.halation)}`
           : `vignette ${signed(edits.vignette)}`
     chips.push({ id: 'grain', label: 'Grain & vignette', value, panel: 'grain' })
+  }
+
+  if (hasFrameEdits(edits)) {
+    const f = edits.frame
+    const sides = [f.top, f.right, f.bottom, f.left]
+    const even = sides.every((v) => Math.abs(v - sides[0]) < 0.05)
+    // One number when the mat is even, the widest side when it is not: four
+    // numbers would not fit a chip, and the widest is the one you notice.
+    const value = even
+      ? `${round1(sides[0])}%`
+      : `up to ${round1(Math.max(...sides))}%`
+    chips.push({ id: 'frame', label: 'Frame', value, panel: 'frame' })
   }
 
   return chips

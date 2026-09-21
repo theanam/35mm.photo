@@ -1,16 +1,37 @@
 import { describe, expect, it } from 'vitest'
 import { defaultEdits } from './defaults'
+import { createMask } from './masks'
 import { DEFAULT_SYNC_GROUPS, SYNC_GROUPS, applySyncScope, resetSyncScope } from './sync'
 import type { EditState } from './types'
 
-/** A source photo with something set in every group. */
+/**
+ * A mask with a fixed id. `createMask` mints a fresh one per call, and `edited()`
+ * is called once for the source and again for the expectation — two random ids
+ * would fail a comparison that is meant to be about syncing.
+ */
+const FIXTURE_MASK = { ...createMask('radial', 1.5), id: 'fixture-mask' }
+
+/**
+ * A source photo with *every* field away from its default.
+ *
+ * Every field, not one per group, because the coverage test below compares the
+ * synced result against this — and a field left at its default matches the
+ * default target whether it synced or not, so it would assert nothing while
+ * appearing to. The last test in this file keeps that promise honest.
+ */
 function edited(): EditState {
   const e = defaultEdits()
   e.temperature = 7200
   e.tint = 15
   e.exposure = 1.25
   e.contrast = 30
+  e.highlights = -40
+  e.shadows = 25
+  e.whites = 10
+  e.blacks = -15
   e.vibrance = 20
+  e.saturation = -10
+  e.dynamicRange = 45
   e.curves.rgb = [{ x: 0, y: 0.1 }, { x: 1, y: 1 }]
   e.hsl.red = { hue: 10, sat: -20, lum: 5 }
   e.colorGrade.shadows = { hue: 210, sat: 30, lum: 0 }
@@ -19,11 +40,19 @@ function edited(): EditState {
   e.clarity = 18
   e.texture = 22
   e.dehaze = 12
+  e.sharpen = 35
+  e.denoiseLuma = 20
+  e.denoiseChroma = 30
   e.halation = 35
   e.grain = 40
+  e.grainSize = 70
   e.vignette = -30
   e.look = { id: 'chrome', strength: 80 }
   e.crop = { ...e.crop, x: 0.1, y: 0.2, w: 0.5, h: 0.5, angle: 3 }
+  // Four different widths, so a side that syncs into the wrong slot shows up.
+  e.frame = { top: 6, right: 3, bottom: 12, left: 4, color: '#101010', link: 'free' }
+  e.raw = { ...e.raw, draft: !e.raw.draft }
+  e.masks = [structuredClone(FIXTURE_MASK)]
   return e
 }
 
@@ -97,6 +126,21 @@ describe('applySyncScope', () => {
     const out = applySyncScope(defaultEdits(), edited(), SYNC_GROUPS)
     for (const key of Object.keys(defaultEdits()) as (keyof EditState)[]) {
       expect(out[key], `field "${key}" is in no sync group`).toEqual(edited()[key])
+    }
+  })
+
+  it('leaves no field of the fixture at its default', () => {
+    /*
+     * The guard above only bites for fields `edited()` actually changes: a field
+     * left at its default matches the default target whether it synced or not,
+     * and the assertion passes while proving nothing. This keeps the fixture
+     * honest, so adding a field to EditState and forgetting it here fails here
+     * rather than silently weakening the test above.
+     */
+    const base = defaultEdits()
+    const source = edited()
+    for (const key of Object.keys(base) as (keyof EditState)[]) {
+      expect(source[key], `edited() leaves "${key}" at its default`).not.toEqual(base[key])
     }
   })
 })

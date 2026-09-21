@@ -67,7 +67,7 @@ const FIELDS: Record<SyncGroup, (keyof EditState)[]> = {
   grade: ['colorGrade'],
   optics: ['perspective', 'lens'],
   detail: ['clarity', 'texture', 'dehaze', 'sharpen', 'denoiseLuma', 'denoiseChroma'],
-  finish: ['halation', 'grain', 'grainSize', 'vignette'],
+  finish: ['halation', 'grain', 'grainSize', 'vignette', 'frame'],
   look: ['look'],
   raw: ['raw'],
   masks: ['masks'],

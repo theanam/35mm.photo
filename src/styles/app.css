@@ -736,6 +736,27 @@
 .bottombar__spacer { flex: 1; }
 
 .zoom { display: flex; align-items: center; gap: 8px; }
+/* Sits between the shot info and the zoom controls, which is where the eye
+   already goes when it wants to know what it is about to export. */
+.bottombar__size {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-right: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.bottombar__size-note { font-size: 11px; color: var(--text-dim); }
+
+/* The zoom controls are the last thing to give way. */
+@media (max-width: 760px) {
+  .bottombar__size-note { display: none; }
+}
+@media (max-width: 620px) {
+  .bottombar__size { display: none; }
+}
+
 .zoom__value {
   font-size: 13px;
   color: var(--text-muted);
@@ -2130,6 +2151,158 @@ kbd {
 }
 @media (max-width: 880px) {
   .bottombar__shot { display: none; }
+}
+
+/* ──────────────────────────── frame tool ──────────────────────────── */
+
+/* A chip that is only a colour. Square-ish rather than pill, so a row of them
+   reads as a set of swatches and not as a row of unlabelled buttons. */
+.chip--swatch {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius);
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.chip--swatch[data-active] {
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35), 0 0 0 2px var(--accent);
+}
+
+/* The native picker, dressed as one more chip. The swatch it shows is the
+   input itself — a colour input paints its own value, which is exactly the
+   preview this needs. */
+.frame-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px 4px 5px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  cursor: pointer;
+}
+.frame-picker:hover { background: var(--surface-hover); border-color: var(--line-soft); }
+.frame-picker input {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.frame-picker input::-webkit-color-swatch-wrapper { padding: 0; }
+.frame-picker input::-webkit-color-swatch { border: 1px solid var(--line-strong); border-radius: 3px; }
+.frame-picker input::-moz-color-swatch { border: 1px solid var(--line-strong); border-radius: 3px; }
+
+/*
+ * Preset tiles.
+ *
+ * Each one draws the mat for real — the photograph's own thumbnail behind a box
+ * of the mat's colour, inset by the four widths and at the shape the exported
+ * file would be. A row of words cannot say what a border looks like, and this
+ * needs no renderer to say it: the mat is flat colour and the picture is
+ * untouched, so the tile is the result rather than a guess at it.
+ */
+.frame-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 10px 8px;
+}
+
+.frame-preset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* A fixed box every shape is fitted inside, so the grid stays even while a
+   square mat and a panorama still read as different shapes. */
+.frame-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 78px;
+}
+
+.frame-preview__mat {
+  position: relative;
+  display: block;
+  border-radius: 2px;
+  /* A light hairline rather than a dark one. A pale mat already stands out
+     against this panel and barely shows the edge; a black one is within a few
+     values of the panel behind it, and without this its tile reads as a
+     photograph floating in nothing. */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.frame-preview__photo {
+  position: absolute;
+  background-color: var(--bg-app);
+  background-size: cover;
+  background-position: center;
+}
+
+.frame-preset__name {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-dim);
+  text-align: center;
+}
+.frame-preset:hover .frame-preview__mat { box-shadow: 0 0 0 1px var(--text-muted); }
+.frame-preset__pick:hover .frame-preview__mat { box-shadow: 0 0 0 1px var(--text-muted); }
+.frame-preset[data-active] .frame-preview__mat { box-shadow: 0 0 0 2px var(--accent); }
+.frame-preset[data-active] .frame-preset__name { color: var(--accent-text); font-weight: 700; }
+
+/* A saved frame carries a remove button, so its tile is a container with a
+   button inside rather than a button itself — the same shape the imported look
+   presets take, for the same reason. */
+.frame-preset--saved { position: relative; }
+.frame-preset__pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.frame-preset__remove {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0;
+}
+.frame-preset--saved:hover .frame-preset__remove,
+.frame-preset__remove:focus-visible { opacity: 1; }
+.frame-preset__remove:hover { color: #e8b6ae; border-color: #8a4a44; background: #2a1e1c; }
+
+/* No hover on a touch screen, so the control cannot hide behind one. */
+@media (pointer: coarse) {
+  .frame-preset__remove { opacity: 1; width: 26px; height: 26px; }
 }
 
 /* ──────────────────────── custom crop ratio ──────────────────────── */

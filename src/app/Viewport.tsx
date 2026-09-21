@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
+import { neutralFrame } from '../editor/edit-stack/defaults'
 import { Renderer } from '../editor/gpu/renderer'
-import { outputSize } from '../editor/gpu/transform'
+import { frameLayout, outputSize } from '../editor/gpu/transform'
 import { getLut, peekLut } from '../editor/presets/lutCache'
 import { getLook } from '../editor/presets/catalogue'
 import { subjectMapsFor } from '../subject/detect'
@@ -217,22 +218,57 @@ export function Viewport() {
     return () => observer.disconnect()
   }, [])
 
-  // While cropping, the viewport shows the whole frame with the box on top —
-  // you cannot drag a crop you cannot see outside of.
-  const renderEdits = useMemo(
-    () => (cropping ? { ...edits, crop: { ...edits.crop, x: 0, y: 0, w: 1, h: 1 } } : edits),
-    [cropping, edits],
-  )
+  // The falling edge: whatever the drag settled on is the size to fit to.
+  useEffect(() => {
+    if (sheetDragging) return
+    const el = stageRef.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    const style = getComputedStyle(el)
+    const px = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+    const py = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+    setStage({ width: width - px, height: height - py })
+  }, [sheetDragging])
+
+  /*
+   * While cropping, the viewport shows the whole frame with the box on top —
+   * you cannot drag a crop you cannot see outside of.
+   *
+   * The mat comes off for both crop and masks. Not a dodge around the overlays'
+   * coordinates, though it spares them: you cannot judge where to cut a picture
+   * that is already sitting inside a border, and you cannot place a mask on one
+   * either. It returns the moment the tool closes.
+   */
+  const renderEdits = useMemo(() => {
+    if (!cropping && !masking) return edits
+    return {
+      ...edits,
+      crop: cropping ? { ...edits.crop, x: 0, y: 0, w: 1, h: 1 } : edits.crop,
+      frame: neutralFrame(),
+    }
+  }, [cropping, masking, edits])
 
   const output = useMemo(() => {
     if (!photo) return { width: 0, height: 0 }
     return outputSize(photo.meta.width, photo.meta.height, renderEdits.crop)
   }, [photo, renderEdits.crop])
 
+  /**
+   * The picture plus its mat — what the stage has to find room for, what the
+   * canvas is sized to, and what an export writes.
+   *
+   * Always derived outwards from the photo, never solved back from a framed
+   * size, so the sides and the middle are whole pixels that add up exactly.
+   */
+  const fullFrame = useMemo(
+    () => frameLayout(output.width, output.height, renderEdits.frame),
+    [output, renderEdits.frame],
+  )
+
   const wholeFit = useMemo(() => {
-    if (!output.width || !stage.width) return 1
-    return Math.min(stage.width / output.width, stage.height / output.height)
-  }, [output, stage])
+    if (!fullFrame.width || !stage.width) return 1
+    return Math.min(stage.width / fullFrame.width, stage.height / fullFrame.height)
+  }, [fullFrame, stage])
 
   /**
    * While cropping, "fit" means fit the *crop box*, not the frame.
@@ -269,8 +305,13 @@ export function Viewport() {
   const fitScale = cropping ? settledCropFit : wholeFit
 
   const scale = zoom === 'fit' ? fitScale : zoom
-  const cssWidth = Math.max(1, Math.round(output.width * scale))
-  const cssHeight = Math.max(1, Math.round(output.height * scale))
+  // The photo's own size on screen, and then the mat measured around it. Going
+  // in this order is what keeps `cssWidth === photo + left + right`.
+  const cssPhotoWidth = Math.max(1, Math.round(output.width * scale))
+  const cssPhotoHeight = Math.max(1, Math.round(output.height * scale))
+  const cssFrame = frameLayout(cssPhotoWidth, cssPhotoHeight, renderEdits.frame)
+  const cssWidth = cssFrame.width
+  const cssHeight = cssFrame.height
 
   // The bottom bar shows the zoom level, and only the viewport can measure it.
   useEffect(() => {
@@ -603,8 +644,21 @@ export function Viewport() {
     const longest = Math.max(cssWidth, cssHeight) * dpr
     const budget = longest > MAX_BUFFER_EDGE ? MAX_BUFFER_EDGE / Math.max(cssWidth, cssHeight) : dpr
 
-    const bufferW = Math.max(1, Math.round(cssWidth * budget))
-    const bufferH = Math.max(1, Math.round(cssHeight * budget))
+    /*
+     * Measure the picture first, then lay the mat around it — the same order
+     * every other size in this feature is worked out in, and for the same
+     * reason. The frame pass copies the photo into the middle one texel to one
+     * pixel, which only holds while the buffer is exactly the picture plus the
+     * two sides. Scaling the framed size and then splitting it back up would
+     * disagree by a pixel on some crops and put a soft seam down all four edges.
+     */
+    const bufferFrame = frameLayout(
+      Math.round(cssPhotoWidth * budget),
+      Math.round(cssPhotoHeight * budget),
+      renderEdits.frame,
+    )
+    const bufferW = bufferFrame.width
+    const bufferH = bufferFrame.height
     if (canvas.width !== bufferW) canvas.width = bufferW
     if (canvas.height !== bufferH) canvas.height = bufferH
 
@@ -621,13 +675,14 @@ export function Viewport() {
       masking && maskOverlay ? renderEdits.masks.findIndex((m) => m.id === activeMaskId) : -1
 
     renderer.render(bufferW, bufferH, {
+      frame: bufferFrame,
       edits: renderEdits,
       look: peekLut(renderEdits.look.id) ? look : null,
       splitAt: splitCompare && !cropping ? splitAt : null,
       maskOverlay: overlay >= 0 ? overlay : null,
     })
   }, [
-    cssWidth, cssHeight, renderEdits, splitCompare, splitAt, cropping,
+    cssWidth, cssHeight, cssPhotoWidth, cssPhotoHeight, renderEdits, splitCompare, splitAt, cropping,
     masking, maskOverlay, activeMaskId, activeFrameId, maskMapsAt,
   ])
 

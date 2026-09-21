@@ -1,5 +1,5 @@
 import { Renderer } from '../editor/gpu/renderer'
-import { outputSize } from '../editor/gpu/transform'
+import { exportLayout, type FrameLayout } from '../editor/gpu/transform'
 import { getLut } from '../editor/presets/lutCache'
 import { getLook } from '../editor/presets/catalogue'
 import type { EditState, ImageMeta } from '../editor/edit-stack/types'
@@ -107,17 +107,16 @@ export async function exportImage(request: ExportRequest): Promise<ExportResult>
   }
 
   onProgress?.('Preparing')
-  const full = outputSize(meta.width, meta.height, edits.crop)
-  const scale = settings.maxEdge
-    ? Math.min(1, settings.maxEdge / Math.max(full.width, full.height))
-    : 1
-  const width = Math.max(1, Math.round(full.width * scale))
-  const height = Math.max(1, Math.round(full.height * scale))
+  // Includes the mat, because the mat is part of the file.
+  const layout = exportLayout(meta.width, meta.height, edits.crop, edits.frame, settings.maxEdge)
+  const width = layout.width
+  const height = layout.height
 
   const { blob } = await renderToBlob({
     source,
     meta,
     edits,
+    frame: layout,
     settings,
     width,
     height,
@@ -150,6 +149,8 @@ export interface RenderRequest {
   settings: ExportSettings
   width: number
   height: number
+  /** Where the picture sits inside its mat, when there is one. */
+  frame?: FrameLayout | null
   onProgress?: (stage: string) => void
   /** Original file, for carrying its EXIF into the encoded output. */
   sourceFile?: Blob
@@ -177,7 +178,7 @@ export interface RenderRequest {
 export async function renderToBlob(
   request: RenderRequest,
 ): Promise<{ blob: Blob | null; width: number; height: number }> {
-  const { source, meta, edits, settings, width, height, onProgress } = request
+  const { source, meta, edits, settings, width, height, frame, onProgress } = request
 
   const canvas =
     typeof OffscreenCanvas !== 'undefined'
@@ -216,7 +217,7 @@ export async function renderToBlob(
     const look = getLook(edits.look.id)
     renderer.setLut(await getLut(edits.look.id))
 
-    renderer.render(width, height, { edits, look })
+    renderer.render(width, height, { edits, look, frame })
     // The drawing buffer is only guaranteed until the next composite; encode
     // straight away rather than deferring to a later task.
     renderer.gl.finish()

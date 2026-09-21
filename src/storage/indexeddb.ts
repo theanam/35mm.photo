@@ -1,4 +1,4 @@
-import type { EditState, ImageMeta } from '../editor/edit-stack/types'
+import type { EditState, FrameState, ImageMeta } from '../editor/edit-stack/types'
 import type { CustomPreset } from '../editor/presets/types'
 
 /**
@@ -10,12 +10,22 @@ import type { CustomPreset } from '../editor/presets/types'
  */
 
 const DB_NAME = '35mm'
-const DB_VERSION = 3
+const DB_VERSION = 4
 const STORE_EDITS = 'edits'
 const STORE_THUMBS = 'thumbs'
 const STORE_HANDLES = 'handles'
 const STORE_PRESETS = 'presets'
 const STORE_DEVELOP = 'develop'
+const STORE_FRAME_PRESETS = 'framePresets'
+
+/** A frame the user saved. Plain JSON — no typed arrays, no blobs. */
+export interface StoredFramePreset {
+  /** Namespaced the way custom looks are, so the two can never collide. */
+  id: string
+  name: string
+  frame: FrameState
+  createdAt: number
+}
 
 export interface StoredEdit {
   /** Stable key derived from the file identity, not the object URL. */
@@ -42,6 +52,10 @@ const OPEN_TIMEOUT_MS = 3000
 let blockedByAnotherTab = false
 let blockedReported = false
 
+/** Set when this tab's build is older than the database on disk. */
+let staleBuild = false
+let staleReported = false
+
 /**
  * True when storage gave up this session — the app is running, and not saving.
  * Read by the shell so it can say so out loud; the top bar otherwise promises
@@ -53,6 +67,22 @@ let blockedReported = false
 export function storageBlocked(): boolean {
   if (!blockedByAnotherTab || blockedReported) return false
   blockedReported = true
+  return true
+}
+
+/**
+ * True when another tab has already upgraded the database past what this build
+ * knows how to open.
+ *
+ * The old tab keeps running and keeps accepting edits, and every one of them is
+ * dropped — `openDb` settles to null once and stays that way for the session, by
+ * design. Silently losing an afternoon's work is a worse outcome than any of the
+ * ones that failure mode was written for, so it is worth saying out loud.
+ * Reports once, like `storageBlocked`.
+ */
+export function storageStale(): boolean {
+  if (!staleBuild || staleReported) return false
+  staleReported = true
   return true
 }
 
@@ -111,6 +141,9 @@ function openDb(): Promise<IDBDatabase | null> {
       if (!db.objectStoreNames.contains(STORE_PRESETS)) {
         db.createObjectStore(STORE_PRESETS, { keyPath: 'id' })
       }
+      if (!db.objectStoreNames.contains(STORE_FRAME_PRESETS)) {
+        db.createObjectStore(STORE_FRAME_PRESETS, { keyPath: 'id' })
+      }
       if (!db.objectStoreNames.contains(STORE_DEVELOP)) {
         const store = db.createObjectStore(STORE_DEVELOP, { keyPath: 'key' })
         store.createIndex('usedAt', 'usedAt')
@@ -132,6 +165,18 @@ function openDb(): Promise<IDBDatabase | null> {
 
     request.onerror = () => {
       clearTimeout(giveUp)
+      /*
+       * A database newer than this build — another tab upgraded it underneath
+       * us. Separated from the rest because it is recoverable, reloading picks
+       * up the new build, and because it lands in a tab that has been open and
+       * editing and therefore has something to lose.
+       */
+      if (request.error?.name === 'VersionError') {
+        staleBuild = true
+        console.warn('[35mm] this tab is older than the stored database; reload to keep saving')
+        settle(null)
+        return
+      }
       // Private windows and blocked site data both land here. Everything below
       // degrades to "this session only" rather than failing the app.
       console.warn('[35mm] IndexedDB unavailable; edits will not persist', request.error)
@@ -241,6 +286,28 @@ export async function loadPresets(): Promise<CustomPreset[]> {
 
 export async function deletePreset(id: string): Promise<void> {
   await tx(STORE_PRESETS, 'readwrite', (s) => s.delete(id))
+}
+
+/* ─────────────────────────── frame presets ─────────────────────────── */
+
+/**
+ * A store of their own rather than a `kind` beside the look presets: every
+ * record in `presets` is read back through the look catalogue, so a frame
+ * sitting in there would appear in the Looks grid as a broken swatch — and would
+ * do so in builds that predate this one and cannot be fixed.
+ */
+export async function saveFramePreset(preset: StoredFramePreset): Promise<void> {
+  await tx(STORE_FRAME_PRESETS, 'readwrite', (s) => s.put(preset))
+}
+
+export async function loadFramePresets(): Promise<StoredFramePreset[]> {
+  const all = await tx<StoredFramePreset[]>(STORE_FRAME_PRESETS, 'readonly', (s) => s.getAll())
+  if (!all) return []
+  return all.sort((a, b) => b.createdAt - a.createdAt)
+}
+
+export async function deleteFramePreset(id: string): Promise<void> {
+  await tx(STORE_FRAME_PRESETS, 'readwrite', (s) => s.delete(id))
 }
 
 /* ─────────────────────── developed raw previews ─────────────────────── */

@@ -32,6 +32,7 @@ import { getLook, setCustomPresets } from '../presets/catalogue'
 import { forgetLut } from '../presets/lutCache'
 import { importPresetFiles } from '../presets/import'
 import type { CustomPreset } from '../presets/types'
+import type { StoredFramePreset } from '../../storage/indexeddb'
 import type { InputSpace } from '../presets/inputSpace'
 import type { HistogramData } from '../histogram'
 import * as db from '../../storage/indexeddb'
@@ -91,6 +92,8 @@ interface EditorState {
 
   /** LUTs and presets the user has imported (spec §4.3.1). */
   presets: CustomPreset[]
+  /** Frames the user has saved, newest first. Kept in this browser only. */
+  framePresets: StoredFramePreset[]
 
   /* UI */
   loading: boolean
@@ -185,12 +188,16 @@ interface EditorState {
   clearRecents: () => Promise<void>
 
   loadPresets: () => Promise<void>
+  loadFramePresets: () => Promise<void>
+  saveFramePreset: (name: string) => Promise<void>
+  deleteFramePreset: (id: string) => Promise<void>
   importPresets: (files: File[]) => Promise<void>
   deletePreset: (id: string) => Promise<void>
   setPresetInputSpace: (id: string, space: InputSpace) => Promise<void>
 
   update: (patch: Partial<EditState>, coalesceKey?: string) => void
   updateCrop: (patch: Partial<EditState['crop']>, coalesceKey?: string) => void
+  updateFrame: (patch: Partial<EditState['frame']>, coalesceKey?: string) => void
   applyLook: (id: string | null) => void
   /** Change a develop setting and run the decoder again. */
   updateRawDevelop: (patch: Partial<EditState['raw']>) => void
@@ -291,6 +298,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   history: emptyHistory(),
   clipboard: null,
   presets: [],
+  framePresets: [],
 
   loading: false,
   loadingLabel: '',
@@ -298,7 +306,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   splitCompare: false,
   splitAt: 0.38,
   zoom: 'fit',
-  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, lens: false, detail: false, grain: false, masks: false, raw: false },
+  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, lens: false, detail: false, grain: false, frame: false, masks: false, raw: false },
   focusedPanel: null,
   activeTool: null,
   toolSnapshot: null,
@@ -718,6 +726,32 @@ export const useEditor = create<EditorState>((set, get) => ({
     publishPresets(await db.loadPresets(), set)
   },
 
+  async loadFramePresets() {
+    set({ framePresets: await db.loadFramePresets() })
+  },
+
+  async saveFramePreset(name) {
+    const preset = {
+      // Namespaced like a custom look, so the two id spaces can never meet.
+      id: `frame:${crypto.randomUUID()}`,
+      name,
+      frame: { ...get().edits.frame },
+      createdAt: Date.now(),
+    }
+    await db.saveFramePreset(preset)
+    // Read back rather than prepended, so the order is whatever the store says
+    // it is and a failed write does not leave a preset on screen that is not
+    // saved anywhere.
+    set({ framePresets: await db.loadFramePresets() })
+    void ensureDurableStorage()
+    get().toast(`Saved the frame “${name}”`)
+  },
+
+  async deleteFramePreset(id) {
+    await db.deleteFramePreset(id)
+    set({ framePresets: await db.loadFramePresets() })
+  },
+
   async importPresets(files) {
     if (!files.length) return
 
@@ -800,6 +834,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ edits: next, history: nextHistory })
     maybeRedevelop(beforeRaw, get, set)
     scheduleAutosave(get, set)
+  },
+
+  updateFrame(patch, coalesceKey) {
+    get().update({ frame: { ...get().edits.frame, ...patch } }, coalesceKey)
   },
 
   updateCrop(patch, coalesceKey) {
@@ -1422,6 +1460,12 @@ function migrate(edits: Partial<EditState>): EditState {
     raw: { ...base.raw, ...(edits.raw ?? {}) },
     look: { ...base.look, ...(edits.look ?? {}) },
     crop: { ...base.crop, ...(edits.crop ?? {}) },
+    // Its own line for the same reason every sub-object above has one: the
+    // shallow spread that built `base` covers a frame that is missing entirely,
+    // but not one written by a build that had fewer sides — and a side arriving
+    // as undefined reaches the shader as NaN, which is a blank picture rather
+    // than a visible mistake.
+    frame: { ...base.frame, ...(edits.frame ?? {}) },
   }
 }
 

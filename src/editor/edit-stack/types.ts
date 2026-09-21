@@ -125,6 +125,42 @@ export interface LensState {
   ca: number
 }
 
+/** Border sides, in the order CSS names them, so the four stay in one order. */
+export const FRAME_SIDES = ['top', 'right', 'bottom', 'left'] as const
+export type FrameSide = (typeof FRAME_SIDES)[number]
+
+/** Which sides move together while one of them is dragged. */
+export type FrameLink = 'all' | 'pairs' | 'free'
+
+/**
+ * A flat border added around the picture — a mat, not a crop. It grows the
+ * exported file rather than covering the edges of the photograph.
+ *
+ * Widths are a percentage of the picture's *shorter* edge, never a pixel count.
+ * The same edit is rendered at whatever size the stage happens to be, again at
+ * 192px for the histogram, and again at full resolution or at a long-edge limit
+ * for an export; a width in pixels would be a hairline in one of those and a
+ * slab in another. Measuring every side against one edge also means four equal
+ * numbers look equal on a picture that is not square, which four fractions of
+ * their own axis would not.
+ */
+export interface FrameState {
+  /** Each 0..100, as a percentage of the shorter edge of the cropped photo. */
+  top: number
+  right: number
+  bottom: number
+  left: number
+  /** The fill, as '#rrggbb'. The only arbitrary colour in the edit stack. */
+  color: string
+  /**
+   * Stored rather than inferred from whether the numbers happen to match — the
+   * same argument the crop tool makes for its aspect lock. Four widths that
+   * coincide must not silently fold the panel down to one slider and take the
+   * other three away while they are being set.
+   */
+  link: FrameLink
+}
+
 /**
  * Local adjustments (spec §7). A mask is a shape or a colour range, not a
  * painted bitmap: everything here is a handful of numbers, so masks survive a
@@ -324,6 +360,8 @@ export interface EditState {
   grain: number // 0..100
   grainSize: number // 0..100
   vignette: number // −100..100
+  /** Added around everything else, last of all. */
+  frame: FrameState
 
   /* Raw development — ignored for a file that is not raw */
   raw: RawDevelopState

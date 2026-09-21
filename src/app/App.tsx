@@ -23,7 +23,7 @@ import { PhoneShell } from './phone/PhoneShell'
 import { useEditor } from '../editor/edit-stack/store'
 import { LOOKS } from '../editor/presets/looks'
 import { warmLuts } from '../editor/presets/lutCache'
-import { storageBlocked } from '../storage/indexeddb'
+import { storageBlocked, storageStale } from '../storage/indexeddb'
 
 export function App() {
   const photo = useEditor((s) => s.photo)
@@ -41,6 +41,7 @@ export function App() {
     warmLuts(LOOKS.map((l) => l.id))
     void useEditor.getState().loadPresets().then(() => {
       warmLuts(useEditor.getState().presets.map((p) => p.id))
+      void useEditor.getState().loadFramePresets()
       // Loading presets is the first thing to touch storage, so by now we know
       // whether it opened. The top bar promises edits are being saved; if they
       // are not, that has to be said rather than discovered later.
@@ -51,6 +52,14 @@ export function App() {
             'Another tab has 35mm open, so this one cannot save edits. Close it and reload.',
             'warn',
           )
+      }
+      // A tab left open across an update. It looks like it is working and it is
+      // not saving a thing, which is the one storage failure worth interrupting
+      // for.
+      if (storageStale()) {
+        useEditor
+          .getState()
+          .toast('35mm was updated in another tab. Reload this one to keep saving edits.', 'warn')
       }
     })
   }, [])

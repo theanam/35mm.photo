@@ -3,6 +3,7 @@ import {
   HSL_BANDS,
   type ColorGrade,
   type Curves,
+  type FrameState,
   type LensState,
   type PerspectiveState,
   type EditState,
@@ -52,6 +53,15 @@ export function neutralPerspective(): PerspectiveState {
 
 export function neutralLens(): LensState {
   return { distortion: 0, ca: 0 }
+}
+
+/**
+ * No border. White rather than no colour, so the first drag of a width slider
+ * shows a mat rather than nothing — black would read as the picture having been
+ * let down into a hole.
+ */
+export function neutralFrame(): FrameState {
+  return { top: 0, right: 0, bottom: 0, left: 0, color: '#ffffff', link: 'all' }
 }
 
 /**
@@ -106,6 +116,7 @@ export function defaultEdits(): EditState {
     grain: 0,
     grainSize: 50,
     vignette: 0,
+    frame: neutralFrame(),
 
     raw: defaultRawDevelop(),
     masks: [],

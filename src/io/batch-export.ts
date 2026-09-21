@@ -1,5 +1,5 @@
 import { Renderer } from '../editor/gpu/renderer'
-import { outputSize } from '../editor/gpu/transform'
+import { exportLayout } from '../editor/gpu/transform'
 import type { EditState, ImageMeta } from '../editor/edit-stack/types'
 import { decodeFile } from './decode'
 import { exportFilename, renderToBlob, type ExportSettings } from './export'
@@ -150,18 +150,22 @@ export async function runBatchExport(request: BatchRequest): Promise<BatchResult
           const decoded = await decodeFile(item.file.file)
           bitmap = decoded.bitmap
 
-          const full = outputSize(decoded.meta.width, decoded.meta.height, item.edits.crop)
-          const scale = settings.maxEdge
-            ? Math.min(1, settings.maxEdge / Math.max(full.width, full.height))
-            : 1
+          const layout = exportLayout(
+            decoded.meta.width,
+            decoded.meta.height,
+            item.edits.crop,
+            item.edits.frame,
+            settings.maxEdge,
+          )
 
           const { blob } = await renderToBlob({
             source: bitmap,
             meta: decoded.meta,
             edits: item.edits,
             settings,
-            width: Math.max(1, Math.round(full.width * scale)),
-            height: Math.max(1, Math.round(full.height * scale)),
+            width: layout.width,
+            height: layout.height,
+            frame: layout,
             renderer,
             sourceFile: item.file.file,
             // So a subject mask synced onto this photo finds *this* photo's

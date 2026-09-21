@@ -1,4 +1,5 @@
 import { useEditor } from '../editor/edit-stack/store'
+import { exportLayout } from '../editor/gpu/transform'
 import { IconCamera, IconLens, IconMinus, IconPlus, IconSplit } from './ui/icons'
 
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.66, 1, 1.5, 2, 3, 4]
@@ -11,8 +12,21 @@ export function BottomBar({ scale, fitScale }: { scale: number; fitScale: number
   const setSplit = useEditor((s) => s.setSplit)
   const cropping = useEditor((s) => s.cropping)
   const photo = useEditor((s) => s.photo)
+  const edits = useEditor((s) => s.edits)
   const setExifOpen = useEditor((s) => s.setExifOpen)
   const meta = photo?.meta
+
+  /**
+   * What this photo currently *is*, in pixels.
+   *
+   * The whole file, at full resolution and with the mat counted — the same
+   * arithmetic the export runs, so the number here and the number in the export
+   * dialog come from one place and cannot drift. The dialog then applies any
+   * long-edge limit on top; this is the size before anyone asks for a smaller
+   * one. Every other reading in the app is about a part of it: the crop tool
+   * reports the crop, the frame panel reports the frame.
+   */
+  const size = meta ? exportLayout(meta.width, meta.height, edits.crop, edits.frame, null) : null
 
   const step = (direction: 1 | -1) => {
     const current = zoom === 'fit' ? fitScale : zoom
@@ -62,6 +76,25 @@ export function BottomBar({ scale, fitScale }: { scale: number; fitScale: number
       )}
 
       <div className="bottombar__spacer" />
+
+      {size && (
+        <span
+          className="bottombar__size"
+          title={
+            size.framed
+              ? `${size.width} × ${size.height} px, including the frame — ` +
+                `the picture inside it is ${size.photo.width} × ${size.photo.height}`
+              : `${size.width} × ${size.height} px`
+          }
+        >
+          <span className="mono">
+            {size.width} × {size.height}
+          </span>
+          {/* Said out loud, because the number jumped when the frame went on and
+              a reader is owed the reason. */}
+          {size.framed && <span className="bottombar__size-note">with frame</span>}
+        </span>
+      )}
 
       <div className="zoom">
         <button

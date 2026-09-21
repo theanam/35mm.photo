@@ -1,4 +1,4 @@
-import type { CropState, PerspectiveState } from '../edit-stack/types'
+import type { CropState, FrameState, PerspectiveState } from '../edit-stack/types'
 import { swapsAxes, type Orientation } from '../../io/exif'
 
 /** Column-major 3×3, the layout `uniformMatrix3fv` wants with transpose=false. */
@@ -46,6 +46,133 @@ export function outputSize(imgW: number, imgH: number, crop: CropState) {
     width: Math.max(1, Math.round(d.width * c.w)),
     height: Math.max(1, Math.round(d.height * c.h)),
   }
+}
+
+export interface FrameLayout {
+  /** The picture itself, unchanged by the border. */
+  photo: { width: number; height: number }
+  /** The whole thing, picture plus border — the size of the file. */
+  width: number
+  height: number
+  /** Border thickness per side, in whole pixels of the framed output. */
+  inset: { top: number; right: number; bottom: number; left: number }
+  /** False when there is no border at all, so callers can skip the work. */
+  framed: boolean
+}
+
+/**
+ * Where the picture sits inside its border, in whole pixels.
+ *
+ * The one place these numbers are worked out. Everything downstream — the canvas
+ * the preview allocates, the canvas an export allocates, the dimensions the
+ * export dialog promises, the uniforms the frame shader gets — reads them from
+ * here rather than recomputing, because `width` has to equal
+ * `photo.width + left + right` *exactly*. Derive the two independently and they
+ * disagree by a pixel on some crops, which makes the inner rectangle a fraction
+ * off the photo's own resolution and puts a resample through a picture that
+ * should have been copied straight across.
+ *
+ * Widths are read against the shorter edge; see FrameState for why.
+ */
+export function frameLayout(
+  photoW: number,
+  photoH: number,
+  frame: FrameState | null | undefined,
+): FrameLayout {
+  const photo = { width: Math.max(1, Math.round(photoW)), height: Math.max(1, Math.round(photoH)) }
+  const none = {
+    photo,
+    width: photo.width,
+    height: photo.height,
+    inset: { top: 0, right: 0, bottom: 0, left: 0 },
+    framed: false,
+  }
+  if (!frame) return none
+
+  const short = Math.min(photo.width, photo.height)
+  // Guarded rather than trusted: a sidecar written by an older build can carry a
+  // half-filled frame, and NaN here would reach the shader as a blank screen.
+  const px = (percent: number) =>
+    Math.max(0, Math.round(((Number.isFinite(percent) ? percent : 0) / 100) * short))
+
+  const inset = {
+    top: px(frame.top),
+    right: px(frame.right),
+    bottom: px(frame.bottom),
+    left: px(frame.left),
+  }
+  if (!inset.top && !inset.right && !inset.bottom && !inset.left) return none
+
+  return {
+    photo,
+    width: photo.width + inset.left + inset.right,
+    height: photo.height + inset.top + inset.bottom,
+    inset,
+    framed: true,
+  }
+}
+
+/**
+ * The dimensions of an exported file: the picture, brought down to any long-edge
+ * limit, with its mat around it.
+ *
+ * The limit is measured against the *framed* size, because that is the file —
+ * asking for a long edge of 2048 and getting 2048 plus a border back would make
+ * the number mean nothing. The picture is then scaled and the mat laid out
+ * around the scaled picture, rather than the framed size being scaled and split
+ * back up, so the sides and the middle stay whole pixels that add up. A mat
+ * asked for in percentages lands within a pixel of the limit rather than exactly
+ * on it; that pixel is the price of the copy being exact.
+ */
+export function exportLayout(
+  photoW: number,
+  photoH: number,
+  crop: CropState,
+  frame: FrameState | null | undefined,
+  maxEdge?: number | null,
+): FrameLayout {
+  const full = outputSize(photoW, photoH, crop)
+  const framed = frameLayout(full.width, full.height, frame)
+  const scale = maxEdge ? Math.min(1, maxEdge / Math.max(framed.width, framed.height)) : 1
+  if (scale >= 1) return framed
+  return frameLayout(
+    Math.max(1, Math.round(full.width * scale)),
+    Math.max(1, Math.round(full.height * scale)),
+    frame,
+  )
+}
+
+/**
+ * The four widths that pad a picture out to `ratio` (width ÷ height), as
+ * percentages of its shorter edge — what the "pad to square" buttons write.
+ *
+ * Whichever axis is short of the target grows, split evenly between its two
+ * sides; the other axis is left alone. Computed once and stored as plain widths
+ * rather than kept as a live target, so that nudging a side afterwards does not
+ * fight a rule, and changing the crop later does not silently re-pad a picture
+ * the user has already finished with.
+ */
+export function padToAspect(
+  photoW: number,
+  photoH: number,
+  ratio: number,
+): { top: number; right: number; bottom: number; left: number } {
+  const zero = { top: 0, right: 0, bottom: 0, left: 0 }
+  if (!(photoW > 0) || !(photoH > 0) || !(ratio > 0) || !Number.isFinite(ratio)) return zero
+
+  const short = Math.min(photoW, photoH)
+  const current = photoW / photoH
+
+  // Too wide for the target: it needs height, so the mat goes above and below.
+  if (current > ratio) {
+    const pad = (photoW / ratio - photoH) / 2
+    return { ...zero, top: (pad / short) * 100, bottom: (pad / short) * 100 }
+  }
+  if (current < ratio) {
+    const pad = (photoH * ratio - photoW) / 2
+    return { ...zero, left: (pad / short) * 100, right: (pad / short) * 100 }
+  }
+  return zero
 }
 
 /**

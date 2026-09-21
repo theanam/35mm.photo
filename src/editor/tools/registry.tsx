@@ -4,6 +4,7 @@ import {
   NEUTRAL_TEMPERATURE,
   defaultRawDevelop,
   neutralColorGrade,
+  neutralFrame,
   neutralLens,
   neutralPerspective,
 } from '../edit-stack/defaults'
@@ -14,6 +15,7 @@ import {
   hasFinishEdits,
   hasGradeEdits,
   hasLensEdits,
+  hasFrameEdits,
   hasMaskEdits,
   hasMixerEdits,
   hasRawEdits,
@@ -22,7 +24,7 @@ import {
 } from '../edit-stack/summary'
 import {
   IconCrop, IconCurves, IconDetail, IconGrade, IconGrain, IconLens, IconLight, IconLooks,
-  IconMask, IconMixer, IconRaw,
+  IconFrame, IconMask, IconMixer, IconRaw,
 } from '../../app/ui/icons'
 import { LooksTool } from './LooksTool'
 import { LightTool } from './LightTool'
@@ -34,6 +36,7 @@ import { CropTool } from './CropTool'
 import { MasksTool } from './MasksTool'
 import { DetailTool } from './DetailTool'
 import { GrainTool } from './GrainTool'
+import { FrameTool } from './FrameTool'
 import { RawTool } from './RawTool'
 
 export type ToolId = PanelId
@@ -178,6 +181,17 @@ export const TOOLS: ToolDef[] = [
     Content: GrainTool,
     isDirty: hasFinishEdits,
     reset: () => ({ grain: 0, grainSize: 50, vignette: 0, halation: 0 }),
+  },
+  {
+    id: 'frame',
+    label: 'Frame',
+    hint: 'a border around the picture',
+    Icon: IconFrame,
+    Content: FrameTool,
+    isDirty: hasFrameEdits,
+    // The colour goes back to white with the widths: a mat nobody can see has
+    // no colour worth keeping.
+    reset: () => ({ frame: neutralFrame() }),
   },
   {
     id: 'raw',

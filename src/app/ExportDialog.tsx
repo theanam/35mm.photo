@@ -7,7 +7,7 @@ import {
   formatOfFile,
   type ExportFormat,
 } from '../io/export'
-import { outputSize } from '../editor/gpu/transform'
+import { exportLayout } from '../editor/gpu/transform'
 
 const FORMATS: { id: ExportFormat; label: string; note: string }[] = [
   { id: 'jpeg', label: 'JPEG', note: 'smallest, no transparency' },
@@ -46,10 +46,16 @@ export function ExportDialog() {
 
   if (!open || !photo) return null
 
-  const full = outputSize(photo.meta.width, photo.meta.height, edits.crop)
-  const scale = settings.maxEdge ? Math.min(1, settings.maxEdge / Math.max(full.width, full.height)) : 1
-  const width = Math.round(full.width * scale)
-  const height = Math.round(full.height * scale)
+  // The numbers the file will actually have, mat included.
+  const layout = exportLayout(
+    photo.meta.width,
+    photo.meta.height,
+    edits.crop,
+    edits.frame,
+    settings.maxEdge,
+  )
+  const width = layout.width
+  const height = layout.height
 
   // Writing back in place is only offered when the file's own extension names
   // the format being encoded. Nearly everything 35mm opens it cannot write —

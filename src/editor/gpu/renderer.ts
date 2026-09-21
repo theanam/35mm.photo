@@ -7,9 +7,11 @@ import { BLUR_FRAG } from '../shaders/blur.glsl'
 import { COLOR_FRAG } from '../shaders/color.glsl'
 import { DETAIL_FRAG } from '../shaders/detail.glsl'
 import { FINISH_FRAG } from '../shaders/finish.glsl'
+import { FRAME_FRAG } from '../shaders/frame.glsl'
 import { LOCAL_FRAG } from '../shaders/local.glsl'
 import { PASSTHROUGH_VERT, QUAD_VERT } from '../shaders/quad.glsl'
 import { RenderTarget, SCRATCH_UNIT, Uniforms, createProgram, createQuad } from './gl'
+import type { FrameLayout } from './transform'
 
 /**
  * Where the subject coverage atlas is bound. The detail pass already holds
@@ -70,6 +72,16 @@ export interface RenderOptions {
    * see where it falls. Nothing else about the render changes.
    */
   maskOverlay?: number | null
+  /**
+   * Where the picture sits inside its mat, when there is one.
+   *
+   * Handed in rather than worked out here. The caller has to know the framed
+   * size anyway — it is what sizes the canvas — and it derives that from the
+   * picture outwards, so it already holds integers that add up exactly. Solving
+   * back the other way, from the framed size to the picture inside it, is a
+   * rounding argument nobody wins.
+   */
+  frame?: FrameLayout | null
 }
 
 type Canvas = HTMLCanvasElement | OffscreenCanvas
@@ -88,11 +100,13 @@ export class Renderer {
   private blurProgram: WebGLProgram
   private detailProgram: WebGLProgram
   private finishProgram: WebGLProgram
+  private frameProgram: WebGLProgram
   private colorU: Uniforms
   private localU: Uniforms
   private blurU: Uniforms
   private detailU: Uniforms
   private finishU: Uniforms
+  private frameU: Uniforms
 
   private rtColor: RenderTarget
   private rtLocal: RenderTarget
@@ -105,6 +119,8 @@ export class Renderer {
   private rtSoftNear: RenderTarget
   private rtSoft: RenderTarget
   private rtDetail: RenderTarget
+  /** Where the finished picture lands when a mat has to be drawn around it. */
+  private rtFramed: RenderTarget
   private rtRead: RenderTarget
 
   private imageTexture: WebGLTexture | null = null
@@ -150,11 +166,13 @@ export class Renderer {
     this.blurProgram = createProgram(gl, PASSTHROUGH_VERT, BLUR_FRAG)
     this.detailProgram = createProgram(gl, PASSTHROUGH_VERT, DETAIL_FRAG)
     this.finishProgram = createProgram(gl, PASSTHROUGH_VERT, FINISH_FRAG)
+    this.frameProgram = createProgram(gl, PASSTHROUGH_VERT, FRAME_FRAG)
     this.colorU = new Uniforms(gl, this.colorProgram)
     this.localU = new Uniforms(gl, this.localProgram)
     this.blurU = new Uniforms(gl, this.blurProgram)
     this.detailU = new Uniforms(gl, this.detailProgram)
     this.finishU = new Uniforms(gl, this.finishProgram)
+    this.frameU = new Uniforms(gl, this.frameProgram)
 
     const mk = () => new RenderTarget(gl, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE)
     this.rtColor = mk()
@@ -168,6 +186,7 @@ export class Renderer {
     this.rtSoftNear = mk()
     this.rtSoft = mk()
     this.rtDetail = mk()
+    this.rtFramed = mk()
     this.rtRead = mk()
 
     this.curveTexture = this.createCurveTexture()
@@ -710,10 +729,52 @@ export class Renderer {
   }
 
   /**
+   * The mat, drawn over the framed output with the finished picture copied into
+   * the middle of it.
+   *
+   * `inner` is already in this shader's coordinates — y-up, bottom first — see
+   * the note in runChain about who does the flip.
+   */
+  private framePass(
+    source: RenderTarget,
+    width: number,
+    height: number,
+    inner: { x0: number; y0: number; x1: number; y1: number },
+    color: string,
+    destFramebuffer: WebGLFramebuffer | null,
+    scissor?: { x: number; y: number; width: number; height: number },
+  ) {
+    const gl = this.gl
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, destFramebuffer)
+    if (scissor) {
+      gl.enable(gl.SCISSOR_TEST)
+      gl.scissor(scissor.x, scissor.y, scissor.width, scissor.height)
+    }
+    gl.viewport(0, 0, width, height)
+    gl.useProgram(this.frameProgram)
+
+    this.bindTexture(0, gl.TEXTURE_2D, source.texture)
+    this.frameU.i('uImage', 0)
+    this.frameU.v4('uInner', inner.x0, inner.y0, inner.x1, inner.y1)
+    const [r, g, b] = parseHexColor(color)
+    this.frameU.v3('uColor', r, g, b)
+
+    this.draw()
+
+    if (scissor) gl.disable(gl.SCISSOR_TEST)
+  }
+
+  /**
    * Run the whole chain once, landing in `destFramebuffer` (null = canvas). Any
    * scissor is applied to the final pass only: the intermediate targets have to
    * be written in full, or the blur taps beside the split would read stale
    * pixels from the previous pass.
+   *
+   * `width` and `height` are the *framed* output. Everything up to and including
+   * the finish pass runs at the picture's own size, so `uResolution`, the grain
+   * scale, the vignette and the halation radius all keep meaning what they meant
+   * before a mat could exist; only the last draw is larger.
    */
   private runChain(
     width: number,
@@ -723,13 +784,48 @@ export class Renderer {
     destFramebuffer: WebGLFramebuffer | null,
     scissor?: { x: number; y: number; width: number; height: number },
     overlay: number | null = null,
+    layout?: FrameLayout | null,
   ) {
     const packed = packMasks(edits.masks)
+    const framed = layout?.framed
+      ? layout
+      : { photo: { width, height }, width, height, inset: { top: 0, right: 0, bottom: 0, left: 0 }, framed: false }
 
-    this.colorPass(width, height, edits, look)
-    const local = this.localPass(width, height, edits, packed)
-    const detail = this.detailPass(local, width, height, edits, packed)
-    this.finishPass(detail, width, height, edits, look, packed, overlay, destFramebuffer, scissor)
+    const w = framed.photo.width
+    const h = framed.photo.height
+
+    this.colorPass(w, h, edits, look)
+    const local = this.localPass(w, h, edits, packed)
+    const detail = this.detailPass(local, w, h, edits, packed)
+
+    if (!framed.framed) {
+      this.finishPass(detail, w, h, edits, look, packed, overlay, destFramebuffer, scissor)
+      return
+    }
+
+    this.rtFramed.resize(w, h)
+    this.finishPass(detail, w, h, edits, look, packed, overlay, this.rtFramed.framebuffer)
+
+    /*
+     * The one place the axis is flipped. The passthrough vertex shader the frame
+     * pass runs on puts vUv.y == 0 at the bottom, while `inset` is named the way
+     * CSS names it, from the top. Converting here keeps the flip beside this
+     * comment instead of burying a second one in the shader.
+     */
+    this.framePass(
+      this.rtFramed,
+      width,
+      height,
+      {
+        x0: framed.inset.left / width,
+        y0: framed.inset.bottom / height,
+        x1: (width - framed.inset.right) / width,
+        y1: (height - framed.inset.top) / height,
+      },
+      edits.frame.color,
+      destFramebuffer,
+      scissor,
+    )
   }
 
   /**
@@ -742,19 +838,36 @@ export class Renderer {
     gl.disable(gl.BLEND)
     gl.disable(gl.SCISSOR_TEST)
 
-    const { edits, look, splitAt, beforeOnly, maskOverlay } = options
+    const { edits, look, splitAt, beforeOnly, maskOverlay, frame } = options
     const original = originalEdits(edits)
 
     if (beforeOnly) {
-      this.runChain(width, height, original, null, null)
+      this.runChain(width, height, original, null, null, undefined, null, frame)
       return
     }
 
-    this.runChain(width, height, edits, look, null, undefined, maskOverlay ?? null)
+    this.runChain(width, height, edits, look, null, undefined, maskOverlay ?? null, frame)
 
     if (splitAt != null && splitAt > 0) {
-      const cut = Math.round(width * Math.min(splitAt, 1))
-      this.runChain(width, height, original, null, null, { x: 0, y: 0, width: cut, height })
+      /*
+       * The cut travels across the picture, not across the mat.
+       *
+       * `splitAt` is the handle's position over the photograph, and the mat is
+       * identical on both sides of it — `originalEdits` spreads the state before
+       * zeroing the adjustments, so both runs draw the same border. Measuring
+       * the cut against the framed width instead would spend the first and last
+       * few percent of the handle's travel dragging a line through a border
+       * where nothing can change, and the compare would never quite reach the
+       * left edge of the photograph.
+       */
+      const inner = frame?.framed ? frame : null
+      const photoLeft = inner ? inner.inset.left : 0
+      const photoWidth = inner ? inner.photo.width : width
+      const cut = photoLeft + Math.round(photoWidth * Math.min(splitAt, 1))
+      this.runChain(
+        width, height, original, null, null,
+        { x: 0, y: 0, width: cut, height }, null, frame,
+      )
     }
   }
 
@@ -770,6 +883,11 @@ export class Renderer {
   ): Uint8ClampedArray {
     // A dedicated target: the chain writes through rtColor/rtWide/rtDetail, so
     // reading back from any of those would alias a texture the chain samples.
+    //
+    // No frame layout is passed, so the mat is not drawn — deliberately. This is
+    // where the histogram and the clipping indicators are measured, and a white
+    // border would pile a spike onto one end of both and read as a photograph
+    // that had blown its highlights.
     this.rtRead.resize(width, height)
     this.runChain(width, height, edits, look, this.rtRead.framebuffer)
 
@@ -802,13 +920,14 @@ export class Renderer {
 
     for (const rt of [
       this.rtColor, this.rtLocal, this.rtPing, this.rtWide, this.rtTone, this.rtMid,
-      this.rtTight, this.rtHalo, this.rtSoftNear, this.rtSoft, this.rtDetail, this.rtRead,
+      this.rtTight, this.rtHalo, this.rtSoftNear, this.rtSoft, this.rtDetail, this.rtFramed,
+      this.rtRead,
     ]) {
       rt.dispose()
     }
     for (const p of [
       this.colorProgram, this.localProgram, this.blurProgram, this.detailProgram,
-      this.finishProgram,
+      this.finishProgram, this.frameProgram,
     ]) {
       gl.deleteProgram(p)
     }
@@ -830,6 +949,22 @@ const EMPTY_MASKS = packMasks([])
  * The "before" state: geometry kept, every adjustment dropped. Comparing
  * against an uncropped frame would just look like a different photo.
  */
+/**
+ * '#rrggbb' to linear-ish 0..1 components.
+ *
+ * No sRGB decode: the rest of the finish pass writes display-referred values
+ * straight out, so a mat asked for #ffffff has to land on the same white the
+ * canvas would show for that hex, not a lightened one.
+ */
+function parseHexColor(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex ?? '').trim())
+  // White, not black, for anything unreadable: a mat is a mat, and a black one
+  // on a dark photograph looks like the border simply failed to draw.
+  if (!m) return [1, 1, 1]
+  const n = parseInt(m[1], 16)
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
+}
+
 function originalEdits(edits: EditState): EditState {
   return {
     ...edits,
