@@ -378,19 +378,9 @@ export function FrameTool() {
             ))}
 
           <p className="tool__hint">
-            {frame.unit === 'percent' ? (
-              <>
-                Each width is a share of the picture's <strong>shorter</strong> edge, so the same
-                number reads the same on a portrait and a landscape — and on the export as on the
-                screen.
-              </>
-            ) : (
-              <>
-                Each width is <strong>pixels of the exported file</strong>. A smaller export scales
-                them down with the picture, so the border keeps its proportion rather than
-                swallowing the photograph.
-              </>
-            )}
+            {frame.unit === 'percent'
+              ? "A share of the picture's shorter edge."
+              : 'Pixels of the exported file.'}
           </p>
         </section>
 
@@ -411,10 +401,6 @@ export function FrameTool() {
               </button>
             ))}
           </div>
-          <p className="tool__hint">
-            Works out the widths once and writes them down, so you can nudge them afterwards.
-            They are not re-worked if the crop moves later.
-          </p>
         </section>
 
         <section className="tool__group">

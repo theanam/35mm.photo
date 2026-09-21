@@ -402,8 +402,10 @@ function SubjectControls({ mask }: { mask: SubjectMask }) {
         className="button"
         onClick={() => void detectSubjectMask(mask.id)}
         disabled={detecting || !activeFrameId}
+        data-busy={detecting || undefined}
       >
-        {detecting ? 'Looking…' : found ? 'Find the subject again' : 'Find the subject'}
+        {found ? 'Find the subject again' : 'Find the subject'}
+        {detecting && <span className="spinner" aria-label="Finding the subject" />}
       </button>
       <p className="tool__hint">
         {found

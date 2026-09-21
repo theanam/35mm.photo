@@ -192,11 +192,6 @@ export function ExportDialog() {
             </div>
           </dl>
 
-          <p className="modal__note">
-            The full pipeline re-runs at this size — the export is rendered from the original file,
-            not from what is on screen.
-          </p>
-
           {photo.handle && !canOverwrite && <p className="modal__note">{whyNot}</p>}
         </div>
 
@@ -215,8 +210,18 @@ export function ExportDialog() {
           <button className="button" onClick={() => setOpen(false)} disabled={Boolean(busy)}>
             Cancel
           </button>
-          <button className="button button--accent" onClick={() => run(false)} disabled={Boolean(busy)}>
-            {busy ? `${busy}…` : phone ? 'Share' : 'Export'}
+          {/* Keeps its word and its width while it works. The stages behind
+              this — preparing, finding the subject, rendering, encoding — are
+              this app's business, not the reader's, and naming each one in turn
+              resized the button under the pointer that had just pressed it. */}
+          <button
+            className="button button--accent"
+            onClick={() => run(false)}
+            disabled={Boolean(busy)}
+            data-busy={busy || undefined}
+          >
+            {phone ? 'Share' : 'Export'}
+            {busy && <span className="spinner" aria-label="Working" />}
           </button>
         </footer>
       </div>

@@ -1881,6 +1881,38 @@ kbd {
 }
 .thumb[data-batch='failed'] { outline: 2px solid #8a4a44; outline-offset: -2px; }
 
+/*
+ * A button that is working says so by spinning, not by renaming itself.
+ * Swapping the label for "Looking…" resized the control under the pointer and
+ * told the reader something they could already see.
+ */
+.spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.7;
+  animation: thumb-spin 700ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 2000ms; }
+}
+
+/* Keeps its size while the label is out, so nothing moves around it. */
+.button[data-busy] { position: relative; color: transparent; }
+.button[data-busy] .spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -7.5px 0 0 -7.5px;
+  color: var(--text);
+}
+/* The accent button's own text is dark on amber; so is its spinner. */
+.button--accent[data-busy] .spinner { color: var(--bg-app); }
+
 .thumb__spinner {
   position: absolute;
   top: 50%;

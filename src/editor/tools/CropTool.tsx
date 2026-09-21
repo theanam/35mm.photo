@@ -261,13 +261,15 @@ export function CropTool() {
                 className="button subject-crop__go"
                 onClick={() => void cropToSubject({ margin, offsetX, offsetY })}
                 disabled={detecting}
+                data-busy={detecting || undefined}
                 title={
                   modelReady
                     ? 'Fit the crop around the subject'
                     : 'Fit the crop around the subject. Downloads about 8 MB the first time, then works offline.'
                 }
               >
-                {detecting ? 'Looking…' : 'Crop to subject'}
+                Crop to subject
+                {detecting && <span className="spinner" aria-label="Finding the subject" />}
               </button>
             </div>
           )}
