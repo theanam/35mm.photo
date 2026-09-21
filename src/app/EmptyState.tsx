@@ -15,11 +15,22 @@ export function EmptyState({ dragging }: { dragging: boolean }) {
 
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
 
+  /*
+   * Not on a phone — and not merely hidden there, not fetched.
+   *
+   * Reopening a recent needs the handle stored beside it, and a browser
+   * without the File System Access API has none: every one of them falls
+   * through to an apology and a file picker, which is a worse offer than not
+   * making the offer. So the list is not shown, and the reads and object URLs
+   * behind it do not happen either, on the device least able to spare them.
+   */
   useEffect(() => {
+    if (phone) return
     void refreshRecents()
-  }, [refreshRecents])
+  }, [refreshRecents, phone])
 
   useEffect(() => {
+    if (phone) return
     let cancelled = false
     const urls: string[] = []
 
@@ -43,7 +54,7 @@ export function EmptyState({ dragging }: { dragging: boolean }) {
       cancelled = true
       urls.forEach((u) => URL.revokeObjectURL(u))
     }
-  }, [recents])
+  }, [recents, phone])
 
   /** Reopen from a stored handle, so a recent photo costs one permission click. */
   const reopen = async (key: string, name: string) => {
@@ -96,7 +107,7 @@ export function EmptyState({ dragging }: { dragging: boolean }) {
         <span className="mono dropzone__formats">{ADVERTISED_FORMATS}</span>
       </div>
 
-      {recents.length > 0 && (
+      {!phone && recents.length > 0 && (
         <section className="recents">
           <header className="recents__header">
             <span>Pick up where you left off</span>
