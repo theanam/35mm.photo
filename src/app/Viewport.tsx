@@ -116,10 +116,32 @@ export function Viewport() {
 
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost)
-      rendererRef.current?.dispose()
+      const renderer = rendererRef.current
       rendererRef.current = null
       histogramRef.current?.dispose()
       histogramRef.current = null
+
+      /*
+       * Hand the context back, but only once we know the canvas is going with
+       * it.
+       *
+       * `dispose()` on its own releases this renderer's GPU objects and leaves
+       * the context itself alive until the canvas is collected, which browsers
+       * are in no hurry to do — and they cap how many contexts may live at
+       * once. That was survivable while the viewport only unmounted when a
+       * photo was closed. It is not survivable now that crossing the phone
+       * breakpoint swaps the whole tree: every crossing stranded a context, and
+       * a few resizes exhausted the budget.
+       *
+       * `loseContext` cannot simply be turned on, for the reason `dispose`
+       * documents: when the effect merely re-runs — a dependency change, a fast
+       * refresh — the canvas stays and the next renderer would inherit a dead
+       * context, where shaders fail to compile with a null info log. So the
+       * question is not "is this cleanup running" but "is this canvas still in
+       * the document afterwards", and React detaches the node *after* running
+       * cleanups, so the answer is only true a microtask later.
+       */
+      queueMicrotask(() => renderer?.dispose({ loseContext: !canvas.isConnected }))
     }
   }, [setHistogram])
 
@@ -591,13 +613,24 @@ export function Viewport() {
     el.setPointerCapture(event.pointerId)
 
     const move = (e: PointerEvent) => setSplitAt((e.clientX - rect.left) / rect.width)
+    // `pointercancel` and a lost capture are the two touch exits that are not
+    // `pointerup`; without them the move listener outlives the gesture and the
+    // split line follows every later touch.
     const up = () => {
-      el.releasePointerCapture(event.pointerId)
+      try {
+        el.releasePointerCapture(event.pointerId)
+      } catch {
+        // Already released — the capture was lost rather than given up.
+      }
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      el.removeEventListener('lostpointercapture', up)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    el.addEventListener('lostpointercapture', up)
   }
 
   if (glError) {

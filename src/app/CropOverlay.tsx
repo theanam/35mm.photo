@@ -42,14 +42,28 @@ export function CropOverlay({ width, height }: { width: number; height: number }
       const dy = (e.clientY - drag.startY) / height
       updateCrop(resolve(drag.handle, drag.start, dx, dy, lockedRatio), 'crop-drag')
     }
+    /*
+     * Three ways a drag can end, not one.
+     *
+     * `pointerup` alone is enough for a mouse. A touch has two other exits: the
+     * OS can claim the gesture and send `pointercancel` instead, and a capture
+     * can be lost without either firing. Both used to leave `dragRef` set, the
+     * window listeners attached, and — worse — `cropDragging` stuck true, which
+     * freezes `settledCropFit` in the viewport and kills crop zoom for the rest
+     * of the session.
+     */
     const up = () => {
       dragRef.current = null
       setCropDragging(false)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      target.removeEventListener('lostpointercapture', up)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    target.addEventListener('lostpointercapture', up)
   }
 
   const box = {

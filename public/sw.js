@@ -8,7 +8,7 @@
 // Bump on any change to a shell asset served under a stable name — the icons
 // and manifest are not fingerprinted, so a stale cache would keep serving the
 // previous brand to anyone who has already visited.
-const CACHE = '35mm-v2'
+const CACHE = '35mm-v3'
 const SHELL = ['.', 'index.html', 'manifest.webmanifest', 'icon.svg', 'favicon.svg']
 
 self.addEventListener('install', (event) => {

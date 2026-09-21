@@ -29,16 +29,18 @@ export function TopBar() {
 
   useEffect(() => {
     if (!menuOpen) return
-    const onDown = (e: MouseEvent) => {
+    // `pointerdown`, not `mousedown`: a tap only synthesises a mouse event
+    // after it finishes, so on touch the menu stayed open until the second tap.
+    const onDown = (e: PointerEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setMenuOpen(false)
     }
-    window.addEventListener('mousedown', onDown)
+    window.addEventListener('pointerdown', onDown)
     window.addEventListener('keydown', onKey)
     return () => {
-      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('pointerdown', onDown)
       window.removeEventListener('keydown', onKey)
     }
   }, [menuOpen])

@@ -937,7 +937,25 @@
 .slider__input:disabled { cursor: default; }
 .slider__track:has(.slider__input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 2px; }
 
-.slider__value { font-family: var(--mono); font-size: 14px; width: 52px; flex: 0 0 52px; text-align: right; }
+/*
+ * A button, not a label — pressing the number puts the slider back where it
+ * started. Styled to stay a readout until there is something to undo, so a row
+ * of zeroes does not turn into a row of buttons asking to be pressed.
+ */
+.slider__value {
+  font-family: var(--mono);
+  font-size: 14px;
+  width: 52px;
+  flex: 0 0 52px;
+  text-align: right;
+  padding: 0;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.slider__value:disabled { color: var(--text-muted); cursor: default; }
+.slider__value:not(:disabled):hover { color: var(--link-hover); }
 .range { width: 100%; accent-color: var(--accent); }
 
 /* ───────────────────────────── looks ───────────────────────────── */
@@ -1298,6 +1316,10 @@
 .modal__panel {
   position: relative;
   width: min(520px, calc(100vw - 48px));
+  /* `100vh` is the *expanded* viewport on iOS, so while the toolbar is showing
+     the panel is taller than the screen — and since it is centred inside a
+     fixed, full-bleed parent with nothing to scroll, the footer holding Export
+     and Cancel sits below the fold with no way to reach it. */
   max-height: calc(100vh - 80px);
   display: flex;
   flex-direction: column;
@@ -1305,6 +1327,10 @@
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   box-shadow: 0 40px 90px rgba(0, 0, 0, 0.6);
+}
+
+@supports (height: 100dvh) {
+  .modal__panel { max-height: calc(100dvh - 80px); }
 }
 
 .modal__header {
@@ -1423,10 +1449,23 @@
   .viewport__split-handle { width: 34px; height: 34px; margin: -17px 0 0 -17px; }
   .mask-overlay__handle { r: 7; }
   .mask-overlay__grab { r: 22; }
-  .slider__input { inset: -14px 0; height: 31px; }
-  .icon-button { width: 38px; height: 38px; }
-  .band { width: 34px; height: 34px; }
-  .chip { padding: 8px 14px; }
+  .slider__input { inset: -16px 0; height: 35px; }
+  /* 44 is the figure both platforms' guidance settles on, and a thumb does not
+     get smaller because the button is in a corner. */
+  .icon-button { width: 44px; height: 44px; }
+  /* `.icon-button--quiet` is redefined twice further down the file, so matching
+     its specificity here would lose on source order. */
+  .icon-button.icon-button--quiet { width: 44px; height: 44px; }
+  /* A text link is a 17px-tall target otherwise. The label keeps its size; the
+     box around it grows. */
+  .link-button { min-height: 40px; padding: 0 4px; }
+  .band { width: 40px; height: 40px; }
+  .chip { padding: 10px 16px; }
+  .slider__value { min-height: 34px; }
+  /* Both were 18px squares that only a mouse could hit. They keep their drawn
+     size and grow their target, so nothing about the layout moves. */
+  .filmstrip__add, .frame__remove { width: 32px; height: 32px; }
+  .curve__hit { r: 20; }
 }
 
 /* iPad portrait is 768pt wide: stack rather than squeeze three columns. */

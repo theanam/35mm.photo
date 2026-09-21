@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- `viewport-fit=cover` is what makes env(safe-area-inset-*) resolve to
+         anything but zero. Without it the status-bar-style below draws the app
+         under the notch with no way to pad away from it. No user-scalable=no:
+         pinching the page is a legitimate way to read small type. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
     <title>35mm — a full-featured photo editor in your browser</title>
     <meta

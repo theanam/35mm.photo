@@ -67,23 +67,48 @@ export function MaskOverlay({ width, height }: { width: number; height: number }
     event.stopPropagation()
 
     const el = event.currentTarget as unknown as SVGGraphicsElement
-    const rect = (el.ownerSVGElement ?? el).getBoundingClientRect()
-    dragRef.current = { handle, mask, from: pointerToUpright(event, rect) }
+    const svg = el.ownerSVGElement ?? el
+
+    /*
+     * Read live, not once at pointerdown.
+     *
+     * The stage scrolls itself while a crop or a zoomed frame is being edited,
+     * so a rect cached here goes stale mid-drag and the mask jumps by however
+     * far the stage moved. Crop solved the same problem by working in
+     * client-space deltas — see the note in Viewport — and masks never got the
+     * same treatment.
+     */
+    const rectNow = () => svg.getBoundingClientRect()
+    dragRef.current = { handle, mask, from: pointerToUpright(event, rectNow()) }
+
+    // Capture, so the drag survives the pointer leaving a handle that is only
+    // a few pixels wide.
+    try {
+      el.setPointerCapture(event.pointerId)
+    } catch {
+      // Best-effort; the window listeners below still carry the gesture.
+    }
 
     const move = (e: PointerEvent) => {
       const drag = dragRef.current
       if (!drag) return
-      const to = pointerToUpright(e, rect)
+      const to = pointerToUpright(e, rectNow())
       const patch = resolve(drag.handle, drag.mask, drag.from, to, aspect)
       if (patch) updateMask(drag.mask.id, patch, `mask-drag-${drag.mask.id}`)
     }
+    // A touch can end with `pointercancel` or a lost capture rather than
+    // `pointerup`; all three have to release the drag.
     const up = () => {
       dragRef.current = null
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      el.removeEventListener('lostpointercapture', up)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    el.addEventListener('lostpointercapture', up)
   }
 
   const path = (points: [number, number][]) =>

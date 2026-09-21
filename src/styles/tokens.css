@@ -75,6 +75,14 @@ html, body, #root { height: 100%; }
   body, #root { height: 100dvh; }
 }
 
+/*
+ * `overflow: hidden` below stops the app scrolling; it does not stop the
+ * *document* rubber-banding or pull-to-refresh on iOS and Android, which drag
+ * the whole editor away from the chrome and snap it back. Declared on both
+ * elements because Safari only honours it on whichever one is propagating.
+ */
+html, body { overscroll-behavior: none; }
+
 body {
   margin: 0;
   background: var(--bg-app);

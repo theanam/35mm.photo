@@ -43,10 +43,14 @@ export function Slider({
   const fillLeft = Math.min(pct, originPct)
   const fillWidth = Math.abs(pct - originPct)
 
+  const target = resetTo ?? originValue
+  /* Nothing to go back to, so the readout stays a readout. */
+  const atOrigin = Math.abs(value - target) < (step || 1) / 2
+
   const reset = useCallback(() => {
     if (disabled) return
-    onChange(resetTo ?? originValue)
-  }, [disabled, onChange, resetTo, originValue])
+    onChange(target)
+  }, [disabled, onChange, target])
 
   return (
     <div className={dense ? 'slider slider--dense' : 'slider'} data-disabled={disabled || undefined}>
@@ -84,9 +88,26 @@ export function Slider({
         />
       </div>
 
-      <output className="slider__value" htmlFor={id}>
+      {/*
+        The readout doubles as the reset.
+        
+        Double-click and alt-click were the only ways to zero a slider, and a
+        phone has neither — leaving the exact origin to be found by dragging,
+        which on a −100..100 range across a finger's width is a target about a
+        pixel wide. The number is already sitting there saying what would be
+        undone, so it is the obvious thing to press, and it costs the desktop
+        nothing: the two habits above still work.
+      */}
+      <button
+        type="button"
+        className="slider__value mono"
+        onClick={reset}
+        disabled={disabled || atOrigin}
+        title={atOrigin ? undefined : `Reset ${label.toLowerCase()}`}
+        aria-label={atOrigin ? undefined : `Reset ${label.toLowerCase()}`}
+      >
         {format ? format(value) : formatSigned(value, step)}
-      </output>
+      </button>
     </div>
   )
 }
