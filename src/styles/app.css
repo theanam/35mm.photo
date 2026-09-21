@@ -2155,6 +2155,34 @@ kbd {
 
 /* ──────────────────────────── frame tool ──────────────────────────── */
 
+/* The number as a field, where typing one is the point. Sized like the readout
+   it replaces, so a column of sliders stays a column. */
+.slider__entry { display: flex; align-items: center; gap: 4px; flex: 0 0 62px; width: 62px; }
+.slider__field {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 5px;
+  font-size: 13px;
+  text-align: right;
+  color: var(--text);
+  background: var(--bg-app);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+.slider__field:focus-visible { border-color: var(--accent); outline: none; }
+.slider__field:disabled { color: var(--text-muted); }
+.slider__unit { flex: 0 0 auto; font-size: 12px; color: var(--text-dim); }
+
+@media (pointer: coarse) {
+  .slider__field { padding: 7px 6px; }
+}
+
+/* Above the link modes, and right-aligned: two segmented controls in a column
+   would otherwise read as one control with six options. */
+.frame-modes { display: flex; justify-content: flex-end; }
+.frame-modes .segmented { flex: 0 0 auto; }
+.frame-modes .segmented__item { min-width: 46px; }
+
 /* A chip that is only a colour. Square-ish rather than pill, so a row of them
    reads as a set of swatches and not as a row of unlabelled buttons. */
 .chip--swatch {

@@ -19,25 +19,25 @@ export const FRAME_PRESETS: FramePreset[] = [
     id: 'none',
     name: 'None',
     blurb: 'No border',
-    frame: { top: 0, right: 0, bottom: 0, left: 0, color: '#ffffff', link: 'all' },
+    frame: { top: 0, right: 0, bottom: 0, left: 0, color: '#ffffff', link: 'all', unit: 'percent' },
   },
   {
     id: 'hairline',
     name: 'Hairline',
     blurb: 'Just enough to separate the picture from the page',
-    frame: { top: 1, right: 1, bottom: 1, left: 1, color: '#ffffff', link: 'all' },
+    frame: { top: 1, right: 1, bottom: 1, left: 1, color: '#ffffff', link: 'all', unit: 'percent' },
   },
   {
     id: 'print',
     name: 'Print',
     blurb: 'The classic white border of a machine print',
-    frame: { top: 4, right: 4, bottom: 4, left: 4, color: '#ffffff', link: 'all' },
+    frame: { top: 4, right: 4, bottom: 4, left: 4, color: '#ffffff', link: 'all', unit: 'percent' },
   },
   {
     id: 'wide',
     name: 'Wide',
     blurb: 'A generous white mat',
-    frame: { top: 10, right: 10, bottom: 10, left: 10, color: '#ffffff', link: 'all' },
+    frame: { top: 10, right: 10, bottom: 10, left: 10, color: '#ffffff', link: 'all', unit: 'percent' },
   },
   {
     /*
@@ -50,19 +50,19 @@ export const FRAME_PRESETS: FramePreset[] = [
     id: 'gallery',
     name: 'Gallery',
     blurb: 'Weighted at the bottom, the way a mat is cut',
-    frame: { top: 9, right: 9, bottom: 13, left: 9, color: '#f2efe9', link: 'free' },
+    frame: { top: 9, right: 9, bottom: 13, left: 9, color: '#f2efe9', link: 'free', unit: 'percent' },
   },
   {
     id: 'polaroid',
     name: 'Polaroid',
     blurb: 'Thin on three sides, deep at the foot',
-    frame: { top: 6, right: 6, bottom: 20, left: 6, color: '#fbfaf7', link: 'free' },
+    frame: { top: 6, right: 6, bottom: 20, left: 6, color: '#fbfaf7', link: 'free', unit: 'percent' },
   },
   {
     id: 'black',
     name: 'Black',
     blurb: 'A dark mat, for a photograph that ends in white',
-    frame: { top: 6, right: 6, bottom: 6, left: 6, color: '#111111', link: 'all' },
+    frame: { top: 6, right: 6, bottom: 6, left: 6, color: '#111111', link: 'all', unit: 'percent' },
   },
 ]
 

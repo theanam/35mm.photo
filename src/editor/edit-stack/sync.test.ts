@@ -50,7 +50,7 @@ function edited(): EditState {
   e.look = { id: 'chrome', strength: 80 }
   e.crop = { ...e.crop, x: 0.1, y: 0.2, w: 0.5, h: 0.5, angle: 3 }
   // Four different widths, so a side that syncs into the wrong slot shows up.
-  e.frame = { top: 6, right: 3, bottom: 12, left: 4, color: '#101010', link: 'free' }
+  e.frame = { top: 6, right: 3, bottom: 12, left: 4, color: '#101010', link: 'free', unit: 'percent' }
   e.raw = { ...e.raw, draft: !e.raw.draft }
   e.masks = [structuredClone(FIXTURE_MASK)]
   return e

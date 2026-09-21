@@ -305,7 +305,7 @@ describe('straighten and the crop', () => {
 
 describe('frameLayout', () => {
   const frame = (patch: Partial<FrameState> = {}): FrameState => ({
-    top: 0, right: 0, bottom: 0, left: 0, color: '#ffffff', link: 'all', ...patch,
+    top: 0, right: 0, bottom: 0, left: 0, color: '#ffffff', link: 'all', unit: 'percent', ...patch,
   })
 
   it('is a no-op when every side is zero', () => {
@@ -358,6 +358,49 @@ describe('frameLayout', () => {
   })
 })
 
+describe('frameLayout in pixels', () => {
+  const px = (patch: Partial<FrameState> = {}): FrameState => ({
+    top: 0, right: 0, bottom: 0, left: 0, color: '#ffffff', link: 'all', unit: 'pixel', ...patch,
+  })
+
+  it('takes the number at its word at full size', () => {
+    const out = frameLayout(1800, 1200, px({ top: 64, right: 64, bottom: 64, left: 64 }))
+    expect(out.inset).toEqual({ top: 64, right: 64, bottom: 64, left: 64 })
+    expect(out.width).toBe(1800 + 128)
+  })
+
+  it('does not care about the shape, unlike a percentage', () => {
+    // 40px is 40px on a panorama and on a square; 40% is not.
+    const wide = frameLayout(4000, 1000, px({ top: 40, right: 40, bottom: 40, left: 40 }))
+    const square = frameLayout(1000, 1000, px({ top: 40, right: 40, bottom: 40, left: 40 }))
+    expect(wide.inset).toEqual(square.inset)
+  })
+
+  it('scales down with the render, so a preview tells the truth about it', () => {
+    const full = frameLayout(1800, 1200, px({ top: 80, right: 80, bottom: 80, left: 80 }))
+    const half = frameLayout(900, 600, px({ top: 80, right: 80, bottom: 80, left: 80 }), 0.5)
+    expect(full.inset.top).toBe(80)
+    expect(half.inset.top).toBe(40)
+    // The proportion of mat to picture is what the eye is checking.
+    expect(half.width / half.photo.width).toBeCloseTo(full.width / full.photo.width, 6)
+  })
+
+  it('still adds up exactly at a fractional scale', () => {
+    const f = px({ top: 37, right: 11, bottom: 64, left: 5, link: 'free' })
+    for (const k of [1, 0.5, 0.331, 0.077]) {
+      const out = frameLayout(Math.round(1800 * k), Math.round(1200 * k), f, k)
+      expect(out.width).toBe(out.photo.width + out.inset.left + out.inset.right)
+      expect(out.height).toBe(out.photo.height + out.inset.top + out.inset.bottom)
+    }
+  })
+
+  it('ignores a nonsense scale rather than vanishing', () => {
+    const f = px({ top: 20, right: 20, bottom: 20, left: 20 })
+    expect(frameLayout(1000, 1000, f, 0).inset.top).toBe(20)
+    expect(frameLayout(1000, 1000, f, NaN).inset.top).toBe(20)
+  })
+})
+
 describe('padToAspect', () => {
   it('adds height to a picture that is too wide', () => {
     const out = padToAspect(1600, 900, 1)
@@ -383,7 +426,7 @@ describe('padToAspect', () => {
       for (const ratio of [1, 4 / 5, 16 / 9]) {
         const sides = padToAspect(w, h, ratio)
         const out = frameLayout(w, h, {
-          ...sides, color: '#ffffff', link: 'free',
+          ...sides, color: '#ffffff', link: 'free', unit: 'percent',
         })
         // Within a pixel: each side rounds on its own, which is the price of the
         // inner rectangle landing on whole pixels.

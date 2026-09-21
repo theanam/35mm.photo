@@ -1,4 +1,4 @@
-import { useCallback, useId } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 
 export interface SliderProps {
   label: string
@@ -17,6 +17,15 @@ export interface SliderProps {
   disabled?: boolean
   /** Compact row used inside the colour mixer. */
   dense?: boolean
+  /**
+   * Turns the readout into a field you can type an exact number into. For
+   * controls where the number is the point rather than the feel of it — a
+   * border of exactly 64px is a thing to ask for; an exposure of exactly
+   * +0.7314 is not.
+   */
+  editable?: boolean
+  /** Shown after an editable field, e.g. '%' or 'px'. */
+  unit?: string
 }
 
 export function Slider({
@@ -32,8 +41,21 @@ export function Slider({
   onChange,
   disabled,
   dense,
+  editable,
+  unit,
 }: SliderProps) {
   const id = useId()
+
+  /*
+   * Held as text while it is being typed.
+   *
+   * Writing straight through on every keystroke would fight the typist: "6" on
+   * the way to "64" is a valid number, so it would be applied, clamped and
+   * reformatted under the caret — and an empty field, or a lone "-", is not a
+   * number at all. The model is written on Enter or on leaving the field, and
+   * until then this is the only thing that knows what is in it.
+   */
+  const [draft, setDraft] = useState<string | null>(null)
 
   const span = max - min || 1
   const pct = ((value - min) / span) * 100
@@ -51,6 +73,22 @@ export function Slider({
     if (disabled) return
     onChange(target)
   }, [disabled, onChange, target])
+
+  const clamp = useCallback((v: number) => Math.min(max, Math.max(min, v)), [min, max])
+
+  /** Take what was typed, or put the field back if it was not a number. */
+  const commit = useCallback(() => {
+    if (draft === null) return
+    const n = Number(draft.replace(',', '.').trim())
+    setDraft(null)
+    if (draft.trim() !== '' && Number.isFinite(n)) onChange(clamp(n))
+  }, [draft, onChange, clamp])
+
+  // A value changed from elsewhere — a preset, a link mode, a unit switch —
+  // must show through rather than be hidden behind a stale draft.
+  useEffect(() => {
+    setDraft(null)
+  }, [value])
 
   return (
     <div className={dense ? 'slider slider--dense' : 'slider'} data-disabled={disabled || undefined}>
@@ -88,7 +126,35 @@ export function Slider({
         />
       </div>
 
-      {/*
+      {editable ? (
+        <span className="slider__entry">
+          <input
+            className="slider__field mono"
+            type="text"
+            inputMode="decimal"
+            value={draft ?? String(Math.round(value * 100) / 100)}
+            disabled={disabled}
+            aria-label={`${label}${unit ? ` in ${unit}` : ''}`}
+            onChange={(e) => setDraft(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={() => commit()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); commit(); e.currentTarget.blur() }
+              // Escape abandons the edit rather than committing half of it.
+              if (e.key === 'Escape') { e.preventDefault(); setDraft(null); e.currentTarget.blur() }
+              // The arrows step the value, the way they would on the slider.
+              if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault()
+                const by = (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1) * (step || 1)
+                setDraft(null)
+                onChange(clamp(value + by))
+              }
+            }}
+          />
+          {unit && <span className="slider__unit">{unit}</span>}
+        </span>
+      ) : (
+      /*
         The readout doubles as the reset.
         
         Double-click and alt-click were the only ways to zero a slider, and a
@@ -97,7 +163,7 @@ export function Slider({
         pixel wide. The number is already sitting there saying what would be
         undone, so it is the obvious thing to press, and it costs the desktop
         nothing: the two habits above still work.
-      */}
+      */
       <button
         type="button"
         className="slider__value mono"
@@ -108,6 +174,7 @@ export function Slider({
       >
         {format ? format(value) : formatSigned(value, step)}
       </button>
+      )}
     </div>
   )
 }

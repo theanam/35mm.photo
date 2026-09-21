@@ -1,7 +1,13 @@
 import { useMemo } from 'react'
-import { Slider, formatPlain } from '../../app/ui/Slider'
+import { Slider } from '../../app/ui/Slider'
 import { useEditor } from '../edit-stack/store'
-import { FRAME_SIDES, type FrameLink, type FrameSide, type FrameState } from '../edit-stack/types'
+import {
+  FRAME_SIDES,
+  type FrameLink,
+  type FrameSide,
+  type FrameState,
+  type FrameUnit,
+} from '../edit-stack/types'
 import { frameLayout, outputSize, padToAspect } from '../gpu/transform'
 import { FRAME_PRESETS } from '../presets/frames'
 
@@ -67,6 +73,11 @@ const LINKS: { id: FrameLink; label: string; hint: string }[] = [
   { id: 'free', label: 'Free', hint: 'Every side on its own' },
 ]
 
+const UNITS: { id: FrameUnit; label: string; hint: string }[] = [
+  { id: 'percent', label: '%', hint: 'A share of the picture\u2019s shorter edge' },
+  { id: 'pixel', label: 'px', hint: 'Pixels of the exported file' },
+]
+
 const ASPECTS: { id: string; label: string; ratio: number }[] = [
   { id: '1:1', label: 'Square', ratio: 1 },
   { id: '4:5', label: '4:5', ratio: 4 / 5 },
@@ -117,6 +128,38 @@ export function FrameTool() {
     [photoSize, frame],
   )
 
+  /** The shorter edge every percentage is measured against. */
+  const short = photoSize ? Math.min(photoSize.width, photoSize.height) : 0
+
+  /** The ceiling in the current unit — a mat as thick as the picture is short. */
+  const maxWidth = frame.unit === 'pixel' ? Math.max(1, Math.round(short)) : 100
+  const step = frame.unit === 'pixel' ? 1 : 0.5
+  const unitLabel = frame.unit === 'pixel' ? 'px' : '%'
+
+  /**
+   * Switch what the numbers count without changing what they draw.
+   *
+   * Converting rather than reinterpreting: 9 is a modest border as a percentage
+   * and an invisible one as pixels, so carrying the digits across would silently
+   * throw the mat away. Needs the picture's size to do it, so with no photo open
+   * the unit is simply recorded.
+   */
+  const setUnit = (unit: FrameUnit) => {
+    if (unit === frame.unit) return
+    if (!short) {
+      updateFrame({ unit }, 'frame-unit')
+      return
+    }
+    const to = (v: number) =>
+      unit === 'pixel'
+        ? Math.round((v / 100) * short)
+        : Math.round((v / short) * 1000) / 10
+    updateFrame(
+      { unit, top: to(frame.top), right: to(frame.right), bottom: to(frame.bottom), left: to(frame.left) },
+      'frame-unit',
+    )
+  }
+
   /**
    * Write one side, and whichever others the link mode ties to it.
    *
@@ -125,7 +168,7 @@ export function FrameTool() {
    * would take the other three sliders away mid-edit.
    */
   const setSide = (side: FrameSide, value: number) => {
-    const v = Math.max(0, Math.min(100, value))
+    const v = Math.max(0, Math.min(maxWidth, value))
     if (frame.link === 'all') {
       updateFrame({ top: v, right: v, bottom: v, left: v }, 'frame-width')
       return
@@ -162,7 +205,16 @@ export function FrameTool() {
 
   const pad = (ratio: number) => {
     if (!photoSize) return
-    const sides = padToAspect(photoSize.width, photoSize.height, ratio)
+    const pct = padToAspect(photoSize.width, photoSize.height, ratio)
+    const sides =
+      frame.unit === 'pixel'
+        ? {
+            top: Math.round((pct.top / 100) * short),
+            right: Math.round((pct.right / 100) * short),
+            bottom: Math.round((pct.bottom / 100) * short),
+            left: Math.round((pct.left / 100) * short),
+          }
+        : pct
     // Free, not pairs: a pad is two sides wide and two sides zero, and calling
     // that "pairs" would tie the zeroes together and hide the asymmetry.
     updateFrame({ ...sides, link: 'free' }, 'frame-pad')
@@ -213,6 +265,23 @@ export function FrameTool() {
             )}
           </header>
 
+          <div className="frame-modes">
+            <div className="segmented" role="group" aria-label="What the widths count">
+              {UNITS.map((u) => (
+                <button
+                  key={u.id}
+                  className="segmented__item"
+                  data-active={frame.unit === u.id || undefined}
+                  aria-pressed={frame.unit === u.id}
+                  title={u.hint}
+                  onClick={() => setUnit(u.id)}
+                >
+                  {u.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="segmented" role="group" aria-label="Which sides move together">
             {LINKS.map((l) => (
               <button
@@ -233,10 +302,11 @@ export function FrameTool() {
               label="All sides"
               value={frame.top}
               min={0}
-              max={100}
-              step={0.5}
+              max={maxWidth}
+              step={step}
               resetTo={0}
-              format={(v) => `${formatPlain(v, 0.5)}%`}
+              editable
+              unit={unitLabel}
               onChange={(v) => setSide('top', v)}
             />
           )}
@@ -246,15 +316,15 @@ export function FrameTool() {
               <Slider
                 label="Top & bottom"
                 value={frame.top}
-                min={0} max={100} step={0.5} resetTo={0}
-                format={(v) => `${formatPlain(v, 0.5)}%`}
+                min={0} max={maxWidth} step={step} resetTo={0}
+                editable unit={unitLabel}
                 onChange={(v) => setSide('top', v)}
               />
               <Slider
                 label="Left & right"
                 value={frame.left}
-                min={0} max={100} step={0.5} resetTo={0}
-                format={(v) => `${formatPlain(v, 0.5)}%`}
+                min={0} max={maxWidth} step={step} resetTo={0}
+                editable unit={unitLabel}
                 onChange={(v) => setSide('left', v)}
               />
             </>
@@ -266,16 +336,26 @@ export function FrameTool() {
                 key={side}
                 label={side[0].toUpperCase() + side.slice(1)}
                 value={frame[side]}
-                min={0} max={100} step={0.5} resetTo={0}
-                format={(v) => `${formatPlain(v, 0.5)}%`}
+                min={0} max={maxWidth} step={step} resetTo={0}
+                editable unit={unitLabel}
                 onChange={(v) => setSide(side, v)}
               />
             ))}
 
           <p className="tool__hint">
-            Each width is a share of the picture's <strong>shorter</strong> edge, so the same
-            number reads the same on a portrait and a landscape — and on the export as on the
-            screen.
+            {frame.unit === 'percent' ? (
+              <>
+                Each width is a share of the picture's <strong>shorter</strong> edge, so the same
+                number reads the same on a portrait and a landscape — and on the export as on the
+                screen.
+              </>
+            ) : (
+              <>
+                Each width is <strong>pixels of the exported file</strong>. A smaller export scales
+                them down with the picture, so the border keeps its proportion rather than
+                swallowing the photograph.
+              </>
+            )}
           </p>
         </section>
 

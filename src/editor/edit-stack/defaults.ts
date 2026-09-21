@@ -61,7 +61,7 @@ export function neutralLens(): LensState {
  * let down into a hole.
  */
 export function neutralFrame(): FrameState {
-  return { top: 0, right: 0, bottom: 0, left: 0, color: '#ffffff', link: 'all' }
+  return { top: 0, right: 0, bottom: 0, left: 0, color: '#ffffff', link: 'all', unit: 'percent' }
 }
 
 /**

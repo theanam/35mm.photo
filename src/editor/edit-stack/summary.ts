@@ -273,9 +273,10 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
     const even = sides.every((v) => Math.abs(v - sides[0]) < 0.05)
     // One number when the mat is even, the widest side when it is not: four
     // numbers would not fit a chip, and the widest is the one you notice.
+    const suffix = f.unit === 'pixel' ? 'px' : '%'
     const value = even
-      ? `${round1(sides[0])}%`
-      : `up to ${round1(Math.max(...sides))}%`
+      ? `${round1(sides[0])}${suffix}`
+      : `up to ${round1(Math.max(...sides))}${suffix}`
     chips.push({ id: 'frame', label: 'Frame', value, panel: 'frame' })
   }
 

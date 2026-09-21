@@ -309,7 +309,14 @@ export function Viewport() {
   // in this order is what keeps `cssWidth === photo + left + right`.
   const cssPhotoWidth = Math.max(1, Math.round(output.width * scale))
   const cssPhotoHeight = Math.max(1, Math.round(output.height * scale))
-  const cssFrame = frameLayout(cssPhotoWidth, cssPhotoHeight, renderEdits.frame)
+  // Scaled against the full-resolution picture, so a border given in pixels is
+  // drawn at the share of the preview it will occupy in the file.
+  const cssFrame = frameLayout(
+    cssPhotoWidth,
+    cssPhotoHeight,
+    renderEdits.frame,
+    output.width ? cssPhotoWidth / output.width : 1,
+  )
   const cssWidth = cssFrame.width
   const cssHeight = cssFrame.height
 
@@ -652,10 +659,13 @@ export function Viewport() {
      * two sides. Scaling the framed size and then splitting it back up would
      * disagree by a pixel on some crops and put a soft seam down all four edges.
      */
+    const bufferPhotoW = Math.round(cssPhotoWidth * budget)
+    const bufferPhotoH = Math.round(cssPhotoHeight * budget)
     const bufferFrame = frameLayout(
-      Math.round(cssPhotoWidth * budget),
-      Math.round(cssPhotoHeight * budget),
+      bufferPhotoW,
+      bufferPhotoH,
       renderEdits.frame,
+      output.width ? bufferPhotoW / output.width : 1,
     )
     const bufferW = bufferFrame.width
     const bufferH = bufferFrame.height
@@ -682,7 +692,8 @@ export function Viewport() {
       maskOverlay: overlay >= 0 ? overlay : null,
     })
   }, [
-    cssWidth, cssHeight, cssPhotoWidth, cssPhotoHeight, renderEdits, splitCompare, splitAt, cropping,
+    cssWidth, cssHeight, cssPhotoWidth, cssPhotoHeight, output.width,
+    renderEdits, splitCompare, splitAt, cropping,
     masking, maskOverlay, activeMaskId, activeFrameId, maskMapsAt,
   ])
 

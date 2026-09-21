@@ -132,24 +132,41 @@ export type FrameSide = (typeof FRAME_SIDES)[number]
 /** Which sides move together while one of them is dragged. */
 export type FrameLink = 'all' | 'pairs' | 'free'
 
+/** What the four numbers count. */
+export type FrameUnit = 'percent' | 'pixel'
+
 /**
  * A flat border added around the picture — a mat, not a crop. It grows the
  * exported file rather than covering the edges of the photograph.
  *
- * Widths are a percentage of the picture's *shorter* edge, never a pixel count.
- * The same edit is rendered at whatever size the stage happens to be, again at
- * 192px for the histogram, and again at full resolution or at a long-edge limit
- * for an export; a width in pixels would be a hairline in one of those and a
- * slab in another. Measuring every side against one edge also means four equal
- * numbers look equal on a picture that is not square, which four fractions of
- * their own axis would not.
+ * Widths are percentages of the picture's *shorter* edge by default. One edit is
+ * rendered at whatever size the stage happens to be, and again at full
+ * resolution or at a long-edge limit for an export, so a proportion is the only
+ * thing that means the same in all of them on its own. Measuring every side
+ * against one edge also means four equal numbers look equal on a picture that is
+ * not square, which four fractions of their own axis would not.
+ *
+ * Pixels are the other way of saying it, for when the number is the point. They
+ * count pixels of the *exported file*, so every render smaller than that has to
+ * scale them — see `frameLayout`.
  */
 export interface FrameState {
-  /** Each 0..100, as a percentage of the shorter edge of the cropped photo. */
+  /**
+   * Per side. Read as a percentage of the cropped photo's shorter edge, or as
+   * pixels of the exported file, according to `unit`.
+   */
   top: number
   right: number
   bottom: number
   left: number
+  /**
+   * Percentages hold their proportion at any size, which is what makes one
+   * edit look the same on screen and in a file of any dimension. Pixels are for
+   * when the number itself is the requirement — a border of exactly 64px —
+   * and they are scaled down alongside the picture for any render smaller than
+   * the file, which is the only way the preview can tell the truth about them.
+   */
+  unit: FrameUnit
   /** The fill, as '#rrggbb'. The only arbitrary colour in the edit stack. */
   color: string
   /**

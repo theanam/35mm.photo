@@ -72,12 +72,17 @@ export interface FrameLayout {
  * off the photo's own resolution and puts a resample through a picture that
  * should have been copied straight across.
  *
- * Widths are read against the shorter edge; see FrameState for why.
+ * `scale` is how big this render is against the exported file — 1 at full size,
+ * 0.25 for a quarter-size preview. Percentages do not need it, because they are
+ * read against whatever short edge is in front of them and shrink along with it.
+ * A pixel width does: it names a thickness in the file, and the only way a
+ * quarter-size preview can tell the truth about a 64px border is to draw 16.
  */
 export function frameLayout(
   photoW: number,
   photoH: number,
   frame: FrameState | null | undefined,
+  scale = 1,
 ): FrameLayout {
   const photo = { width: Math.max(1, Math.round(photoW)), height: Math.max(1, Math.round(photoH)) }
   const none = {
@@ -92,8 +97,11 @@ export function frameLayout(
   const short = Math.min(photo.width, photo.height)
   // Guarded rather than trusted: a sidecar written by an older build can carry a
   // half-filled frame, and NaN here would reach the shader as a blank screen.
-  const px = (percent: number) =>
-    Math.max(0, Math.round(((Number.isFinite(percent) ? percent : 0) / 100) * short))
+  const k = Number.isFinite(scale) && scale > 0 ? scale : 1
+  const px = (value: number) => {
+    const v = Number.isFinite(value) ? value : 0
+    return Math.max(0, Math.round(frame.unit === 'pixel' ? v * k : (v / 100) * short))
+  }
 
   const inset = {
     top: px(frame.top),
@@ -135,11 +143,12 @@ export function exportLayout(
   const framed = frameLayout(full.width, full.height, frame)
   const scale = maxEdge ? Math.min(1, maxEdge / Math.max(framed.width, framed.height)) : 1
   if (scale >= 1) return framed
-  return frameLayout(
-    Math.max(1, Math.round(full.width * scale)),
-    Math.max(1, Math.round(full.height * scale)),
-    frame,
-  )
+  const outW = Math.max(1, Math.round(full.width * scale))
+  const outH = Math.max(1, Math.round(full.height * scale))
+  // `outW / full.width` rather than `scale`: the rounding above has already
+  // happened, and a pixel border must be measured against the picture that was
+  // actually produced, not the one that was asked for.
+  return frameLayout(outW, outH, frame, outW / full.width)
 }
 
 /**
