@@ -103,7 +103,7 @@ interface EditorState {
   /** Collapsed/expanded state of the right rail's panels. */
   openPanels: Record<PanelId, boolean>
   focusedPanel: PanelId | null
-  /** The toolbar tool whose drawer is open, or null when the toolbar is idle. */
+  /** The toolbar tool holding the right rail, or null when the toolbar is idle. */
   activeTool: PanelId | null
   /**
    * Edit state as it was when the current tool was opened. Discard restores it,
@@ -1080,6 +1080,11 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   focusPanel(panel) {
+    // The rail is behind the open tool's panel now, so a chip aimed at a rail
+    // control cannot just scroll to it. Apply rather than discard: what is on
+    // screen is what the tool was asked for, and the chip was a move on to the
+    // next adjustment, not a change of mind about this one.
+    if (get().activeTool) get().applyTool()
     set({ openPanels: { ...get().openPanels, [panel]: true }, focusedPanel: panel })
     // Clear the highlight once the scroll-into-view has had time to land.
     setTimeout(() => {

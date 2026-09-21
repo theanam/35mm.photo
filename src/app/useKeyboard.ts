@@ -63,7 +63,7 @@ export function useKeyboard() {
           s.openTool('masks')
           break
         case 'Escape':
-          // The drawer owns Escape while it is open.
+          // The open tool owns Escape while it is open.
           if (s.exportOpen) s.setExportOpen(false)
           break
         case 'f':

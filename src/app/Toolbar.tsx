@@ -5,8 +5,9 @@ import { buildStack } from '../editor/edit-stack/summary'
 import { IconCopy, IconPaste, IconRedo, IconReset, IconUndo } from './ui/icons'
 
 /**
- * Geometry tools live here. Picking one opens its drawer directly underneath;
- * colour and contrast stay in the right rail, where they are always to hand.
+ * Geometry tools live here. Picking one puts its controls in the right rail,
+ * in place of the colour and contrast panels — which are still one click away,
+ * and are not what anyone is reaching for while a crop box is up.
  */
 export function Toolbar() {
   const edits = useEditor((s) => s.edits)

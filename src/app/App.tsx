@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { TopBar } from './TopBar'
 import { Toolbar } from './Toolbar'
-import { ToolDrawer } from './ToolDrawer'
+import { ToolPanel } from './ToolPanel'
 import { Filmstrip } from './Filmstrip'
 import { Viewport } from './Viewport'
 import { BottomBar } from './BottomBar'
@@ -24,6 +24,7 @@ import { storageBlocked } from '../storage/indexeddb'
 
 export function App() {
   const photo = useEditor((s) => s.photo)
+  const activeTool = useEditor((s) => s.activeTool)
   const viewScale = useEditor((s) => s.viewScale)
   const fitScale = useEditor((s) => s.fitScale)
   const dragging = useDropTarget()
@@ -65,12 +66,7 @@ export function App() {
     <div className="app" data-dragging={dragging || undefined}>
       <TopBar />
 
-      {photo && (
-        <>
-          <Toolbar />
-          <ToolDrawer />
-        </>
-      )}
+      {photo && <Toolbar />}
 
       <div className="app__body">
         <Filmstrip />
@@ -82,7 +78,13 @@ export function App() {
               <LoadingOverlay />
               <BottomBar scale={viewScale} fitScale={fitScale} />
             </main>
-            <RightRail />
+            {/* One column, two things it can show. A tool takes the rail
+                over rather than a band off the top of the picture, so the
+                viewport is the same height whatever is open. */}
+            <div className="rail-dock" data-tool={activeTool ?? undefined}>
+              <RightRail />
+              <ToolPanel />
+            </div>
           </>
         ) : (
           <>

@@ -182,6 +182,55 @@ export const IconCrop = ({ size = 16 }: Props) => (
   </svg>
 )
 
+/*
+ * Rotate and flip: the frame itself, plus what happens to it. A bare circular
+ * arrow would be the obvious drawing, but IconReset is already that, and the
+ * two sit a few centimetres apart in the crop panel — so these keep the square
+ * and let the arrow describe the move being made to it.
+ */
+export const IconRotateLeft = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <rect x="6.2" y="6.2" width="8.2" height="8.2" rx="1.5" />
+    <path d="M9.7 2.2a6 6 0 0 0-6 6" />
+    <path d="M5.6 6.3 3.7 8.2 1.8 6.3" />
+  </svg>
+)
+
+export const IconRotateRight = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <rect x="1.6" y="6.2" width="8.2" height="8.2" rx="1.5" />
+    <path d="M6.3 2.2a6 6 0 0 1 6 6" />
+    <path d="M10.4 6.3 12.3 8.2 14.2 6.3" />
+  </svg>
+)
+
+/* One half filled, one half not: the asymmetry is the whole point, and two
+   matching outlines would just read as an arrowhead pair. The dashed line is
+   the mirror, drawn the way the curve icon draws its construction line. */
+export const IconFlipH = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M8 1.6V14.4" strokeDasharray="2 2" opacity=".55" />
+    <path d="M6.3 3.6 2 8l4.3 4.4V3.6Z" fill="currentColor" />
+    <path d="M9.7 3.6 14 8l-4.3 4.4V3.6Z" />
+  </svg>
+)
+
+export const IconFlipV = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M1.6 8h12.8" strokeDasharray="2 2" opacity=".55" />
+    <path d="M3.6 6.3 8 2l4.4 4.3H3.6Z" fill="currentColor" />
+    <path d="M3.6 9.7 8 14l4.4-4.3H3.6Z" />
+  </svg>
+)
+
+/** A picture inside a mat: the outer edge, and the picture set in from it. */
+export const IconFrame = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <rect x="1.4" y="1.4" width="13.2" height="13.2" rx="1.4" />
+    <rect x="4.6" y="4.6" width="6.8" height="6.8" rx="0.8" opacity=".55" />
+  </svg>
+)
+
 export const IconDetail = ({ size = 16 }: Props) => (
   <svg {...base(size)}>
     <path d="M1.6 11.4 5.4 4.2l2.6 4.6 1.8-2.4 4.6 5" />

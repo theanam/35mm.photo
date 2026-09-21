@@ -194,7 +194,25 @@
 .link-button:hover:not(:disabled) { color: var(--link-hover); }
 .link-button:disabled { color: var(--text-faint); cursor: default; }
 
-.button-row { display: flex; flex-wrap: wrap; gap: 7px; }
+/*
+ * Rotate left / rotate right, then flip H / flip V.
+ *
+ * A wrapping flex row until the icons went in, at which point the four no
+ * longer fitted two-by-two and it reflowed to three and a stray. A grid keeps
+ * each pair on its own line and all four one width, which is what the pairing
+ * meant in the first place.
+ */
+.transform-grid {
+  display: grid;
+  /* Two fixed columns rather than auto-fit: auto-fit picks the column count
+     from the width available, and at three columns four buttons are three and
+     a stray again. The cap stops the pair stretching to half a rail that has
+     gone full-width on a narrow screen. */
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  max-width: 340px;
+}
+.transform-grid .button { justify-content: center; }
 
 /* ───────────────────────────── tool bar ───────────────────────────── */
 
@@ -279,28 +297,39 @@
 .stack-chip[data-accent] { background: var(--accent-tint); border-color: var(--accent); color: var(--accent-text); }
 .stack-chip[data-accent] .stack-chip__value { color: var(--link); }
 
-/* ───────────────────────────── tool drawer ───────────────────────────── */
+/* ───────────────────────────── tool panel ───────────────────────────── */
 
-.drawer {
-  flex: 0 0 auto;
+/*
+ * A tool's controls, in the right rail rather than a drawer across the top.
+ * The drawer was up to 46vh of the window, taken off the picture at exactly
+ * the moment — cropping, placing a mask — when the picture is what you are
+ * looking at. Here it costs nothing: the rail is already there, and the
+ * adjustments it hides are not ones you reach for mid-crop.
+ */
+.tool-panel {
   display: flex;
   flex-direction: column;
-  max-height: 46vh;
-  background: var(--bg-rail);
-  border-bottom: 1px solid var(--line);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.32);
+  min-height: 0;
+  background: var(--bg-panel);
+  animation: rail-swap var(--swap) ease-out;
 }
 
-.drawer__head {
+.tool-panel__head {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--line-hair);
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 20px 13px;
+  border-bottom: 1px solid var(--line);
   flex: 0 0 auto;
 }
 
-.drawer__icon {
+/* Two rows, not the drawer's one: at a third of the width, the title and its
+   buttons take the first, and what the tool does and how to undo it the
+   second. */
+.tool-panel__row { display: flex; align-items: center; gap: 10px; }
+.tool-panel__row--sub { align-items: baseline; gap: 12px; }
+
+.tool-panel__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -310,14 +339,20 @@
   color: var(--accent-text);
   background: var(--accent-tint);
   border: 1px solid var(--accent);
+  flex: 0 0 auto;
 }
 
-.drawer__title { margin: 0; font-size: 16px; font-weight: 700; }
-.drawer__hint { font-size: 13px; color: var(--text-dim); }
-.drawer__spacer { flex: 1; }
-.drawer__buttons { display: flex; gap: 8px; margin-left: 8px; }
+.tool-panel__title { margin: 0; font-size: 16px; font-weight: 700; flex: 1; }
+.tool-panel__hint {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.tool-panel__buttons { display: flex; gap: 8px; flex: 0 0 auto; }
 
-.drawer__body { overflow-y: auto; padding: 16px; }
+.tool-panel__body { overflow-y: auto; padding: 14px 20px 18px; }
 
 .tool { display: flex; flex-direction: column; gap: 16px; }
 
@@ -701,14 +736,60 @@
 
 /* ───────────────────────────── right rail ───────────────────────────── */
 
-.rail {
+/*
+ * The rail and the open tool's panel are one column and one grid cell, so
+ * picking a tool swaps what the right-hand side shows instead of resizing the
+ * viewport. `--swap` is the one knob for how that swap reads: long enough to
+ * follow the eye across, short enough that it is over before anyone could call
+ * it a wait.
+ */
+.rail-dock {
+  --swap: 130ms;
+
   width: 372px;
   flex: 0 0 372px;
+  display: grid;
+  grid-template: "dock" 1fr / 1fr;
+  min-height: 0;
+  /* Both children fade against this rather than against the app background,
+     so a swap never flashes a hole where the rail was. */
+  background: var(--bg-panel);
+  border-left: 1px solid var(--line);
+}
+
+.rail-dock > * { grid-area: dock; min-height: 0; }
+
+.rail {
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
-  border-left: 1px solid var(--line);
   overflow-y: auto;
+  transition: opacity var(--swap, 130ms) ease-out, transform var(--swap, 130ms) ease-out;
+}
+
+/*
+ * Hidden, not unmounted and not display:none — both of those drop the rail's
+ * scroll position, and coming back from a crop to the top of a rail you had
+ * scrolled to the bottom of is its own small insult. `visibility` keeps the
+ * box, the scroll and the fact that nothing inside it can be tabbed to.
+ *
+ * It goes instantly: the tool panel is what the eye should follow, and a rail
+ * still fading underneath a panel fading in is two things at half opacity.
+ * The fade is only on the way back, where there is nothing to fade against.
+ */
+.rail-dock[data-tool] .rail {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(8px);
+  transition: none;
+}
+
+@keyframes rail-swap {
+  from { opacity: 0; transform: translateX(8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-dock { --swap: 0s; }
 }
 
 .panel { border-bottom: 1px solid var(--line); }
@@ -753,16 +834,16 @@
 .panel__chevron { font-size: 15px; color: var(--text-dim); }
 .panel__chevron--button { background: none; border: none; cursor: pointer; padding: 0 0 0 6px; }
 
-/* Tool content is shared with the drawer, which is far wider. In the rail it
-   always collapses to a single column. */
-.rail .tool { gap: 14px; }
-.rail .tool__columns { grid-template-columns: 1fr; gap: 14px; }
-.rail .tool__group--curve { max-width: none; }
+/* Tool content is written for a column that could be wide. In the dock — the
+   rail's panels and the open tool's alike — it always collapses to one. */
+.rail-dock .tool { gap: 14px; }
+.rail-dock .tool__columns { grid-template-columns: 1fr; gap: 14px; }
+.rail-dock .tool__group--curve { max-width: none; }
 /* Stacking the footer row turns the main axis vertical, so the row layout's
    `flex: 1 1 320px` would read as a 320px-tall slider. Size to content instead. */
-.rail .tool__footer-row { flex-direction: column; align-items: stretch; gap: 10px; }
-.rail .tool__footer-row > * { flex: 0 0 auto; }
-.rail .tool__hint--inline { min-width: 0; }
+.rail-dock .tool__footer-row { flex-direction: column; align-items: stretch; gap: 10px; }
+.rail-dock .tool__footer-row > * { flex: 0 0 auto; }
+.rail-dock .tool__hint--inline { min-width: 0; }
 
 /* ───────────────────────────── histogram ───────────────────────────── */
 
@@ -781,7 +862,13 @@
 
 /* ───────────────────────────── idle rail ───────────────────────────── */
 
-.rail--idle { gap: 28px; padding: 26px 20px; }
+.rail--idle {
+  width: 372px;
+  flex: 0 0 372px;
+  border-left: 1px solid var(--line);
+  gap: 28px;
+  padding: 26px 20px;
+}
 .idle-group { display: flex; flex-direction: column; gap: 12px; }
 .idle-group__title { font-size: 15px; font-weight: 700; color: var(--text-muted); }
 .idle-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -1286,7 +1373,7 @@
 /* ───────────────────────────── narrow screens ───────────────────────────── */
 
 @media (max-width: 1240px) {
-  .rail { width: 330px; flex-basis: 330px; }
+  .rail-dock, .rail--idle { width: 330px; flex-basis: 330px; }
 }
 
 @media (max-width: 1000px) {
@@ -1330,13 +1417,22 @@
   .topbar__status { display: none; }
   .toolbar { height: auto; flex-wrap: wrap; padding: 10px 12px; gap: 10px; }
   .toolbar__tools { flex-wrap: wrap; }
-  .drawer { max-height: 56vh; }
   .app__body { flex-direction: column; overflow-y: auto; }
   .filmstrip { width: 100%; flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--line); }
   .filmstrip__list { flex-direction: row; overflow-x: auto; }
   .filmstrip__list li { flex: 0 0 110px; }
   .thumb--empty { flex: 0 0 110px; }
-  .rail { width: 100%; flex-basis: auto; border-left: none; border-top: 1px solid var(--line); }
+  .rail-dock, .rail--idle {
+    width: 100%;
+    flex-basis: auto;
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
+  /* Stacked, the page itself scrolls and the column has no height of its own
+     to share, so a shared cell would be as tall as the longer of the two.
+     Only whichever one is showing joins the flow. */
+  .rail-dock { display: block; }
+  .rail-dock[data-tool] .rail { display: none; }
   /* Full width now, so fill it rather than stretching three tiles across. */
   .looks__grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
   .app__center { min-height: 60vh; }
@@ -1978,16 +2074,37 @@ kbd {
  */
 .aspect-custom { display: inline-flex; align-items: center; gap: 5px; }
 
-/* Inline with the chips and at chip height, like the custom aspect fields:
-   the crop settings share the row rather than opening a panel beneath it,
-   because anything that opens beneath takes the height from the viewport the
-   crop is being judged in. */
-.subject-crop { display: inline-flex; align-items: center; gap: 8px; }
+/*
+ * Three numbers and the button that uses them.
+ *
+ * This used to share the chips' line, on the reasoning that anything opening
+ * beneath took height from the viewport being cropped in. That was true of the
+ * drawer; it is not true of the rail, which is there either way. Freed of the
+ * line, the labels stop being single letters wedged between fields and the
+ * button stops wrapping onto two.
+ *
+ * Boxed, because it now is what the old comment did not want it to be — a
+ * panel under a disclosure — and reading as one is how it stays tied to the
+ * Subject chip that opened it rather than floating between the chips and the
+ * hint below.
+ */
+.subject-crop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 11px 12px 12px;
+  background: var(--surface-row-hover);
+  border: 1px solid var(--line-hair);
+  border-radius: var(--radius);
+}
+
+.subject-crop__fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 
 .subject-crop__field {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
   font-size: 12px;
   color: var(--text-dim);
   cursor: default;
@@ -1995,8 +2112,11 @@ kbd {
 
 .subject-crop__label { text-transform: uppercase; letter-spacing: 0.04em; }
 
+.subject-crop__entry { display: flex; align-items: center; gap: 4px; min-width: 0; }
+
 .subject-crop__input {
-  width: 46px;
+  min-width: 0;
+  flex: 1;
   font-size: 13px;
   padding: 5px 6px;
   color: var(--text);
@@ -2004,8 +2124,22 @@ kbd {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
 }
+.subject-crop__input:focus-visible { border-color: var(--accent); outline: none; }
 
-.subject-crop__unit { color: var(--text-dim); }
+.subject-crop__unit { flex: 0 0 auto; color: var(--text-dim); }
+
+/* The one thing here that does something, rather than the three that only
+   describe what it should do. */
+.subject-crop__go {
+  justify-content: center;
+  font-size: 14px;
+  padding: 7px 14px;
+  color: var(--accent-text);
+  background: var(--surface);
+  border-color: var(--accent);
+}
+.subject-crop__go:hover:not(:disabled) { background: var(--accent-tint); }
+.subject-crop__go:disabled { opacity: 0.55; }
 
 /* A chip that opens something, rather than one that chooses. Marked by the
    text going bright and a caret, not by the filled treatment the aspect chips
@@ -2013,13 +2147,6 @@ kbd {
    would read as two ratios chosen at once. */
 .chip--mode[data-open]::after { content: ' \25BE'; }
 .chip--mode[data-open] { color: var(--accent); border-color: var(--line-strong); }
-
-/* The chip that does something, rather than the ones that only choose. */
-.chip--go {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.chip--go:disabled { opacity: 0.55; }
 
 .aspect-custom__field {
   width: 52px;

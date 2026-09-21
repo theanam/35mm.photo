@@ -41,8 +41,13 @@ export type ToolId = PanelId
 export interface ToolDef {
   id: ToolId
   label: string
-  /** Sits beside the title in the drawer header. */
+  /** Sits under the title in the tool panel's header. */
   hint: string
+  /**
+   * Used where a tab is only as wide as its word — the phone's tool strip.
+   * Only a tool whose full label is a phrase needs one.
+   */
+  short?: string
   Icon: ComponentType<{ size?: number }>
   Content: ComponentType
   /** True when this tool holds values away from their defaults. */
@@ -131,8 +136,9 @@ export const TOOLS: ToolDef[] = [
   },
   {
     id: 'crop',
-    label: 'Crop',
-    hint: 'aspect, straighten and rotation',
+    label: 'Crop & transform',
+    short: 'Crop',
+    hint: 'aspect, straighten, rotate and flip',
     Icon: IconCrop,
     Content: CropTool,
     isDirty: hasCropEdits,
@@ -188,11 +194,11 @@ export const TOOLS: ToolDef[] = [
 ]
 
 /**
- * Tools that live in the top toolbar, each opening a drawer with its own
- * apply/discard. Geometry goes here because it needs the whole viewport and a
- * commit gesture; the continuous colour adjustments stay in the right rail.
- * Masks join them for the same reason: placing one is a gesture on the picture,
- * not a slider you leave open.
+ * Tools that live in the top toolbar, each taking over the right rail with its
+ * own apply/discard. Geometry goes here because it needs the whole viewport and
+ * a commit gesture; the continuous colour adjustments are what the rail holds
+ * the rest of the time. Masks join them for the same reason: placing one is a
+ * gesture on the picture, not a slider you leave open.
  *
  * Add an id here to promote a tool to the toolbar — nothing else needs to change.
  */
@@ -215,7 +221,7 @@ export function toolbarTools(meta: ImageMeta | null): ToolDef[] {
   )
 }
 
-/** True when a chip or shortcut should open the drawer rather than the rail. */
+/** True when a chip or shortcut should open the tool rather than a rail panel. */
 export function isToolbarTool(id: ToolId): boolean {
   return TOOLBAR_TOOL_IDS.includes(id)
 }

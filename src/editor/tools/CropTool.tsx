@@ -3,7 +3,7 @@ import { Slider } from '../../app/ui/Slider'
 import { useEditor } from '../edit-stack/store'
 import { displaySize, outputSize } from '../gpu/transform'
 import { formatAspect, parseAspectRatio } from '../edit-stack/aspect'
-import { IconSwap } from '../../app/ui/icons'
+import { IconFlipH, IconFlipV, IconRotateLeft, IconRotateRight, IconSwap } from '../../app/ui/icons'
 import { isModelCached } from '../../subject/detect'
 
 /** Aspect presets, in the design's order. The ratio comes from the id itself. */
@@ -248,15 +248,17 @@ export function CropTool() {
           </div>
 
           {subjectMode && (
-            <span className="subject-crop">
-              <SubjectField label="Margin" title="Room around the subject, as a fraction of its own size"
-                value={margin} min={0} max={60} onChange={setMargin} />
-              <SubjectField label="X" title="Shift sideways — room for a subject to look into"
-                value={offsetX} min={-50} max={50} onChange={setOffsetX} />
-              <SubjectField label="Y" title="Shift up or down — negative leaves headroom"
-                value={offsetY} min={-50} max={50} onChange={setOffsetY} />
+            <div className="subject-crop">
+              <div className="subject-crop__fields">
+                <SubjectField label="Margin" title="Room around the subject, as a fraction of its own size"
+                  value={margin} min={0} max={60} onChange={setMargin} />
+                <SubjectField label="X" title="Shift sideways — room for a subject to look into"
+                  value={offsetX} min={-50} max={50} onChange={setOffsetX} />
+                <SubjectField label="Y" title="Shift up or down — negative leaves headroom"
+                  value={offsetY} min={-50} max={50} onChange={setOffsetY} />
+              </div>
               <button
-                className="chip chip--go"
+                className="button subject-crop__go"
                 onClick={() => void cropToSubject({ margin, offsetX, offsetY })}
                 disabled={detecting}
                 title={
@@ -267,7 +269,7 @@ export function CropTool() {
               >
                 {detecting ? 'Looking…' : 'Crop to subject'}
               </button>
-            </span>
+            </div>
           )}
 
           <p className="tool__hint">Drag the box or its handles directly on the photo.</p>
@@ -287,17 +289,20 @@ export function CropTool() {
             format={(v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}°`}
             onChange={setAngle}
           />
-          <div className="button-row">
+          {/* Two rotates, then two flips — see .transform-grid. */}
+          <div className="transform-grid">
             <button
               className="button button--toggle"
               onClick={() => updateCrop({ rotate90: (edits.crop.rotate90 + 3) % 4 }, 'rotate')}
             >
+              <IconRotateLeft size={15} />
               Rotate left
             </button>
             <button
               className="button button--toggle"
               onClick={() => updateCrop({ rotate90: (edits.crop.rotate90 + 1) % 4 }, 'rotate')}
             >
+              <IconRotateRight size={15} />
               Rotate right
             </button>
             <button
@@ -306,6 +311,7 @@ export function CropTool() {
               aria-pressed={edits.crop.flipH}
               onClick={() => updateCrop({ flipH: !edits.crop.flipH }, 'flip')}
             >
+              <IconFlipH size={15} />
               Flip H
             </button>
             <button
@@ -314,6 +320,7 @@ export function CropTool() {
               aria-pressed={edits.crop.flipV}
               onClick={() => updateCrop({ flipV: !edits.crop.flipV }, 'flip')}
             >
+              <IconFlipV size={15} />
               Flip V
             </button>
           </div>
@@ -324,13 +331,13 @@ export function CropTool() {
 }
 
 /**
- * One number on the crop-to-subject row.
+ * One number in the crop-to-subject form.
  *
- * A field rather than a slider because all three have to share a line with the
- * aspect chips: three slider rows cost a quarter of the viewport's height, and
- * the viewport is the thing you are cropping in. Values are percentages of the
- * subject's own box, so they are small whole numbers and typing one is no
- * hardship.
+ * A field rather than a slider because nothing happens until the button is
+ * pressed: a slider promises the picture will move as you drag it, and this
+ * one would sit there doing nothing until you went looking for the button.
+ * Values are percentages of the subject's own box, so they are small whole
+ * numbers and typing one is no hardship.
  */
 function SubjectField({
   label,
@@ -350,20 +357,22 @@ function SubjectField({
   return (
     <label className="subject-crop__field" title={title}>
       <span className="subject-crop__label">{label}</span>
-      <input
-        className="subject-crop__input mono"
-        type="number"
-        min={min}
-        max={max}
-        step={1}
-        value={Math.round(value * 100)}
-        aria-label={`${title} (per cent)`}
-        onChange={(e) => {
-          const n = Number(e.target.value)
-          if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)) / 100)
-        }}
-      />
-      <span className="subject-crop__unit" aria-hidden>%</span>
+      <span className="subject-crop__entry">
+        <input
+          className="subject-crop__input mono"
+          type="number"
+          min={min}
+          max={max}
+          step={1}
+          value={Math.round(value * 100)}
+          aria-label={`${title} (per cent)`}
+          onChange={(e) => {
+            const n = Number(e.target.value)
+            if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)) / 100)
+          }}
+        />
+        <span className="subject-crop__unit" aria-hidden>%</span>
+      </span>
     </label>
   )
 }
