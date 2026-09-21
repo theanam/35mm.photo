@@ -75,11 +75,18 @@ export interface ExportRequest {
   frameId?: string
   /** Set to overwrite the file the photo came from instead of prompting. */
   overwriteHandle?: FileSystemFileHandle
+  /**
+   * Offer the file to the share sheet where no save dialog exists. Decided by
+   * the caller because it is a question about the shape of the app rather than
+   * about the file: a phone means it, a desktop browser that merely happens to
+   * have `navigator.share` does not.
+   */
+  preferShare?: boolean
   onProgress?: (stage: string) => void
 }
 
 export interface ExportResult {
-  outcome: 'saved' | 'downloaded' | 'cancelled'
+  outcome: 'saved' | 'shared' | 'downloaded' | 'cancelled'
   filename: string
   width: number
   height: number
@@ -137,7 +144,9 @@ export async function exportImage(request: ExportRequest): Promise<ExportResult>
       }
     }
 
-    const outcome = await saveBlob(blob, filename, MIME[settings.format], EXT[settings.format])
+    const outcome = await saveBlob(blob, filename, MIME[settings.format], EXT[settings.format], {
+      preferShare: request.preferShare,
+    })
     return { outcome, filename, width, height, bytes: blob.size }
   }
 }

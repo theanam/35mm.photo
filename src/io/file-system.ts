@@ -194,13 +194,60 @@ async function walkEntry(entry: FileSystemEntry, out: OpenedFile[], depth = 0) {
   }
 }
 
-/** Write a blob back to disk, preferring a real save dialog. */
+/**
+ * Hand the file to the operating system's share sheet.
+ *
+ * What "save" has to mean on a phone. A download there lands in whatever the
+ * browser calls its downloads folder, several taps from the camera roll and
+ * invisible to everything else; the share sheet is the one place that offers
+ * Save to Photos, and messages, and mail, and the file manager, all at once.
+ *
+ * Returns `unavailable` rather than throwing for anything that is not an
+ * outright refusal by the person, so a caller can fall back to a download and
+ * still put the file somewhere. That includes losing the user gesture: sharing
+ * needs transient activation, and a full-resolution render can easily outlive
+ * the tap that started it.
+ */
+export async function shareBlob(
+  blob: Blob,
+  filename: string,
+  mimeType: string,
+): Promise<'shared' | 'cancelled' | 'unavailable'> {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
+    return 'unavailable'
+  }
+
+  let file: File
+  try {
+    file = new File([blob], filename, { type: mimeType })
+  } catch {
+    return 'unavailable'
+  }
+
+  // Asked, not assumed: a browser can have `share` and still refuse files, and
+  // sharing text where a photograph was meant is worse than a download.
+  if (typeof navigator.canShare !== 'function' || !navigator.canShare({ files: [file] })) {
+    return 'unavailable'
+  }
+
+  try {
+    await navigator.share({ files: [file] })
+    return 'shared'
+  } catch (err) {
+    if (isAbort(err)) return 'cancelled'
+    console.warn('[35mm] the share sheet refused the file; falling back to a download', err)
+    return 'unavailable'
+  }
+}
+
+/** Write a blob out, preferring a real save dialog, then a share, then a download. */
 export async function saveBlob(
   blob: Blob,
   suggestedName: string,
   mimeType: string,
   extension: string,
-): Promise<'saved' | 'downloaded' | 'cancelled'> {
+  options: { preferShare?: boolean } = {},
+): Promise<'saved' | 'shared' | 'downloaded' | 'cancelled'> {
   if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -215,6 +262,17 @@ export async function saveBlob(
       if (isAbort(err)) return 'cancelled'
       console.warn('[35mm] save dialog failed, falling back to download', err)
     }
+  }
+
+  /*
+   * After the save dialog, before the download. Where a save dialog exists it is
+   * the better answer — it puts the file exactly where the person said — and
+   * where it does not, this is tried before falling back to a download that a
+   * phone would half-swallow.
+   */
+  if (options.preferShare) {
+    const shared = await shareBlob(blob, suggestedName, mimeType)
+    if (shared !== 'unavailable') return shared
   }
 
   downloadBlob(blob, suggestedName)

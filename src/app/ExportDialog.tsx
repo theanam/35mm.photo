@@ -8,6 +8,7 @@ import {
   type ExportFormat,
 } from '../io/export'
 import { exportLayout } from '../editor/gpu/transform'
+import { useIsPhone } from './phone/useLayoutMode'
 
 const FORMATS: { id: ExportFormat; label: string; note: string }[] = [
   { id: 'jpeg', label: 'JPEG', note: 'smallest, no transparency' },
@@ -28,6 +29,9 @@ export function ExportDialog() {
   const settings = useEditor((s) => s.exportSettings)
   const setSettings = useEditor((s) => s.setExportSettings)
   const photo = useEditor((s) => s.photo)
+  // A phone has no save dialog and a downloads folder nobody visits, so the
+  // share sheet is what "save" means there.
+  const phone = useIsPhone()
   const edits = useEditor((s) => s.edits)
   const toast = useEditor((s) => s.toast)
 
@@ -89,6 +93,7 @@ export function ExportDialog() {
         settings,
         sourceFile: photo.file,
         frameId: photo.frameId,
+        preferShare: phone,
         overwriteHandle: overwrite ? photo.handle : undefined,
         onProgress: setBusy,
       })
@@ -97,8 +102,13 @@ export function ExportDialog() {
         setBusy(null)
         return
       }
+      // Says which of the three it did, because they end in different places
+      // — and a share that quietly became a download is worth knowing about.
+      const verb =
+        result.outcome === 'shared' ? 'Shared' : result.outcome === 'saved' ? 'Saved' : 'Downloaded'
       toast(
-        `${result.filename} · ${result.width} × ${result.height} · ${(result.bytes / 1024 / 1024).toFixed(1)} MB`,
+        `${verb} ${result.filename} · ${result.width} × ${result.height} · ` +
+          `${(result.bytes / 1024 / 1024).toFixed(1)} MB`,
       )
       setOpen(false)
     } catch (err) {
@@ -206,7 +216,7 @@ export function ExportDialog() {
             Cancel
           </button>
           <button className="button button--accent" onClick={() => run(false)} disabled={Boolean(busy)}>
-            {busy ? `${busy}…` : 'Export'}
+            {busy ? `${busy}…` : phone ? 'Share' : 'Export'}
           </button>
         </footer>
       </div>
