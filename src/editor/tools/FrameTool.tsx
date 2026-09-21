@@ -14,6 +14,27 @@ import { FRAME_PRESETS } from '../presets/frames'
 /** The box a preview is fitted inside, so a grid of them stays even. */
 const PREVIEW_BOX = 74
 
+/** How finely the percentage slider moves; the pixel one is matched to it. */
+const PERCENT_STEP = 0.5
+
+/**
+ * The nearest round number at or below a raw increment — 1, 2, 5, 10, 20, 50…
+ *
+ * A pixel width dragged on a 147-point track over a range of a thousand-odd
+ * lands wherever the arithmetic puts it: 8, 15, 23, 31. The percentage slider
+ * next to it gives 0.5, 1.0, 1.5, because its step is a number a person chose.
+ * This gives the pixel slider the same courtesy at the same granularity, so
+ * dragging one after the other feels like one control in two units rather than
+ * two controls that disagree.
+ */
+function niceStep(raw: number): number {
+  if (!(raw > 0) || !Number.isFinite(raw)) return 1
+  const magnitude = Math.pow(10, Math.floor(Math.log10(raw)))
+  const n = raw / magnitude
+  const pick = n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10
+  return Math.max(1, Math.round(pick * magnitude))
+}
+
 /**
  * The picture in the mat, at the shape the file would have.
  *
@@ -131,9 +152,23 @@ export function FrameTool() {
   /** The shorter edge every percentage is measured against. */
   const short = photoSize ? Math.min(photoSize.width, photoSize.height) : 0
 
-  /** The ceiling in the current unit — a mat as thick as the picture is short. */
-  const maxWidth = frame.unit === 'pixel' ? Math.max(1, Math.round(short)) : 100
-  const step = frame.unit === 'pixel' ? 1 : 0.5
+  /*
+   * The two scales are one scale in two units: same floor, same ceiling, same
+   * increments. A hundred percent of the shorter edge is the widest mat the
+   * slider offers, and in pixels that is the shorter edge itself.
+   */
+  const nominalMax = frame.unit === 'pixel' ? Math.max(1, Math.round(short)) : 100
+  /*
+   * Except when the state already holds more. Padding a panorama out to a
+   * square asks for more than the whole shorter edge, and a slider whose
+   * maximum was below the value it is showing would strand the thumb at the end
+   * and collapse the width on the next touch.
+   */
+  const widest = Math.max(frame.top, frame.right, frame.bottom, frame.left)
+  const maxWidth = Math.max(nominalMax, Math.ceil(Number.isFinite(widest) ? widest : 0))
+
+  const step =
+    frame.unit === 'pixel' ? niceStep((PERCENT_STEP / 100) * short) : PERCENT_STEP
   const unitLabel = frame.unit === 'pixel' ? 'px' : '%'
 
   /**

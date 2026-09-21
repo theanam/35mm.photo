@@ -76,6 +76,23 @@ export function Slider({
 
   const clamp = useCallback((v: number) => Math.min(max, Math.max(min, v)), [min, max])
 
+  /*
+   * Rounding to the step ourselves, rather than letting the range input do it.
+   *
+   * The browser snaps its *own* value to the step grid on assignment, so a
+   * typed 43 against a step of 5 became 45 inside the control: the field said
+   * one number, and the next drag resumed from another. Taking `step: any` and
+   * rounding here keeps dragging on the tidy grid while an exact number stays
+   * exactly what was asked for.
+   */
+  const snap = useCallback(
+    (v: number) => {
+      const size = step || 1
+      return clamp(Math.round(v / size) * size)
+    },
+    [step, clamp],
+  )
+
   /** Take what was typed, or put the field back if it was not a number. */
   const commit = useCallback(() => {
     if (draft === null) return
@@ -111,11 +128,14 @@ export function Slider({
           type="range"
           min={min}
           max={max}
-          step={step}
+          step={editable ? 'any' : step}
           value={value}
           disabled={disabled}
           aria-label={label}
-          onChange={(e) => onChange(Number(e.target.value))}
+          onChange={(e) => {
+            const raw = Number(e.target.value)
+            onChange(editable ? snap(raw) : raw)
+          }}
           onPointerDown={(e) => {
             // Alt-click is the Lightroom habit for zeroing a slider.
             if (e.altKey) {
