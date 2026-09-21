@@ -137,6 +137,8 @@ interface EditorState {
   batch: BatchState
   syncOpen: boolean
   exifOpen: boolean
+  /** Confirmation for "reset everything", which throws away the whole stack. */
+  resetOpen: boolean
   exportSettings: ExportSettings
   histogram: HistogramData | null
   /** Published by the viewport so the bottom bar can show the zoom level. */
@@ -222,6 +224,7 @@ interface EditorState {
   setAboutOpen: (open: boolean) => void
   setSyncOpen: (open: boolean) => void
   setExifOpen: (open: boolean) => void
+  setResetOpen: (open: boolean) => void
   setExportSettings: (patch: Partial<ExportSettings>) => void
   setHistogram: (data: HistogramData) => void
   setViewScale: (scale: number, fit: number) => void
@@ -300,6 +303,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   aboutOpen: false,
   syncOpen: false,
   exifOpen: false,
+  resetOpen: false,
   batch: { ...IDLE_BATCH },
   exportSettings: { ...DEFAULT_EXPORT },
   histogram: null,
@@ -684,6 +688,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       histogram: null,
       activeMaskId: null,
       exifOpen: false,
+      resetOpen: false,
     })
   },
 
@@ -1049,6 +1054,7 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   resetAll() {
     get().replaceEdits(defaultEdits(), 'reset')
+    set({ resetOpen: false })
     get().toast('All edits reset')
   },
 
@@ -1144,6 +1150,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setExifOpen(open) {
     set({ exifOpen: open })
+  },
+
+  setResetOpen(open) {
+    set({ resetOpen: open })
   },
 
   setExportOpen(open) { set({ exportOpen: open }) },

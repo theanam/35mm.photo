@@ -13,6 +13,7 @@ import { ExportDialog } from './ExportDialog'
 import { AboutDialog } from './AboutDialog'
 import { SyncDialog } from './SyncDialog'
 import { ExifDialog } from './ExifDialog'
+import { ResetDialog } from './ResetDialog'
 import { BatchBar } from './BatchBar'
 import { Toasts } from './Toasts'
 import { useKeyboard } from './useKeyboard'
@@ -107,6 +108,7 @@ export function App() {
       <AboutDialog />
       <SyncDialog />
       <ExifDialog />
+      <ResetDialog />
       <BatchBar />
       <Toasts />
     </div>

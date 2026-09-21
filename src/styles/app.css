@@ -131,6 +131,15 @@
 }
 .button--accent:hover:not(:disabled) { background: var(--accent-hover); }
 
+/* The one button in the app that throws work away. Borrows the colours the
+   discard icon already uses rather than inventing a second red. */
+.button--danger {
+  color: #e8b6ae;
+  background: #2a1e1c;
+  border-color: #8a4a44;
+}
+.button--danger:hover:not(:disabled) { background: #362523; border-color: #a35a52; }
+
 /* Two-state toggle. Off is a normal, obviously-clickable button; on is filled
    with the accent tint and outlined. Neither reads as disabled. */
 .button--toggle {
@@ -1312,6 +1321,23 @@
 
 .modal__footer { display: flex; align-items: center; gap: 10px; padding: 14px 20px 18px; border-top: 1px solid var(--line); }
 .modal__spacer { flex: 1; }
+
+/* What the reset is about to clear, in the toolbar's own words. Not the stack
+   chips themselves: those are buttons that jump to a control, and in here
+   there is nothing to jump to. */
+.reset-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.reset-list li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.reset-list__value { color: var(--text-dim); }
 
 .field { display: flex; flex-direction: column; gap: 9px; }
 .field__label { font-size: 14px; color: var(--text-muted); }

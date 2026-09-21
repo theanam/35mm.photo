@@ -25,8 +25,10 @@ export function ToolPanel() {
     if (!tool) return
 
     const onKey = (event: KeyboardEvent) => {
-      // The export dialog is modal over the panel and owns the keys while open.
-      if (useEditor.getState().exportOpen) return
+      // A dialog over the panel owns the keys while it is open — otherwise Esc
+      // discards the tool behind the reset confirmation, and Enter applies it.
+      const { exportOpen, resetOpen } = useEditor.getState()
+      if (exportOpen || resetOpen) return
 
       if (event.key === 'Escape') {
         event.preventDefault()

@@ -19,7 +19,7 @@ export function Toolbar() {
   const redo = useEditor((s) => s.redo)
   const canUndo = useEditor((s) => s.canUndo())
   const canRedo = useEditor((s) => s.canRedo())
-  const resetAll = useEditor((s) => s.resetAll)
+  const setResetOpen = useEditor((s) => s.setResetOpen)
   const copyLook = useEditor((s) => s.copyLook)
   const pasteLook = useEditor((s) => s.pasteLook)
   const hasClipboard = useEditor((s) => s.clipboard !== null)
@@ -84,7 +84,13 @@ export function Toolbar() {
         <button className="icon-button" onClick={pasteLook} disabled={!hasClipboard} title="Paste look (⌘V)" aria-label="Paste look">
           <IconPaste />
         </button>
-        <button className="icon-button" onClick={resetAll} disabled={!dirty} title="Reset everything" aria-label="Reset all edits">
+        <button
+          className="icon-button"
+          onClick={() => setResetOpen(true)}
+          disabled={!dirty}
+          title="Reset everything"
+          aria-label="Reset all edits"
+        >
           <IconReset />
         </button>
       </div>
