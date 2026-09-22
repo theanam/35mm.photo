@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { groupAssets, verifyGroups } from './src/pwa/asset-groups'
 
 const SITE = 'https://35mm.photo/'
 
@@ -30,6 +32,78 @@ function sitemap(): Plugin {
           '  </url>\n' +
           '</urlset>\n',
       })
+    },
+  }
+}
+
+/**
+ * Writes down what this build produced, so the offline shell can precache it
+ * and the prefetcher can warm the rest.
+ *
+ * Two problems are being solved here. The first is that Vite fingerprints its
+ * output, so nothing checked in can name the files; the manifest is emitted
+ * alongside them instead. The second is subtler: `sw.js` is served under a
+ * stable name and is byte-identical between deploys, so a browser has no reason
+ * to re-install it — and a service worker that never re-installs would go on
+ * precaching the previous build's filenames forever. Stamping the build id into
+ * it is what makes each deploy a new worker.
+ */
+function precache(): Plugin {
+  return {
+    name: '35mm:precache',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      /*
+       * Named rather than read from the bundle, for two different reasons.
+       *
+       * `public/` is copied after the bundle is generated, so those files are
+       * not in it — stable names are the whole reason they live there. And
+       * `index.html` is emitted by Vite's own HTML plugin, which runs after
+       * this one, so it is not in the bundle *yet*. Leaving it out cost the
+       * offline reload: the navigation fallback matches on `index.html`.
+       */
+      const alsoShipped = [
+        'index.html',
+        'manifest.webmanifest',
+        'icon.svg',
+        'favicon.svg',
+        'models/u2netp.onnx',
+      ]
+      const groups = groupAssets([...Object.keys(bundle), ...alsoShipped])
+
+      // A misclassified binary is silent, and expensive: the shell is precached
+      // for every visitor, so a renamed wasm landing there would hand seventeen
+      // megabytes to someone who only wanted to crop a JPEG. Fail the build.
+      const problems = verifyGroups(groups)
+      if (problems.length) {
+        this.error(`precache grouping is wrong:\n  ${problems.join('\n  ')}`)
+      }
+
+      // Hash the shell's own filenames: they carry content hashes, so this
+      // changes whenever anything in the app does, and not otherwise.
+      const build = createHash('sha256').update(groups.shell.join('|')).digest('hex').slice(0, 12)
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'precache.json',
+        source: JSON.stringify({ build, ...groups }),
+      })
+    },
+    /**
+     * `public/sw.js` is copied rather than bundled, so the stamp above never
+     * sees it. Writing it again at close is the only hook that runs after the
+     * copy.
+     */
+    async closeBundle() {
+      const { readFile, writeFile } = await import('node:fs/promises')
+      const path = 'dist/sw.js'
+      try {
+        const source = await readFile(path, 'utf8')
+        const manifest = JSON.parse(await readFile('dist/precache.json', 'utf8'))
+        await writeFile(path, source.replace('__BUILD__', manifest.build))
+      } catch (err) {
+        this.warn(`could not stamp the service worker: ${String(err)}`)
+      }
     },
   }
 }
@@ -78,7 +152,7 @@ function analytics(id: string | undefined): Plugin {
 // instead, such as a GitHub Pages project site. Dev always serves from the root.
 export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/' : (process.env.BASE_PATH ?? '/'),
-  plugins: [react(), sitemap(), analytics(process.env.GA_MEASUREMENT_ID)],
+  plugins: [react(), sitemap(), precache(), analytics(process.env.GA_MEASUREMENT_ID)],
   worker: { format: 'es' },
   /**
    * libraw-wasm starts its decoder with `new Worker(new URL('./worker.js',

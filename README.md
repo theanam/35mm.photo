@@ -83,7 +83,7 @@ thing it was placed over.
 - **Live histogram and RGB parade**
 - **Batch editing** — select many photos, sync settings by group, export a
   whole selection into one folder
-- **Installs as a PWA** and works offline
+- **Installs as a PWA** and works offline, including raw development and HEIC
 
 ## Formats
 
@@ -174,6 +174,7 @@ src/
 public/
   luts/         drop-in .cube files (see its README)
   sw.js         offline shell
+  precache.json written by the build; what to cache and what to warm
 brand/          brand sources and the social card's render step
 ```
 
@@ -188,6 +189,30 @@ everything else. They are stored in upright image coordinates — the picture th
 right way up, before the crop — which is what lets a mask stay on the thing it
 was placed over when the crop, the straighten or the quarter turns change
 underneath it.
+
+## Offline
+
+The build writes `precache.json` describing what it produced, split four ways:
+the shell, LibRaw, libheif and the subject detector. The service worker
+precaches the shell at install, so the app opens with no network after one
+visit rather than two — before, its own JS and CSS were only cached on the
+*second* load, because the worker takes control after the first one has already
+fetched them.
+
+The two file decoders are then warmed in the background once the app has
+settled, which is what makes a raw or a HEIC openable offline at all: nothing
+else ever fetched them, so a lazily-loaded decoder was simply absent without a
+network. Save-Data and 2g connections are left alone.
+
+The subject detector is deliberately not prefetched. It is about seventeen
+megabytes, the Masks panel asks before the first detection, and spending that
+quietly would go behind the back of a question the app already knows to ask.
+Once it has been fetched it is kept.
+
+Two caches, not one: the shell is keyed by a build id stamped into `sw.js`, so
+each deploy replaces it, while everything fingerprinted lives in a long-lived
+cache that survives deploys. Without that split, shipping a release would cost
+every user the detector again.
 
 Raw decoding and histogram binning run in workers. The LibRaw binary is 1.4 MB
 and sits behind a dynamic import, so it is fetched only when you open a raw
