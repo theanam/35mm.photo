@@ -56,7 +56,15 @@ export interface CustomPreset {
  * not by alphabetical order, so the grid groups by the kind of rendering each
  * one is: how a stock behaves, not who made it.
  */
-export const LOOK_GROUPS = ['everyday', 'reversal', 'reportage', 'negative', 'cine', 'mono'] as const
+export const LOOK_GROUPS = [
+  'everyday',
+  'reversal',
+  'reportage',
+  'negative',
+  'cine',
+  'mono',
+  'exotic',
+] as const
 
 export type LookGroup = (typeof LOOK_GROUPS)[number]
 
@@ -67,6 +75,7 @@ export const LOOK_GROUP_LABEL: Record<LookGroup, string> = {
   negative: 'Negative',
   cine: 'Cine',
   mono: 'Monochrome',
+  exotic: 'Exotic',
 }
 
 /** Sits under each section heading, so the grid explains itself. */
@@ -77,6 +86,7 @@ export const LOOK_GROUP_BLURB: Record<LookGroup, string> = {
   negative: 'Colour negative: lifted blacks, crossed shadows',
   cine: 'Low contrast, graded for the shadows',
   mono: 'Black and white, mixed rather than drained',
+  exotic: 'Processes that were never meant to be subtle',
 }
 
 /**

@@ -194,6 +194,44 @@ export const LOOKS: LookConfig[] = [
     defaultStrength: 100,
   },
 
+  {
+    id: 'carmine',
+    name: 'Carmine',
+    blurb: 'Vintage slide. Deep reds, warm light, blues gone slightly to cyan.',
+    group: 'reversal',
+    color: {
+      saturation: 1.15,
+      satRolloff: 0.45,
+      matrix: [1.04, 0.0, -0.04, -0.02, 1.02, 0.0, -0.02, -0.02, 1.04],
+      hueBands: [
+        // The red that this look is remembered for: darker as it gets richer,
+        // so a red car or a red door reads as pigment rather than as light.
+        { hue: 2, width: 50, shift: -4, sat: 1.2, lum: 0.9 },
+        // Skin goes ruddy rather than orange, and is otherwise left honest.
+        { hue: 28, width: 46, sat: 1.06 },
+        { hue: 55, width: 45, shift: -8, sat: 1.08 },
+        // Foliage was never this film's strength — it goes dark and a little
+        // olive, which is exactly what makes the reds stand out.
+        { hue: 115, width: 80, shift: 10, sat: 0.82, lum: 0.94 },
+        // A sky here is a cyan-leaning blue, not the purple-blue of the modern
+        // slide films, and it is darker than it was.
+        { hue: 225, width: 80, shift: -10, sat: 1.1, lum: 0.9 },
+        { hue: 190, width: 50, sat: 1.05 },
+      ],
+      shadowTint: [0.006, 0.0, -0.008],
+      highlightTint: [0.012, 0.006, -0.006],
+    },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.18, y: 0.11 },
+      { x: 0.5, y: 0.5 },
+      { x: 0.82, y: 0.88 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 8, size: 34, shadowBias: 0.5 },
+    defaultStrength: 100,
+  },
+
   /* ─────────────────────────── reportage ─────────────────────────── */
   {
     id: 'chrome',
@@ -373,6 +411,110 @@ export const LOOKS: LookConfig[] = [
     defaultStrength: 100,
   },
 
+  {
+    id: 'peach',
+    name: 'Peach',
+    blurb: 'The wedding negative. Peach skin, creamy highlights, greens held back.',
+    group: 'negative',
+    color: {
+      saturation: 0.9,
+      hueBands: [
+        // The reason this rendering is the one people reach for on a face:
+        // skin drifts a few degrees toward pink and comes up a touch brighter,
+        // which reads as flattered rather than tanned.
+        { hue: 25, width: 60, shift: -3, sat: 1.08, lum: 1.03 },
+        { hue: 0, width: 40, sat: 0.92 },
+        { hue: 55, width: 45, shift: -6, sat: 0.95 },
+        // Greens are the counterweight. Muted and a little olive, so the
+        // background of a garden portrait stays a background.
+        { hue: 115, width: 80, shift: 8, sat: 0.72, lum: 0.97 },
+        { hue: 225, width: 80, sat: 0.85, lum: 1.02 },
+      ],
+      highlightTint: [0.02, 0.012, -0.004],
+      shadowTint: [0.004, 0.002, 0.006],
+      blackLift: 0.02,
+      whiteDrop: 0.01,
+    },
+    toneCurve: [
+      { x: 0, y: 0.01 },
+      { x: 0.25, y: 0.25 },
+      { x: 0.6, y: 0.63 },
+      { x: 0.88, y: 0.9 },
+      { x: 1, y: 0.985 },
+    ],
+    grain: { amount: 18, size: 50, shadowBias: 0.55 },
+    defaultStrength: 100,
+  },
+  {
+    id: 'gold',
+    name: 'Gold',
+    blurb: 'Consumer negative in the sun. Golden highlights, warm reds, a yellow bias.',
+    group: 'negative',
+    color: {
+      saturation: 1.12,
+      satRolloff: 0.45,
+      // Blue pulled down a little in linear light: a warm bias that shows most
+      // where the picture is brightest, which is how a cheap warm film behaves.
+      matrix: [1.02, 0.03, -0.05, 0.0, 1.0, 0.0, -0.03, 0.03, 0.96],
+      hueBands: [
+        // Yellow is the whole personality. It gets brighter as well as louder.
+        { hue: 50, width: 60, sat: 1.12, lum: 1.04 },
+        { hue: 28, width: 55, sat: 1.1, lum: 1.02 },
+        { hue: 5, width: 45, shift: 6, sat: 1.06 },
+        // Greens go toward yellow rather than olive: sunlit grass, not moss.
+        { hue: 110, width: 75, shift: -12, sat: 0.9 },
+        // And a sky leans a touch toward teal, the way it does on a print from
+        // a chemist's minilab.
+        { hue: 225, width: 80, shift: -6, sat: 0.9, lum: 0.96 },
+      ],
+      highlightTint: [0.03, 0.02, -0.015],
+      shadowTint: [0.008, 0.002, -0.006],
+      blackLift: 0.015,
+    },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.2, y: 0.16 },
+      { x: 0.55, y: 0.57 },
+      { x: 0.85, y: 0.9 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 24, size: 52, shadowBias: 0.6 },
+    defaultStrength: 100,
+  },
+  {
+    id: 'mint',
+    name: 'Mint',
+    blurb: 'Airy negative. Minty greens, pale skin, magenta nowhere to be found.',
+    group: 'negative',
+    color: {
+      saturation: 0.92,
+      hueBands: [
+        // Foliage toward cyan, brighter: the mint this look is named for.
+        { hue: 120, width: 85, shift: 12, sat: 1.05, lum: 1.06 },
+        // Skin pale and a shade toward yellow, never tanned.
+        { hue: 25, width: 55, shift: 4, sat: 0.9, lum: 1.04 },
+        { hue: 0, width: 40, sat: 0.9 },
+        { hue: 55, width: 45, shift: 8, sat: 0.95 },
+        { hue: 225, width: 80, shift: -8, sat: 0.95, lum: 1.02 },
+        // The one colour this rendering famously cannot make.
+        { hue: 300, width: 50, sat: 0.8 },
+      ],
+      highlightTint: [0.0, 0.012, 0.008],
+      shadowTint: [-0.004, 0.01, 0.004],
+      blackLift: 0.03,
+      whiteDrop: 0.005,
+    },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.25, y: 0.28 },
+      { x: 0.6, y: 0.64 },
+      { x: 0.88, y: 0.91 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 20, size: 48, shadowBias: 0.5 },
+    defaultStrength: 100,
+  },
+
   /* ─────────────────────────── cine ─────────────────────────── */
   {
     id: 'cine-flat',
@@ -443,6 +585,43 @@ export const LOOKS: LookConfig[] = [
       { x: 1, y: 1 },
     ],
     grain: { amount: 20, size: 40, shadowBias: 0.6 },
+    defaultStrength: 100,
+  },
+
+  {
+    id: 'tungsten',
+    name: 'Tungsten',
+    blurb: 'Tungsten film out in daylight. Cool cyan shadows; lamps and neon glow.',
+    group: 'cine',
+    color: {
+      /*
+       * A film balanced for lamplight, exposed to the sky: everything neutral
+       * goes cold, and the only thing that stays warm is a light source. The
+       * blue row sums above one on purpose — this is the cast, not a tint that
+       * fades out in the highlights.
+       */
+      matrix: [0.93, 0.04, 0.03, 0.0, 0.99, 0.01, 0.0, 0.04, 1.02],
+      hueBands: [
+        // Whatever is actually red — a tail light, a neon sign, a lamp — is
+        // the one thing that comes out louder than it went in.
+        { hue: 8, width: 45, sat: 1.25, lum: 1.05 },
+        { hue: 55, width: 45, shift: -10, sat: 1.1 },
+        { hue: 120, width: 80, shift: 25, sat: 0.9 },
+        { hue: 225, width: 80, shift: -12, sat: 1.15, lum: 0.96 },
+      ],
+      shadowTint: [-0.02, 0.0, 0.03],
+      highlightTint: [-0.004, 0.006, 0.012],
+      blackLift: 0.035,
+      whiteDrop: 0.01,
+    },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.22, y: 0.22 },
+      { x: 0.55, y: 0.57 },
+      { x: 0.85, y: 0.88 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 28, size: 52, shadowBias: 0.6 },
     defaultStrength: 100,
   },
 
@@ -528,6 +707,289 @@ export const LOOKS: LookConfig[] = [
       { x: 1, y: 1 },
     ],
     grain: { amount: 22, size: 48, shadowBias: 0.45 },
+    defaultStrength: 100,
+  },
+
+  {
+    id: 'sepia',
+    name: 'Sepia',
+    blurb: 'The toned print. Brown shadows, cream paper, a hundred years old.',
+    group: 'mono',
+    /*
+     * Built the way Cyanotype is, rather than through the monochrome mix: the
+     * mix can only tint the midtones a little, and a sepia print is brown all
+     * the way down. Saturation to nothing leaves a grey; the per-channel curves
+     * then put the pigment back — red lifted, blue held down — which is what
+     * bathing a silver print in sulphide does to it.
+     */
+    color: {
+      hueBands: [
+        { hue: 225, width: 90, lum: 0.88 },
+        { hue: 30, width: 60, lum: 1.05 },
+      ],
+      saturation: 0,
+      channelCurves: {
+        r: [
+          { x: 0, y: 0 },
+          { x: 0.5, y: 0.56 },
+          { x: 1, y: 1 },
+        ],
+        g: [
+          { x: 0, y: 0 },
+          { x: 0.5, y: 0.51 },
+          { x: 1, y: 1 },
+        ],
+        b: [
+          { x: 0, y: 0 },
+          { x: 0.5, y: 0.42 },
+          { x: 1, y: 0.96 },
+        ],
+      },
+      highlightTint: [0.02, 0.012, -0.004],
+      blackLift: 0.02,
+      whiteDrop: 0.01,
+    },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.22, y: 0.2 },
+      { x: 0.6, y: 0.63 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 24, size: 50, shadowBias: 0.5 },
+    defaultStrength: 100,
+  },
+  {
+    id: 'grit',
+    name: 'Grit',
+    blurb: 'Pushed two stops. Crushed blacks, heavy grain, no apologies.',
+    group: 'mono',
+    // The reportage stock, developed too long on purpose. Nothing filtered over
+    // the lens: the drama is all in the curve and the grain, so it lands the
+    // same on a street at night as on a face by a window.
+    mono: { mix: [0.3, 0.55, 0.15], contrast: 40, tone: 2 },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.15, y: 0.08 },
+      { x: 0.5, y: 0.52 },
+      { x: 0.85, y: 0.93 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 60, size: 58, shadowBias: 0.55 },
+    defaultStrength: 100,
+  },
+
+  /* ─────────────────────────── exotic ─────────────────────────── */
+  {
+    id: 'infrared',
+    name: 'Infrared',
+    blurb: 'False colour. Foliage turns red, sky goes deep cyan, skin to wax.',
+    group: 'exotic',
+    color: {
+      /*
+       * Colour infrared film dyes its infrared-sensitive layer red and shifts
+       * every other layer down a channel, which is why leaves come out crimson
+       * and a clear sky comes out cyan.
+       *
+       * There is no infrared in an ordinary exposure to work from, so the green
+       * a leaf reflects stands in for it: not the same physics, but the same
+       * channel high in the same places, which is what the rendering depends
+       * on. A leaf and a painted green wall are indistinguishable here, where a
+       * real infrared frame would tell them apart instantly.
+       *
+       * The green and blue rows sum to one, so those channels leave a neutral
+       * alone. The red row deliberately sums above it: infrared film renders
+       * foliage *brighter* than the eye sees it, not merely redder, and a row
+       * that balanced would have made a dull leaf into a dull crimson. The
+       * price is a faint magenta cast on neutrals, which is exactly what the
+       * film did too.
+       */
+      matrix: [
+        0.18, 1.0, -0.03,
+        0.30, 0.10, 0.60,
+        0.05, 0.45, 0.52,
+      ],
+      saturation: 1.45,
+      satRolloff: 0.35,
+      hueBands: [
+        // Whatever the matrix has just made of the foliage, push it further
+        // toward magenta and hold it there.
+        { hue: 340, width: 100, sat: 1.5 },
+        { hue: 195, width: 90, sat: 1.3, lum: 0.9 },
+      ],
+      shadowTint: [0.01, -0.006, 0.014],
+    },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.2, y: 0.16 },
+      { x: 0.5, y: 0.52 },
+      { x: 0.82, y: 0.89 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 24, size: 46, shadowBias: 0.5 },
+    defaultStrength: 100,
+  },
+  {
+    id: 'frost',
+    name: 'Frost',
+    blurb: 'Infrared in black and white: white leaves, a near-black sky.',
+    group: 'exotic',
+    /*
+     * The Wood effect, and the one look here that is honestly derived rather
+     * than approximated: infrared film renders foliage white and sky black
+     * because chlorophyll reflects infrared and the sky has none to give.
+     *
+     * A negative blue weight is the whole trick. The mix is normalised by its
+     * sum at build time, so these three still add to one and middle grey stays
+     * where it was — what changes is which colours arrive there.
+     */
+    color: {
+      hueBands: [{ hue: 120, width: 100, lum: 1.15 }],
+    },
+    mono: { mix: [0.35, 1.15, -0.5], contrast: 30, tone: 6 },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.18, y: 0.13 },
+      { x: 0.5, y: 0.53 },
+      { x: 0.82, y: 0.93 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 46, size: 52, shadowBias: 0.4 },
+    defaultStrength: 100,
+  },
+  {
+    id: 'cross',
+    name: 'Cross',
+    blurb: 'Slide film through the wrong chemistry. Cyan shadows, acid highlights.',
+    group: 'exotic',
+    color: {
+      saturation: 1.35,
+      satRolloff: 0.3,
+      /*
+       * Cross-processing is three layers developed by chemistry meant for a
+       * different film, so each one lands on its own curve and they stop
+       * agreeing with each other. That disagreement is the look, which is why
+       * this is per-channel curves rather than a tint: blue lifted hard in the
+       * shadows and pulled down at the top is what puts cyan in the dark and
+       * acid yellow in the light.
+       */
+      channelCurves: {
+        r: [
+          { x: 0, y: 0.04 },
+          { x: 0.3, y: 0.32 },
+          { x: 0.7, y: 0.86 },
+          { x: 1, y: 1 },
+        ],
+        g: [
+          { x: 0, y: 0.02 },
+          { x: 0.5, y: 0.53 },
+          { x: 1, y: 0.98 },
+        ],
+        b: [
+          { x: 0, y: 0.16 },
+          { x: 0.4, y: 0.38 },
+          { x: 0.8, y: 0.72 },
+          { x: 1, y: 0.86 },
+        ],
+      },
+      blackLift: 0.02,
+    },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.2, y: 0.14 },
+      { x: 0.5, y: 0.52 },
+      { x: 0.8, y: 0.9 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 20, size: 48, shadowBias: 0.55 },
+    defaultStrength: 100,
+  },
+  {
+    id: 'redscale',
+    name: 'Redscale',
+    blurb: 'Film loaded backwards: light through the base, and everything burns.',
+    group: 'exotic',
+    color: {
+      /*
+       * Shooting through the film base means the red layer is exposed first and
+       * the blue layer barely at all, behind the whole thickness of the stock.
+       * The rows here are deliberately unequal — this is the one look that is
+       * supposed to change the brightness of things, not only their colour.
+       */
+      matrix: [
+        0.75, 0.55, 0.10,
+        0.15, 0.45, 0.10,
+        0.05, 0.10, 0.25,
+      ],
+      saturation: 1.15,
+      satRolloff: 0.45,
+      highlightTint: [0.03, 0.01, -0.02],
+      blackLift: 0.03,
+    },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.25, y: 0.22 },
+      { x: 0.6, y: 0.64 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 28, size: 55, shadowBias: 0.6 },
+    defaultStrength: 100,
+  },
+  {
+    id: 'cyanotype',
+    name: 'Cyanotype',
+    blurb: 'The blueprint process: Prussian blue in the shadows, paper at the top.',
+    group: 'exotic',
+    color: {
+      /*
+       * A duotone, built out of the pipeline that is already here: saturation to
+       * nothing leaves a grey, and the tints that run after it put the colour
+       * back in — deep blue where the iron salts reduced, bare paper where they
+       * did not. No monochrome mix, because this is not a black and white
+       * rendering with a tone on it; it is an image made of one pigment.
+       */
+      saturation: 0,
+      shadowTint: [-0.07, -0.025, 0.1],
+      highlightTint: [0.02, 0.02, -0.005],
+      blackLift: 0.03,
+      whiteDrop: 0.015,
+    },
+    toneCurve: [
+      { x: 0, y: 0 },
+      { x: 0.28, y: 0.26 },
+      { x: 0.68, y: 0.72 },
+      { x: 1, y: 1 },
+    ],
+    grain: { amount: 18, size: 60, shadowBias: 0.45 },
+    defaultStrength: 100,
+  },
+  {
+    id: 'sabattier',
+    name: 'Sabattier',
+    blurb: 'The darkroom accident: the brightest tones turn back on themselves.',
+    group: 'exotic',
+    color: {
+      saturation: 0.6,
+      shadowTint: [-0.01, 0.0, 0.02],
+    },
+    /*
+     * Solarisation — light let into the darkroom mid-development, which fogs
+     * what was already exposed and reverses it. The curve rises and then comes
+     * back down, and the fall is the whole effect: past about three quarters,
+     * brighter light makes a darker print.
+     *
+     * It is the one non-monotonic curve in the catalogue. The interpolation
+     * flattens its tangent at the turn rather than forcing the whole thing
+     * upward, so the reversal survives being sampled.
+     */
+    toneCurve: [
+      { x: 0, y: 0.03 },
+      { x: 0.28, y: 0.34 },
+      { x: 0.52, y: 0.66 },
+      { x: 0.66, y: 0.8 },
+      { x: 0.8, y: 0.44 },
+      { x: 1, y: 0.16 },
+    ],
+    grain: { amount: 26, size: 44, shadowBias: 0.5 },
     defaultStrength: 100,
   },
 ]

@@ -20,7 +20,7 @@ original file is never rewritten unless you export.
 
 ## A few of the things it does
 
-### Nineteen looks, previewed on your own photograph
+### Thirty-two looks, previewed on your own photograph
 
 Not a filmstrip of somebody else's sample. Every look in the grid is rendered
 from the photo that is open, through the same pipeline that will export it, so
@@ -73,9 +73,9 @@ thing it was placed over.
   machine; each carries its own tone, colour and detail
 - **Detail** — texture, clarity, dehaze, sharpening, luminance and chroma
   noise reduction
-- **Looks** — nineteen built-ins across six groups — everyday, reversal,
-  reportage, negative, cine and monochrome — plus your own imported LUTs and
-  presets
+- **Looks** — thirty-two built-ins across seven groups — everyday, reversal,
+  reportage, negative, cine, monochrome and exotic — plus your own imported
+  LUTs and presets
 - **Crop and straighten**, with aspect presets and rotation
 - **Perspective and optics** — keystone correction, plus manual distortion and
   chromatic aberration
@@ -105,7 +105,13 @@ and never download it at all.
 <a id="looks-and-presets"></a>
 
 The built-in looks are original colour transforms, synthesised in the app from
-a hue-band description rather than shipped as baked cubes. They are named for
+a hue-band description rather than shipped as baked cubes. The exotic ones are
+derived from what the process physically did — infrared film renders foliage
+red because chlorophyll reflects infrared, and white in black and white for the
+same reason; cross-processing crosses because three layers land on curves meant
+for a different film. Those claims are checkable, so they are checked: a test
+asserts that foliage comes out magenta, that a red subject comes out yellow,
+and that solarisation actually reverses. They are named for
 what they do — the colour, the material, the process. None of them is derived
 from, named after, or claims any compatibility with a camera maker's own picture
 modes; where one lands somewhere familiar, that is the same physics described
