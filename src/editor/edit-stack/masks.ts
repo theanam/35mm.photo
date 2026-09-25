@@ -8,6 +8,7 @@ import type {
   RadialMask,
 } from './types'
 import { DETECT_VERSION } from '../../subject/detect'
+import { SUBJECT_EDGE_DEFAULTS } from '../../subject/refine'
 
 /** A mask that changes nothing yet — a fresh one starts here. */
 export function neutralMaskAdjust(): MaskAdjust {
@@ -97,7 +98,7 @@ export function createMask(kind: MaskKind, aspect: number, existing: Mask[] = []
       // No feather: the edge comes from the refinement against the real pixels,
       // and softening it further only undoes that work. `feather` instead sets
       // how hard the recovered alpha is driven to its ends — see `mask.glsl`.
-      return { ...base, kind, feather: 50, model: DETECT_VERSION }
+      return { ...base, kind, feather: 50, model: DETECT_VERSION, ...SUBJECT_EDGE_DEFAULTS }
   }
 }
 

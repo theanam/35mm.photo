@@ -4,11 +4,15 @@ import { cloneEdits, defaultEdits, editsEqual } from './defaults'
 import { emptyHistory, pushHistory, shouldPush, touchHistory, type History } from './history'
 import { countEdits, revealTouched, withHidden, type PanelId } from './summary'
 import { createMask, neutralMaskAdjust, replaceMask, replaceMaskAdjust } from './masks'
+import { SUBJECT_EDGE_DEFAULTS } from '../../subject/refine'
 import {
   DETECT_VERSION,
   forgetSubjects,
   isModelCached,
   modelIsWarm,
+  onSubjectMapsChanged,
+  primeSubjects,
+  refineFor,
   restoreSubjects,
   subjectFor,
 } from '../../subject/detect'
@@ -977,8 +981,12 @@ export const useEditor = create<EditorState>((set, get) => ({
 
     const { restored, missing } = await restoreSubjects(subjects, activeFrameId)
     if (get().activeFrameId !== activeFrameId) return
-    // Coverage lives outside the edit stack, so nudge the viewport by hand.
-    if (restored) set({ maskMapsAt: Date.now() })
+    // What came back is the model's coarse answer; the mask draws once it has
+    // been re-cut along the picture, and the listener below redraws for that.
+    if (restored) {
+      const photo = get().photo
+      if (photo) primeSubjects(subjects, activeFrameId, photo.preview)
+    }
 
     const pending = missing.filter((m) => m.enabled && m.amount > 0)
     if (!pending.length) return
@@ -997,8 +1005,9 @@ export const useEditor = create<EditorState>((set, get) => ({
       // The preview, not the full-resolution source. The detector sees a 320px
       // copy either way, and a photo restored from the develop cache has no
       // full-resolution pixels to offer without developing the raw again.
-      // Remembered — in memory and on disk — by `subjectFor` itself.
-      await subjectFor(activeFrameId, mask.model, photo.preview)
+      // Found, remembered — in memory and on disk — and refined with the
+      // mask's own edge settings.
+      await refineFor(mask, activeFrameId, photo.preview)
       // The photo may have been changed underneath a slow detection.
       if (get().activeFrameId !== activeFrameId) return
       // Nothing in the edit stack changed, so nudge the frame counter instead:
@@ -1261,6 +1270,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 }))
 
+// A refined map landing is not an edit, so it cannot reach the viewport through
+// the edit stack. It nudges the same counter a finished detection does.
+onSubjectMapsChanged(() => useEditor.setState({ maskMapsAt: Date.now() }))
+
 /* ─────────────────────────── module-local helpers ─────────────────────────── */
 
 /**
@@ -1505,9 +1518,14 @@ function migrate(edits: Partial<EditState>): EditState {
       // zero, and absent is not a number: it would reach the uniform arrays as
       // NaN, and `hasMaskAdjust` would call an untouched mask adjusted.
       const filled = { ...mask, adjust: { ...neutralMaskAdjust(), ...mask.adjust } }
-      return filled.kind === 'subject' && filled.model !== DETECT_VERSION
-        ? { ...filled, model: DETECT_VERSION }
-        : filled
+      if (filled.kind !== 'subject') return filled
+      // The edge controls arrived after the first subject masks were written.
+      return {
+        ...filled,
+        model: DETECT_VERSION,
+        detail: Number.isFinite(filled.detail) ? filled.detail : SUBJECT_EDGE_DEFAULTS.detail,
+        shift: Number.isFinite(filled.shift) ? filled.shift : SUBJECT_EDGE_DEFAULTS.shift,
+      }
     }),
     dynamicRange: edits.dynamicRange ?? base.dynamicRange,
     raw: { ...base.raw, ...(edits.raw ?? {}) },

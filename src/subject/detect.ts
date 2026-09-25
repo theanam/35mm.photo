@@ -31,8 +31,9 @@
  * decision to make, once, and `MasksTool` asks before the first detection.
  */
 
-import type { Mask } from '../editor/edit-stack/types'
+import type { Mask, SubjectMask } from '../editor/edit-stack/types'
 import * as db from '../storage/indexeddb'
+import { edgeOptions, type EdgeOptions } from './refine'
 
 /** What the model reads. Larger inputs cost quadratically and resolve no better. */
 export const DETECT_SIZE = 320
@@ -49,7 +50,7 @@ export const REFINE_SIZE = 1024
 
 /** Bumped whenever the model or the pre/post-processing changes, because a
  *  cached mask derived by the old one is no longer the same answer. */
-export const DETECT_VERSION = 'u2netp@1'
+export const DETECT_VERSION = 'u2netp@2'
 
 export interface SubjectMap {
   /**
@@ -149,9 +150,13 @@ function lumaGuide(image: ImageData): Float32Array {
   return out
 }
 
+/**
+ * Run the model. What comes back is the coarse map — the model's answer at its
+ * own resolution, before anything has been done to it. Refinement is a
+ * separate job (`refineFor`) because it is the part that has controls.
+ */
 export async function detectSubject(source: ImageBitmap): Promise<SubjectMap> {
   const image = squareCopy(source, DETECT_SIZE)
-  const guide = lumaGuide(squareCopy(source, REFINE_SIZE))
   const active = getWorker()
   const id = crypto.randomUUID()
 
@@ -178,20 +183,58 @@ export async function detectSubject(source: ImageBitmap): Promise<SubjectMap> {
 
       active.addEventListener('message', onMessage)
       active.postMessage(
-        {
-          id,
-          modelUrl: modelUrl(),
-          rgba: image.data,
-          size: DETECT_SIZE,
-          guide,
-          guideSize: REFINE_SIZE,
-        },
-        [image.data.buffer, guide.buffer],
+        { kind: 'detect', id, modelUrl: modelUrl(), rgba: image.data, size: DETECT_SIZE },
+        [image.data.buffer],
       )
     })
   } catch (err) {
     throw new SubjectDetectError(err instanceof Error ? err.message : undefined)
   }
+}
+
+/** Re-cut a coarse map along the picture, in the worker, with these settings. */
+async function refineInWorker(
+  coarse: SubjectMap,
+  guide: Float32Array,
+  edge: EdgeOptions,
+): Promise<SubjectMap> {
+  const active = getWorker()
+  const id = crypto.randomUUID()
+  // Copies, not transfers: both stay cached here for the next slider move.
+  const coarseCopy = coarse.data.slice()
+  const guideCopy = guide.slice()
+
+  return new Promise<SubjectMap>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.id !== id) return
+      clearTimeout(timer)
+      active.removeEventListener('message', onMessage)
+      if (event.data.ok) {
+        resolve({ data: event.data.mask as Uint8ClampedArray, size: event.data.size as number })
+      } else {
+        reject(new Error(event.data.error ?? 'could not refine the subject'))
+      }
+    }
+    timer = setTimeout(() => {
+      active.removeEventListener('message', onMessage)
+      reject(new Error('the refinement did not respond'))
+    }, DETECT_TIMEOUT_MS)
+
+    active.addEventListener('message', onMessage)
+    active.postMessage(
+      {
+        kind: 'refine',
+        id,
+        coarse: coarseCopy,
+        coarseSize: coarse.size,
+        guide: guideCopy,
+        guideSize: REFINE_SIZE,
+        edge,
+      },
+      [coarseCopy.buffer, guideCopy.buffer],
+    )
+  })
 }
 
 export function disposeSubjectDetector() {
@@ -202,20 +245,29 @@ export function disposeSubjectDetector() {
 /* ───────────────────────── derived maps, in memory ───────────────────────── */
 
 /**
- * Coverage maps already derived this session, keyed by the photo and the model
- * that produced them.
+ * Three things are kept, because they change at three different rates.
  *
- * In memory and not in IndexedDB, deliberately for now. A durable cache would
- * mean a new object store and a schema version bump, and the last one of those
- * uncovered an `onblocked` path that left the app unable to open anything at
- * all — not a risk worth taking for a second of recompute. The cost is that
- * revisiting a photo re-runs the detector; the model itself stays loaded, so it
- * is the inference and not the download that is paid again.
+ * The coarse map is the model's answer: one per photo per model, expensive,
+ * and the thing that is written to IndexedDB. The guide is the picture's own
+ * luminance at the refinement size: one per photo, cheap to make, too big to
+ * be worth storing. The refined map is what the shader samples: one per
+ * photo per model *per edge setting*, milliseconds to make, and remade every
+ * time a slider moves.
  */
 const derived = new Map<string, SubjectMap>()
+const guides = new Map<string, Float32Array>()
+const refined = new Map<string, SubjectMap>()
+
+/**
+ * The map each mask last drew with, whatever its settings were then. While a
+ * new setting is still being refined the viewport draws this, so a slider
+ * moves the edge rather than blinking the whole mask out and back.
+ */
+const latest = new Map<string, SubjectMap>()
 
 /** Nothing here outlives the photos it describes. */
 const MAX_DERIVED = 12
+const MAX_REFINED = 24
 
 function cacheKey(frameId: string, model: string): string {
   return `${frameId}@${model}`
@@ -255,26 +307,147 @@ function hold(frameId: string, model: string, map: SubjectMap): void {
 export function forgetSubjects(frameId?: string): void {
   if (!frameId) {
     derived.clear()
+    guides.clear()
+    refined.clear()
+    latest.clear()
     return
   }
   for (const key of [...derived.keys()]) {
     if (key.startsWith(`${frameId}@`)) derived.delete(key)
   }
+  for (const key of [...refined.keys()]) {
+    if (key.startsWith(`${frameId}@`)) refined.delete(key)
+  }
+  guides.delete(frameId)
+  // Masks belong to one photo, and the photo is going: nothing left in here
+  // will be asked for by a mask that still exists.
+  latest.clear()
 }
 
-/** Find the subject, or hand back what was found earlier. */
+/* ───────────────────────── refinement ───────────────────────── */
+
+function refinedKey(frameId: string, mask: SubjectMask): string {
+  const edge = edgeOptions(mask.detail, mask.shift)
+  return `${frameId}@${mask.model}@${edge.radius}@${edge.eps}@${edge.shift}`
+}
+
+/** The guide for a photo, made once from its pixels and kept for the session. */
+function guideFor(frameId: string, source: ImageBitmap): Float32Array {
+  const hit = guides.get(frameId)
+  if (hit) return hit
+  const guide = lumaGuide(squareCopy(source, REFINE_SIZE))
+  guides.set(frameId, guide)
+  return guide
+}
+
+function holdRefined(key: string, mask: SubjectMask, map: SubjectMap): void {
+  refined.delete(key)
+  refined.set(key, map)
+  latest.set(mask.id, map)
+  while (refined.size > MAX_REFINED) {
+    const oldest = refined.keys().next().value
+    if (oldest === undefined) break
+    refined.delete(oldest)
+  }
+}
+
+/**
+ * The map a mask draws with, found and refined, running whatever is missing.
+ * What an export and a deliberate "find the subject" call.
+ */
+export async function refineFor(
+  mask: SubjectMask,
+  frameId: string,
+  source: ImageBitmap,
+): Promise<SubjectMap> {
+  const key = refinedKey(frameId, mask)
+  const hit = refined.get(key)
+  if (hit) return hit
+  const coarse = await subjectFor(frameId, mask.model, source)
+  const guide = guideFor(frameId, source)
+  const map = await refineInWorker(coarse, guide, edgeOptions(mask.detail, mask.shift))
+  holdRefined(key, mask, map)
+  return map
+}
+
+/*
+ * Refinement asked for by the viewport, which cannot wait. One job in flight
+ * per mask and at most one waiting behind it — the most recent — so a slider
+ * dragged through fifty values costs two refinements, not fifty, and the
+ * second lands on where the slider stopped.
+ */
+const inFlight = new Set<string>()
+const queued = new Map<string, { mask: SubjectMask; frameId: string }>()
+const listeners = new Set<() => void>()
+
+/** Told whenever a refined map lands, so the viewport can redraw with it. */
+export function onSubjectMapsChanged(fn: () => void): () => void {
+  listeners.add(fn)
+  return () => listeners.delete(fn)
+}
+
+function scheduleRefine(mask: SubjectMask, frameId: string): void {
+  if (refined.has(refinedKey(frameId, mask))) return
+  const coarse = cachedSubject(frameId, mask.model)
+  const guide = guides.get(frameId)
+  // Nothing to refine from yet; detection, or a restore, will come round again.
+  if (!coarse || !guide) return
+
+  if (inFlight.has(mask.id)) {
+    queued.set(mask.id, { mask, frameId })
+    return
+  }
+  inFlight.add(mask.id)
+  const key = refinedKey(frameId, mask)
+  void refineInWorker(coarse, guide, edgeOptions(mask.detail, mask.shift))
+    .then((map) => {
+      holdRefined(key, mask, map)
+      for (const fn of listeners) fn()
+    })
+    .catch(() => {
+      // Left uncached: the next redraw asks again, and the fallback draws
+      // meanwhile.
+    })
+    .finally(() => {
+      inFlight.delete(mask.id)
+      const next = queued.get(mask.id)
+      queued.delete(mask.id)
+      if (next) scheduleRefine(next.mask, next.frameId)
+    })
+}
+
 /**
  * Coverage for every subject mask in a stack, in list order — which is the
  * order `packMasks` hands out texture channels in, so the two line up.
  *
  * Synchronous and cache-only, for the viewport, which redraws far too often to
- * start a model on. Anything not yet found comes back null and simply covers
- * nothing until it is.
+ * wait on anything. A mask whose settings have just changed draws with the map
+ * it had while the new one is made; one not yet found comes back null and
+ * simply covers nothing until it is.
  */
 export function subjectMapsFor(masks: Mask[], frameId: string | null): (SubjectMap | null)[] {
   return masks
-    .filter((m) => m.kind === 'subject')
-    .map((m) => (frameId ? cachedSubject(frameId, m.model) : null))
+    .filter((m): m is SubjectMask => m.kind === 'subject')
+    .map((m) => {
+      if (!frameId) return null
+      const ready = refined.get(refinedKey(frameId, m))
+      if (ready) return ready
+      scheduleRefine(m, frameId)
+      return latest.get(m.id) ?? null
+    })
+}
+
+/**
+ * Make the guide for a photo and set every restored mask refining, so the
+ * first frames after opening draw the mask rather than wait for a redraw
+ * that nothing would trigger. The work itself is what `subjectMapsFor` would
+ * have started; this only starts it sooner.
+ */
+export function primeSubjects(masks: Mask[], frameId: string, source: ImageBitmap): void {
+  const subjects = masks.filter((m): m is SubjectMask => m.kind === 'subject')
+  if (!subjects.some((m) => cachedSubject(frameId, m.model))) return
+  guideFor(frameId, source)
+  for (const mask of subjects) scheduleRefine(mask, frameId)
 }
 
 /**
@@ -295,7 +468,7 @@ export async function ensureSubjectMaps(
   for (const mask of masks) {
     if (mask.kind !== 'subject') continue
     try {
-      out.push(await subjectFor(frameId, mask.model, source))
+      out.push(await refineFor(mask, frameId, source))
     } catch {
       // One mask that cannot be found must not fail the whole export; it
       // covers nothing, exactly as it does before it has been detected.

@@ -16,15 +16,135 @@
  * few milliseconds rather than needing a shader of its own.
  */
 
-/** Window radius, in pixels of the refined map. */
+/** Window radius, in pixels of the refined map, at the default detail. */
 export const REFINE_RADIUS = 16
 
 /**
- * Regularisation. Larger tolerates more variation inside a region before it
- * decides an edge is there; this is low, because the whole point is to follow
- * fine structure like branches and hair.
+ * Regularisation, at the default detail. Larger tolerates more variation
+ * inside a region before it decides an edge is there; this is low, because the
+ * whole point is to follow fine structure like branches and hair.
  */
 export const REFINE_EPS = 1e-4
+
+/** Where the two edge controls sit on a fresh subject mask. */
+export const SUBJECT_EDGE_DEFAULTS = { detail: 50, shift: 0 } as const
+
+/** How far, in pixels of the refined map, the edge can be pushed either way. */
+export const MAX_EDGE_SHIFT = 24
+
+export interface EdgeOptions {
+  radius: number
+  eps: number
+  /** Pixels to grow (+) or shrink (−) the coverage by. */
+  shift: number
+}
+
+/**
+ * The two sliders, turned into what the filter actually takes.
+ *
+ * Detail runs the radius and the regularisation together, and both on a log
+ * scale, because they pull the same way: a small window with little tolerance
+ * follows hair and branches, a large one with more tolerance gives a clean
+ * outline that ignores them. Fifty lands on the constants above, so an
+ * untouched mask is the mask this app has always made. Shift is linear, in
+ * pixels, so a hundred is the full reach and zero is exactly nothing.
+ */
+export function edgeOptions(detail: number, shift: number): EdgeOptions {
+  const d = Math.min(100, Math.max(0, Number.isFinite(detail) ? detail : 50))
+  const t = (d - 50) / 50 // −1 at no detail, 0 at the default, 1 at all of it
+  return {
+    radius: Math.max(1, Math.round(REFINE_RADIUS * Math.pow(3, -t))),
+    eps: REFINE_EPS * Math.pow(10, -t),
+    shift: Math.round((Math.min(100, Math.max(-100, shift || 0)) / 100) * MAX_EDGE_SHIFT),
+  }
+}
+
+/**
+ * Grow or shrink the covered region by `px`: a max filter to grow, a min
+ * filter to shrink, each separable into a horizontal and a vertical pass.
+ * Grey-level morphology rather than a threshold move, so a soft edge stays
+ * soft — it is the whole edge that moves, not the point at which it is cut.
+ *
+ * Van Herk's sliding window (1992), so the cost is three comparisons per
+ * pixel whatever the radius. The obvious loop is 2r+1 per pixel, which at the
+ * full reach on a 1024² map is a hundred million — long enough that a slider
+ * dragged to its end was still drawing the previous position a second later.
+ */
+export function shiftEdge(src: Float32Array, w: number, h: number, px: number): Float32Array {
+  const r = Math.abs(Math.round(px))
+  if (!r) return src
+  const grow = px > 0
+
+  const line = new Float32Array(Math.max(w, h) + 2 * r)
+  const prefix = new Float32Array(line.length)
+  const suffix = new Float32Array(line.length)
+  const tmp = new Float32Array(w * h)
+  const out = new Float32Array(w * h)
+
+  const pass = (
+    read: (i: number) => number,
+    write: (i: number, v: number) => void,
+    n: number,
+  ) => slidingExtreme(line, prefix, suffix, read, write, n, r, grow)
+
+  for (let y = 0; y < h; y++) {
+    const row = y * w
+    pass((i) => src[row + i], (i, v) => { tmp[row + i] = v }, w)
+  }
+  for (let x = 0; x < w; x++) {
+    pass((i) => tmp[i * w + x], (i, v) => { out[i * w + x] = v }, h)
+  }
+  return out
+}
+
+/**
+ * One line of the max or min filter with window 2r+1.
+ *
+ * The line is padded by r on each side with the value that can never win, so
+ * every window is full width; then within blocks of the window's size a
+ * running extreme is kept forwards and backwards, and any window — which
+ * spans at most two blocks — is the extreme of one suffix and one prefix.
+ */
+function slidingExtreme(
+  line: Float32Array,
+  prefix: Float32Array,
+  suffix: Float32Array,
+  read: (i: number) => number,
+  write: (i: number, v: number) => void,
+  n: number,
+  r: number,
+  grow: boolean,
+): void {
+  const w = 2 * r + 1
+  const total = n + 2 * r
+  const neutral = grow ? -Infinity : Infinity
+  for (let i = 0; i < r; i++) line[i] = neutral
+  for (let i = 0; i < n; i++) line[r + i] = read(i)
+  for (let i = r + n; i < total; i++) line[i] = neutral
+
+  for (let i = 0; i < total; i++) {
+    const v = line[i]
+    if (i % w === 0) prefix[i] = v
+    else {
+      const p = prefix[i - 1]
+      prefix[i] = grow ? (v > p ? v : p) : (v < p ? v : p)
+    }
+  }
+  for (let i = total - 1; i >= 0; i--) {
+    const v = line[i]
+    if (i % w === w - 1 || i === total - 1) suffix[i] = v
+    else {
+      const q = suffix[i + 1]
+      suffix[i] = grow ? (v > q ? v : q) : (v < q ? v : q)
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    // Output i covers padded [i, i + 2r].
+    const a = suffix[i]
+    const b = prefix[i + 2 * r]
+    write(i, grow ? (a > b ? a : b) : (a < b ? a : b))
+  }
+}
 
 /**
  * Mean over a square window, as two sliding sums.
@@ -157,9 +277,14 @@ export function refineMask(
   coarseSize: number,
   guide: Float32Array,
   size: number,
+  edge: EdgeOptions = edgeOptions(SUBJECT_EDGE_DEFAULTS.detail, SUBJECT_EDGE_DEFAULTS.shift),
 ): Uint8ClampedArray {
   const upscaled = resample(coarse, coarseSize, size)
-  const refined = guidedFilter(guide, upscaled, size, size)
+  // Shift before the filter, not after: moved first, the edge is then re-cut
+  // along the picture, so a grown mask still ends on a real boundary rather
+  // than on a blurred copy of the old one.
+  const moved = shiftEdge(upscaled, size, size, edge.shift)
+  const refined = guidedFilter(guide, moved, size, size, edge.radius, edge.eps)
 
   const out = new Uint8ClampedArray(size * size)
   for (let i = 0; i < out.length; i++) out[i] = Math.round(refined[i] * 255)

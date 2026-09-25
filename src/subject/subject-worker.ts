@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import * as ort from 'onnxruntime-web/wasm'
-import { refineMask } from './refine'
+import { refineMask, type EdgeOptions } from './refine'
 
 /**
  * Salient object detection, off the main thread (spec §3.3).
@@ -15,17 +15,35 @@ import { refineMask } from './refine'
  * enough, and what happens to it afterwards.
  */
 
+/**
+ * Two jobs, because they are asked for at different rates. Detection runs the
+ * model once per photo and hands back the coarse map. Refinement re-cuts that
+ * map along the picture, and runs again every time an edge control moves —
+ * which is many times a second under a slider, and must never wait on the
+ * model.
+ */
 interface DetectRequest {
+  kind: 'detect'
   id: string
   /** Where to fetch the model from, resolved against the build's base path. */
   modelUrl: string
   /** The photo, already scaled to the detector's input and laid out as RGBA. */
   rgba: Uint8ClampedArray
   size: number
-  /** Luminance of the same picture, square, for refining the coarse result. */
+}
+
+interface RefineRequest {
+  kind: 'refine'
+  id: string
+  coarse: Uint8ClampedArray
+  coarseSize: number
+  /** Luminance of the picture, square, for refining the coarse result. */
   guide: Float32Array
   guideSize: number
+  edge: EdgeOptions
 }
+
+type Request = DetectRequest | RefineRequest
 
 /** ImageNet statistics, which is what U²-Net was trained against. */
 const MEAN = [0.485, 0.456, 0.406]
@@ -65,10 +83,21 @@ function load(modelUrl: string): Promise<ort.InferenceSession> {
   return session
 }
 
-self.addEventListener('message', async (event: MessageEvent<DetectRequest>) => {
-  const { id, modelUrl, rgba, size, guide, guideSize } = event.data
+self.addEventListener('message', async (event: MessageEvent<Request>) => {
+  const { id } = event.data
 
   try {
+    if (event.data.kind === 'refine') {
+      const { coarse, coarseSize, guide, guideSize, edge } = event.data
+      // Cut the coarse map along the edges the photograph already has. Without
+      // this the result is unusable on anything with fine structure — see
+      // `refine.ts` for what it is doing and why it is not a blur.
+      const mask = refineMask(coarse, coarseSize, guide, guideSize, edge)
+      self.postMessage({ id, ok: true, mask, size: guideSize }, [mask.buffer])
+      return
+    }
+
+    const { modelUrl, rgba, size } = event.data
     const model = await load(modelUrl)
 
     // NCHW, normalised. The alpha channel is dropped; a salient-object model
@@ -110,12 +139,7 @@ self.addEventListener('message', async (event: MessageEvent<DetectRequest>) => {
       coarse[i] = span > 1e-6 ? Math.round(((data[i] - lo) / span) * 255) : 0
     }
 
-    // Cut the coarse map along the edges the photograph already has. Without
-    // this the result is unusable on anything with fine structure — see
-    // `refine.ts` for what it is doing and why it is not a blur.
-    const mask = refineMask(coarse, size, guide, guideSize)
-
-    self.postMessage({ id, ok: true, mask, size: guideSize }, [mask.buffer])
+    self.postMessage({ id, ok: true, mask: coarse, size }, [coarse.buffer])
   } catch (err) {
     self.postMessage({
       id,

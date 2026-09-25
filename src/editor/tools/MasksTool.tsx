@@ -14,6 +14,7 @@ import {
 } from '../edit-stack/masks'
 import { MAX_MASKS, type Mask, type MaskKind, type SubjectMask } from '../edit-stack/types'
 import { cachedSubject, isModelCached } from '../../subject/detect'
+import { SUBJECT_EDGE_DEFAULTS } from '../../subject/refine'
 import { IconCross, IconEye, IconEyeOff } from '../../app/ui/icons'
 
 const KINDS: MaskKind[] = ['radial', 'linear', 'luminance', 'colour', 'subject']
@@ -304,7 +305,12 @@ function ShapeGroup({ mask }: { mask: Mask }) {
         />
       )}
 
-      {mask.kind === 'subject' && <SubjectControls mask={mask} />}
+      {mask.kind === 'subject' && (
+        <>
+          <SubjectControls mask={mask} />
+          <SubjectEdge mask={mask} />
+        </>
+      )}
 
       {isRadial(mask) && (
         <Slider
@@ -420,5 +426,45 @@ function SubjectControls({ mask }: { mask: SubjectMask }) {
             : 'Downloads about 8 MB the first time, then works offline. Nothing leaves your machine.'}
       </p>
     </div>
+  )
+}
+
+/**
+ * The model has no settings; these are the refinement's, which is the stage
+ * that decides where the edge actually falls. Both re-cut the cached answer in
+ * a few milliseconds, so they drag live — the model is not run again.
+ */
+function SubjectEdge({ mask }: { mask: SubjectMask }) {
+  const updateMask = useEditor((s) => s.updateMask)
+  const activeFrameId = useEditor((s) => s.activeFrameId)
+  const maskMapsAt = useEditor((s) => s.maskMapsAt)
+  void maskMapsAt
+  const found = Boolean(activeFrameId && cachedSubject(activeFrameId, mask.model))
+  if (!found) return null
+
+  return (
+    <>
+      <Slider
+        label="Edge detail"
+        value={mask.detail}
+        min={0}
+        max={100}
+        origin={0}
+        resetTo={SUBJECT_EDGE_DEFAULTS.detail}
+        onChange={(v) => updateMask(mask.id, { detail: v }, `mask-detail-${mask.id}`)}
+      />
+      <Slider
+        label="Edge shift"
+        value={mask.shift}
+        min={-100}
+        max={100}
+        resetTo={SUBJECT_EDGE_DEFAULTS.shift}
+        onChange={(v) => updateMask(mask.id, { shift: v }, `mask-shift-${mask.id}`)}
+      />
+      <p className="tool__hint">
+        Detail is how closely the edge follows hair and branches; low gives a clean outline.
+        Shift grows or shrinks the whole edge.
+      </p>
+    </>
   )
 }

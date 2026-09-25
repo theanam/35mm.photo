@@ -292,6 +292,14 @@ export interface SubjectMask extends MaskCommon {
    * different answer, so this is part of the cache key rather than decoration.
    */
   model: string
+  /**
+   * How closely the edge follows fine structure, 0..100. Low gives a clean
+   * outline that ignores hair and branches; high follows them. The model has
+   * no say in this — it is the refinement, which is the part that can be tuned.
+   */
+  detail: number
+  /** Grow (+) or shrink (−) the edge, −100..100. */
+  shift: number
 }
 
 export type Mask = RadialMask | LinearMask | LuminanceMask | ColourMask | SubjectMask

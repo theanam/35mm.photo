@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { boxBlur, guidedFilter, refineMask, resample } from './refine'
-import { forgetSubjects, rememberSubject, subjectMapsFor } from './detect'
+import {
+  MAX_EDGE_SHIFT,
+  REFINE_EPS,
+  REFINE_RADIUS,
+  boxBlur,
+  edgeOptions,
+  guidedFilter,
+  refineMask,
+  resample,
+  shiftEdge,
+} from './refine'
+import { cachedSubject, forgetSubjects, rememberSubject, subjectMapsFor } from './detect'
 import { createMask } from '../editor/edit-stack/masks'
 import type { Mask, SubjectMask } from '../editor/edit-stack/types'
 
@@ -159,19 +169,19 @@ describe('subjectMapsFor', () => {
   const map = (v: number) => ({ data: new Uint8ClampedArray(4).fill(v), size: 2 })
   const subject = () => createMask('subject', 1) as SubjectMask
 
+  /*
+   * What the viewport gets is the *refined* map, made in a worker there is
+   * none of here, so these can only check the shape of the answer and that
+   * the model's own answer is filed under the right photo. The refinement
+   * itself is tested on `refineMask` above.
+   */
   it('returns one entry per subject mask, in list order', () => {
     forgetSubjects()
     const a = subject()
     const b = subject()
-    rememberSubject('frame-1', a.model, map(10))
-    rememberSubject('frame-1', b.model, map(10))
-
     const masks: Mask[] = [createMask('radial', 1), a, createMask('colour', 1), b]
-    const maps = subjectMapsFor(masks, 'frame-1')
-
-    // Two subject masks in, two maps out — the radial and colour take no slot.
-    expect(maps).toHaveLength(2)
-    expect(maps.every((m) => m !== null)).toBe(true)
+    // Two subject masks in, two slots out — the radial and colour take none.
+    expect(subjectMapsFor(masks, 'frame-1')).toHaveLength(2)
   })
 
   it('gives null for a subject not yet found, rather than shifting the rest along', () => {
@@ -191,20 +201,111 @@ describe('subjectMapsFor', () => {
   it('does not hand one photo-s subject to another', () => {
     forgetSubjects()
     const a = subject()
-    rememberSubject('frame-a', a.model, map(200))
+    rememberSubject('frame-a', a.model, map(200), false)
 
-    expect(subjectMapsFor([a], 'frame-a')[0]).not.toBeNull()
-    expect(subjectMapsFor([a], 'frame-b')[0]).toBeNull()
+    expect(cachedSubject('frame-a', a.model)).not.toBeNull()
+    expect(cachedSubject('frame-b', a.model)).toBeNull()
   })
 
   it('forgets one photo without forgetting the others', () => {
     forgetSubjects()
     const a = subject()
-    rememberSubject('keep', a.model, map(1))
-    rememberSubject('drop', a.model, map(1))
+    rememberSubject('keep', a.model, map(1), false)
+    rememberSubject('drop', a.model, map(1), false)
 
     forgetSubjects('drop')
-    expect(subjectMapsFor([a], 'keep')[0]).not.toBeNull()
-    expect(subjectMapsFor([a], 'drop')[0]).toBeNull()
+    expect(cachedSubject('keep', a.model)).not.toBeNull()
+    expect(cachedSubject('drop', a.model)).toBeNull()
+  })
+})
+
+describe('edgeOptions', () => {
+  it('lands on the constants at the default, so an untouched mask is unchanged', () => {
+    const at = edgeOptions(50, 0)
+    expect(at.radius).toBe(REFINE_RADIUS)
+    expect(at.eps).toBeCloseTo(REFINE_EPS, 10)
+    expect(at.shift).toBe(0)
+  })
+
+  it('follows finer structure as detail rises: smaller window, less tolerance', () => {
+    const lo = edgeOptions(0, 0)
+    const mid = edgeOptions(50, 0)
+    const hi = edgeOptions(100, 0)
+    expect(lo.radius).toBeGreaterThan(mid.radius)
+    expect(mid.radius).toBeGreaterThan(hi.radius)
+    expect(lo.eps).toBeGreaterThan(mid.eps)
+    expect(mid.eps).toBeGreaterThan(hi.eps)
+    expect(hi.radius).toBeGreaterThanOrEqual(1)
+  })
+
+  it('reaches the full shift at a hundred, in either direction', () => {
+    expect(edgeOptions(50, 100).shift).toBe(MAX_EDGE_SHIFT)
+    expect(edgeOptions(50, -100).shift).toBe(-MAX_EDGE_SHIFT)
+    expect(edgeOptions(50, 50).shift).toBe(MAX_EDGE_SHIFT / 2)
+  })
+
+  it('shrugs off a value that is not a number', () => {
+    const o = edgeOptions(Number.NaN, Number.NaN)
+    expect(o.radius).toBe(REFINE_RADIUS)
+    expect(o.shift).toBe(0)
+  })
+})
+
+describe('shiftEdge', () => {
+  /** A 4×4 block of coverage in the middle of a 16×16 field. */
+  const block = () => {
+    const m = new Float32Array(16 * 16)
+    for (let y = 6; y < 10; y++) for (let x = 6; x < 10; x++) m[y * 16 + x] = 1
+    return m
+  }
+  const covered = (m: Float32Array) => m.reduce((n, v) => n + (v > 0.5 ? 1 : 0), 0)
+
+  it('grows the region by the radius on every side', () => {
+    const out = shiftEdge(block(), 16, 16, 2)
+    // 4 wide + 2 either side = 8, squared.
+    expect(covered(out)).toBe(64)
+  })
+
+  it('shrinks it likewise', () => {
+    const out = shiftEdge(block(), 16, 16, -1)
+    expect(covered(out)).toBe(4)
+  })
+
+  it('does nothing at zero, and hands back the very same array', () => {
+    const src = block()
+    expect(shiftEdge(src, 16, 16, 0)).toBe(src)
+  })
+
+  it('keeps a soft edge soft rather than cutting it', () => {
+    const m = new Float32Array(16 * 16)
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) m[y * 16 + x] = x / 15
+    const out = shiftEdge(m, 16, 16, 3)
+    // Every value is still one the input had; nothing has been thresholded.
+    for (const v of out) expect(m.includes(v)).toBe(true)
+    // And a ramp shifted outward is the same ramp, three pixels earlier.
+    expect(out[8 * 16 + 4]).toBeCloseTo(m[8 * 16 + 7], 6)
+  })
+})
+
+describe('refineMask with an edge shift', () => {
+  const size = 32
+  const coarseSize = 8
+  /** Coarse coverage on the right half, matching the guide's bright half. */
+  const coarse = () => {
+    const c = new Uint8ClampedArray(coarseSize * coarseSize)
+    for (let y = 0; y < coarseSize; y++) for (let x = coarseSize / 2; x < coarseSize; x++) c[y * coarseSize + x] = 255
+    return c
+  }
+  const covered = (m: Uint8ClampedArray) => m.reduce((n, v) => n + (v > 127 ? 1 : 0), 0)
+
+  it('covers more when grown and less when shrunk, and the same at zero', () => {
+    const guide = edgeGuide(size)
+    const base = refineMask(coarse(), coarseSize, guide, size, edgeOptions(50, 0))
+    const grown = refineMask(coarse(), coarseSize, guide, size, edgeOptions(50, 100))
+    const shrunk = refineMask(coarse(), coarseSize, guide, size, edgeOptions(50, -100))
+    const untouched = refineMask(coarse(), coarseSize, guide, size)
+    expect(covered(grown)).toBeGreaterThan(covered(base))
+    expect(covered(shrunk)).toBeLessThan(covered(base))
+    expect(Array.from(untouched)).toEqual(Array.from(base))
   })
 })

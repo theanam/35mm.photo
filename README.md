@@ -41,7 +41,9 @@ mask travels through a sidecar and a batch sync like every other mask, and
 finds each photo's own subject rather than inheriting somebody else's outline.
 The map it finds is cached in the browser the way a developed raw is, so
 closing the photo and coming back brings the mask back without the model
-running again.
+running again. The model itself has no settings, but the refinement does, and
+two of them are yours: how closely the edge follows fine structure, and how
+far to grow or shrink it. Both re-cut the cached answer live.
 
 <p align="center">
   <img src="docs/feature-subject.png" alt="A subject mask isolating a figure, with exposure raised only on her" width="900">
