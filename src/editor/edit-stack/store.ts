@@ -7,8 +7,9 @@ import { createMask, neutralMaskAdjust, replaceMask, replaceMaskAdjust } from '.
 import {
   DETECT_VERSION,
   forgetSubjects,
+  isModelCached,
   modelIsWarm,
-  rememberSubject,
+  restoreSubjects,
   subjectFor,
 } from '../../subject/detect'
 import { fitAspect, offsetBounds, subjectBounds } from '../../subject/bounds'
@@ -475,10 +476,8 @@ export const useEditor = create<EditorState>((set, get) => ({
       if (opened.handle) void db.saveHandle(key, opened.handle)
       void cacheThumbnail(key, id, preview, meta.orientation, set, get)
       void get().refreshRecents()
-      // Edits restored from a sidecar or arrived by sync can carry a subject
-      // mask that has never been resolved on this photo. It covers nothing
-      // until it has been, so resolve it — silently, and only if the model is
-      // already loaded.
+      // A subject mask covers nothing until its map is in hand. Bring back
+      // whatever was found before; find the rest, if that costs no download.
       void get().autoDetectSubjects()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not open that file'
@@ -959,19 +958,31 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   /**
-   * Find the subject without being asked — but only once the model is already
-   * here.
+   * Give every subject mask on the open photo its map, without being asked.
    *
-   * The first detection of a session is an 8 MB download, and starting one on
-   * somebody's behalf because they opened a photo, or because a mask arrived
-   * on it from a sync, is not a decision to make for them. After that it is a
-   * second of compute and asking again is just a click in the way.
+   * First from disk: a map found on an earlier visit comes back in a few
+   * milliseconds and draws on the next frame, which is what makes closing a
+   * photo and reopening it bring the whole edit back rather than all of it
+   * but the subject. Then, for anything still uncovered, the detector — but
+   * only when the model is already on this machine. The first detection ever
+   * is an 8 MB download, and starting one on somebody's behalf because they
+   * opened a photo, or because a mask arrived on it from a sync, is not a
+   * decision to make for them. Once it is here it is a second of compute, and
+   * asking again is just a click in the way.
    */
   async autoDetectSubjects() {
-    if (!modelIsWarm()) return
-    const pending = get().edits.masks.filter(
-      (m) => m.kind === 'subject' && m.enabled && m.amount > 0,
-    )
+    const { edits, activeFrameId } = get()
+    const subjects = edits.masks.filter((m) => m.kind === 'subject')
+    if (!subjects.length || !activeFrameId) return
+
+    const { restored, missing } = await restoreSubjects(subjects, activeFrameId)
+    if (get().activeFrameId !== activeFrameId) return
+    // Coverage lives outside the edit stack, so nudge the viewport by hand.
+    if (restored) set({ maskMapsAt: Date.now() })
+
+    const pending = missing.filter((m) => m.enabled && m.amount > 0)
+    if (!pending.length) return
+    if (!modelIsWarm() && !(await isModelCached())) return
     for (const mask of pending) await get().detectSubjectMask(mask.id)
   },
 
@@ -986,10 +997,10 @@ export const useEditor = create<EditorState>((set, get) => ({
       // The preview, not the full-resolution source. The detector sees a 320px
       // copy either way, and a photo restored from the develop cache has no
       // full-resolution pixels to offer without developing the raw again.
-      const map = await subjectFor(activeFrameId, mask.model, photo.preview)
+      // Remembered — in memory and on disk — by `subjectFor` itself.
+      await subjectFor(activeFrameId, mask.model, photo.preview)
       // The photo may have been changed underneath a slow detection.
       if (get().activeFrameId !== activeFrameId) return
-      rememberSubject(activeFrameId, mask.model, map)
       // Nothing in the edit stack changed, so nudge the frame counter instead:
       // the viewport redraws on it, and this must not land in undo.
       set({ maskMapsAt: Date.now() })

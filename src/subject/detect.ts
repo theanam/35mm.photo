@@ -14,9 +14,11 @@
  * sidecar would end that property for every mask, not just this one.
  *
  * So the edit stack stores the *intent* — "the subject, as this model sees it"
- * — and the pixels are derived. They are
- * cached against the file and the model version, the way a developed raw is,
- * and re-derived when the cache misses. A subject mask therefore syncs across a
+ * — and the pixels are derived. They are cached against the file and the model
+ * version, the way a developed raw is: in memory for the viewport, which cannot
+ * wait on anything, and behind that in IndexedDB, so that closing a photo and
+ * coming back to it — tomorrow, in a fresh tab — brings the mask back without
+ * the model running again. They are re-derived only when both miss. A subject mask therefore syncs across a
  * batch in the only way that means anything: each photo finds its own subject,
  * rather than inheriting the shape of somebody else's.
  *
@@ -30,6 +32,7 @@
  */
 
 import type { Mask } from '../editor/edit-stack/types'
+import * as db from '../storage/indexeddb'
 
 /** What the model reads. Larger inputs cost quadratically and resolve no better. */
 export const DETECT_SIZE = 320
@@ -222,7 +225,22 @@ export function cachedSubject(frameId: string, model: string): SubjectMap | null
   return derived.get(cacheKey(frameId, model)) ?? null
 }
 
-export function rememberSubject(frameId: string, model: string, map: SubjectMap): void {
+/**
+ * Keep a map, in memory and on disk. The write-through is fire-and-forget: a
+ * map that failed to persist is still the map on screen, and the worst case is
+ * the detector running once more next time.
+ */
+export function rememberSubject(
+  frameId: string,
+  model: string,
+  map: SubjectMap,
+  persist = true,
+): void {
+  hold(frameId, model, map)
+  if (persist) void db.saveSubject({ frameId, model, data: map.data, size: map.size })
+}
+
+function hold(frameId: string, model: string, map: SubjectMap): void {
   const key = cacheKey(frameId, model)
   derived.delete(key)
   derived.set(key, map)
@@ -299,11 +317,42 @@ export async function subjectFor(
   model: string,
   source: ImageBitmap,
 ): Promise<SubjectMap> {
-  const hit = cachedSubject(frameId, model)
+  const hit = cachedSubject(frameId, model) ?? (await restoreSubject(frameId, model))
   if (hit) return hit
 
   const map = await detectSubject(source)
   warm = true
   rememberSubject(frameId, model, map)
   return map
+}
+
+/** Bring a map back from disk into memory, if it was ever found. */
+async function restoreSubject(frameId: string, model: string): Promise<SubjectMap | null> {
+  const stored = await db.loadSubject(frameId, model)
+  if (!stored) return null
+  const map = { data: stored.data, size: stored.size }
+  hold(frameId, model, map)
+  return map
+}
+
+/**
+ * Bring back every map a stack's subject masks were found with, and say which
+ * masks are still uncovered afterwards. This is what opening a photo calls, so
+ * a mask found last week draws on the first frame rather than sitting in the
+ * list covering nothing — the "neither here nor there" state, where the edit is
+ * plainly present and plainly not happening.
+ */
+export async function restoreSubjects(
+  masks: Mask[],
+  frameId: string,
+): Promise<{ restored: number; missing: Mask[] }> {
+  let restored = 0
+  const missing: Mask[] = []
+  for (const mask of masks) {
+    if (mask.kind !== 'subject') continue
+    if (cachedSubject(frameId, mask.model)) continue
+    if (await restoreSubject(frameId, mask.model)) restored++
+    else missing.push(mask)
+  }
+  return { restored, missing }
 }

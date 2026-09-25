@@ -33,21 +33,41 @@ function issueUrl(): string {
  * else in storage is either tiny or something the user put there deliberately.
  */
 function DevelopCache() {
-  const [size, setSize] = useState<{ count: number; bytes: number } | null>(null)
+  type Size = { count: number; bytes: number }
+  const [size, setSize] = useState<{ develops: Size; subjects: Size } | null>(null)
 
   useEffect(() => {
-    void db.developCacheSize().then(setSize)
+    void Promise.all([db.developCacheSize(), db.subjectCacheSize()]).then(([develops, subjects]) =>
+      setSize({ develops, subjects }),
+    )
   }, [])
 
-  if (!size?.count) return null
+  if (!size || (!size.develops.count && !size.subjects.count)) return null
+
+  const mb = (bytes: number) => `${(bytes / 1e6).toFixed(0)} MB`
+  const parts: string[] = []
+  if (size.develops.count) {
+    parts.push(
+      `${size.develops.count} developed ${size.develops.count === 1 ? 'raw' : 'raws'} (${mb(size.develops.bytes)})`,
+    )
+  }
+  if (size.subjects.count) {
+    parts.push(
+      `${size.subjects.count} subject ${size.subjects.count === 1 ? 'map' : 'maps'} (${mb(size.subjects.bytes)})`,
+    )
+  }
+  const none = { count: 0, bytes: 0 }
 
   return (
     <p className="modal__note">
-      Developed raws cached for quick reopening: <strong>{size.count}</strong>{' '}
-      {size.count === 1 ? 'photo' : 'photos'}, {(size.bytes / 1e6).toFixed(0)} MB.{' '}
+      Cached for quick reopening: {parts.join(' and ')}.{' '}
       <button
         className="link-button"
-        onClick={() => void db.clearDevelops().then(() => setSize({ count: 0, bytes: 0 }))}
+        onClick={() =>
+          void Promise.all([db.clearDevelops(), db.clearSubjects()]).then(() =>
+            setSize({ develops: none, subjects: none }),
+          )
+        }
       >
         Clear
       </button>

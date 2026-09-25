@@ -2,21 +2,23 @@ import type { EditState, FrameState, ImageMeta } from '../editor/edit-stack/type
 import type { CustomPreset } from '../editor/presets/types'
 
 /**
- * Local persistence (spec §4.4). Five stores: the edit state per photo, a
+ * Local persistence (spec §4.4). Seven stores: the edit state per photo, a
  * cached thumbnail so recents render instantly, the directory/file handles
  * needed to reopen a photo without a second picker prompt, the presets the user
- * has imported, and developed raw previews so returning to a photo does not
- * mean running LibRaw over it again.
+ * has imported, the frames they have saved, developed raw previews so returning
+ * to a photo does not mean running LibRaw over it again, and the subject maps
+ * the detector found so returning does not mean running the model again either.
  */
 
 const DB_NAME = '35mm'
-const DB_VERSION = 4
+const DB_VERSION = 5
 const STORE_EDITS = 'edits'
 const STORE_THUMBS = 'thumbs'
 const STORE_HANDLES = 'handles'
 const STORE_PRESETS = 'presets'
 const STORE_DEVELOP = 'develop'
 const STORE_FRAME_PRESETS = 'framePresets'
+const STORE_SUBJECTS = 'subjects'
 
 /** A frame the user saved. Plain JSON — no typed arrays, no blobs. */
 export interface StoredFramePreset {
@@ -146,6 +148,10 @@ function openDb(): Promise<IDBDatabase | null> {
       }
       if (!db.objectStoreNames.contains(STORE_DEVELOP)) {
         const store = db.createObjectStore(STORE_DEVELOP, { keyPath: 'key' })
+        store.createIndex('usedAt', 'usedAt')
+      }
+      if (!db.objectStoreNames.contains(STORE_SUBJECTS)) {
+        const store = db.createObjectStore(STORE_SUBJECTS, { keyPath: 'key' })
         store.createIndex('usedAt', 'usedAt')
       }
     }
@@ -409,6 +415,73 @@ export async function clearDevelops(): Promise<void> {
 /** Bytes currently held by cached develops, for the panel to report. */
 export async function developCacheSize(): Promise<{ count: number; bytes: number }> {
   const all = await tx<StoredDevelop[]>(STORE_DEVELOP, 'readonly', (s) => s.getAll())
+  if (!all) return { count: 0, bytes: 0 }
+  return { count: all.length, bytes: all.reduce((n, r) => n + r.bytes, 0) }
+}
+
+/* ───────────────────────── subject maps ───────────────────────── */
+
+/**
+ * A subject map the detector found, kept the way a developed raw is: derived
+ * from the file, keyed by the file and the model that read it, and never part
+ * of the edit state. The edit stack goes on storing the intent; this is what
+ * lets reopening a photo bring the mask back without the model running again,
+ * or being downloaded again on a machine that has since lost it.
+ */
+export interface StoredSubject {
+  /** `<frameId>@<model>`, the same key the in-memory cache uses. */
+  key: string
+  frameId: string
+  model: string
+  /** `size` square bytes of coverage — structured-cloneable as it stands. */
+  data: Uint8ClampedArray
+  size: number
+  bytes: number
+  usedAt: number
+}
+
+/** A map is about a megabyte, so this is a modest 64 MB at most. */
+export const MAX_SUBJECTS = 64
+export const MAX_SUBJECT_BYTES = 64_000_000
+
+export function subjectKey(frameId: string, model: string): string {
+  return `${frameId}@${model}`
+}
+
+export async function loadSubject(frameId: string, model: string): Promise<StoredSubject | null> {
+  const key = subjectKey(frameId, model)
+  const record = await tx<StoredSubject>(STORE_SUBJECTS, 'readonly', (s) => s.get(key))
+  if (!record) return null
+  void tx(STORE_SUBJECTS, 'readwrite', (s) => s.put({ ...record, usedAt: Date.now() }))
+  return record
+}
+
+export async function saveSubject(
+  record: Pick<StoredSubject, 'frameId' | 'model' | 'data' | 'size'>,
+): Promise<void> {
+  const full: StoredSubject = {
+    ...record,
+    key: subjectKey(record.frameId, record.model),
+    bytes: record.data.byteLength,
+    usedAt: Date.now(),
+  }
+  await tx(STORE_SUBJECTS, 'readwrite', (s) => s.put(full))
+
+  const all = await tx<StoredSubject[]>(STORE_SUBJECTS, 'readonly', (s) => s.getAll())
+  if (!all) return
+  const plan = developEvictionPlan(all, full.key, {
+    maxEntries: MAX_SUBJECTS,
+    maxBytes: MAX_SUBJECT_BYTES,
+  })
+  for (const key of plan) await tx(STORE_SUBJECTS, 'readwrite', (s) => s.delete(key))
+}
+
+export async function clearSubjects(): Promise<void> {
+  await tx(STORE_SUBJECTS, 'readwrite', (s) => s.clear())
+}
+
+export async function subjectCacheSize(): Promise<{ count: number; bytes: number }> {
+  const all = await tx<StoredSubject[]>(STORE_SUBJECTS, 'readonly', (s) => s.getAll())
   if (!all) return { count: 0, bytes: 0 }
   return { count: all.length, bytes: all.reduce((n, r) => n + r.bytes, 0) }
 }

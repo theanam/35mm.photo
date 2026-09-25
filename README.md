@@ -39,6 +39,9 @@ filter re-cuts its answer along the edges the photograph already has. What gets
 stored is the *intent* — find the subject — and never the pixels, so a subject
 mask travels through a sidecar and a batch sync like every other mask, and
 finds each photo's own subject rather than inheriting somebody else's outline.
+The map it finds is cached in the browser the way a developed raw is, so
+closing the photo and coming back brings the mask back without the model
+running again.
 
 <p align="center">
   <img src="docs/feature-subject.png" alt="A subject mask isolating a figure, with exposure raised only on her" width="900">
