@@ -8,7 +8,12 @@ export interface SliderProps {
   step?: number
   /** Value the fill grows from. Defaults to 0 when the range spans it. */
   origin?: number
-  /** Value restored on double-click / Alt-click. */
+  /**
+   * The value the reset button puts back. Defaults to the origin of the fill —
+   * zero on a range that spans it, otherwise the minimum — which is right for
+   * an adjustment but not for a control whose starting point is elsewhere:
+   * a blend that begins at 50, a strength that begins at 100.
+   */
   resetTo?: number
   /** CSS gradient for the track, used by the warmth and tint sliders. */
   trackGradient?: string
@@ -174,27 +179,37 @@ export function Slider({
           {unit && <span className="slider__unit">{unit}</span>}
         </span>
       ) : (
-      /*
-        The readout doubles as the reset.
-        
-        Double-click and alt-click were the only ways to zero a slider, and a
-        phone has neither — leaving the exact origin to be found by dragging,
-        which on a −100..100 range across a finger's width is a target about a
-        pixel wide. The number is already sitting there saying what would be
-        undone, so it is the obvious thing to press, and it costs the desktop
-        nothing: the two habits above still work.
-      */
+        <span className="slider__value mono">{format ? format(value) : formatSigned(value, step)}</span>
+      )}
+
+      {/*
+        One small button per slider, always in the same place, that puts the
+        value back where it started. Double-click and Alt-click on the track
+        still work for the desktop habit, but neither is discoverable and a
+        phone has neither: the exact origin on a −100..100 range across a
+        finger's width is a target about a pixel wide. It greys out at the
+        origin, so a row of untouched sliders is not a row of buttons asking to
+        be pressed.
+      */}
       <button
         type="button"
-        className="slider__value mono"
+        className="slider__reset"
         onClick={reset}
         disabled={disabled || atOrigin}
-        title={atOrigin ? undefined : `Reset ${label.toLowerCase()}`}
-        aria-label={atOrigin ? undefined : `Reset ${label.toLowerCase()}`}
+        title={`Reset ${label.toLowerCase()}`}
+        aria-label={`Reset ${label.toLowerCase()}`}
       >
-        {format ? format(value) : formatSigned(value, step)}
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden focusable="false">
+          <path
+            d="M3.5 8a4.5 4.5 0 1 0 1.32-3.18"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+          <path d="M3.2 2.6v3.2h3.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
-      )}
     </div>
   )
 }

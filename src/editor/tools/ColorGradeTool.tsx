@@ -129,6 +129,7 @@ export function ColorGradeTool() {
           value={grade.blending}
           min={0}
           max={100}
+          resetTo={50}
           onChange={(v) => update({ colorGrade: { ...grade, blending: v } }, 'grade-blending')}
         />
       </div>

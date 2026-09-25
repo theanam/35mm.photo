@@ -55,6 +55,17 @@ export function maskKindHint(kind: MaskKind): string {
  *
  * `aspect` is the upright image's width ÷ height.
  */
+/**
+ * Where a range mask starts, and what its sliders go back to. Shared with the
+ * panel so the reset button and the factory cannot drift apart.
+ */
+export const RANGE_MASK_DEFAULTS = {
+  // The top third of the tonal range — the highlights, roughly.
+  luminance: { lo: 65, hi: 100 },
+  // A slice of sky.
+  colour: { hue: 210, width: 25 },
+} as const
+
 export function createMask(kind: MaskKind, aspect: number, existing: Mask[] = []): Mask {
   const base = {
     id: crypto.randomUUID(),
@@ -79,10 +90,9 @@ export function createMask(kind: MaskKind, aspect: number, existing: Mask[] = []
       // Top-down: the gradient most people reach for first is a darkened sky.
       return { ...base, kind, x1: 0.5, y1: 0.08, x2: 0.5, y2: 0.45 }
     case 'luminance':
-      // The top third of the tonal range — the highlights, roughly.
-      return { ...base, kind, lo: 65, hi: 100 }
+      return { ...base, kind, ...RANGE_MASK_DEFAULTS.luminance }
     case 'colour':
-      return { ...base, kind, hue: 210, width: 25 }
+      return { ...base, kind, ...RANGE_MASK_DEFAULTS.colour }
     case 'subject':
       // No feather: the edge comes from the refinement against the real pixels,
       // and softening it further only undoes that work. `feather` instead sets

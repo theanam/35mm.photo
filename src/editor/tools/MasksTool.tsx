@@ -10,6 +10,7 @@ import {
   isRadial,
   maskKindHint,
   maskSummary,
+  RANGE_MASK_DEFAULTS,
 } from '../edit-stack/masks'
 import { MAX_MASKS, type Mask, type MaskKind, type SubjectMask } from '../edit-stack/types'
 import { cachedSubject, isModelCached } from '../../subject/detect'
@@ -325,6 +326,7 @@ function ShapeGroup({ mask }: { mask: Mask }) {
             min={0}
             max={100}
             origin={0}
+            resetTo={RANGE_MASK_DEFAULTS.luminance.lo}
             // Kept below the upper end: a window that has crossed itself selects
             // nothing, which looks like a broken mask rather than an empty one.
             onChange={(v) => updateMask(mask.id, { lo: Math.min(v, mask.hi - 1) }, `mask-lo-${mask.id}`)}
@@ -335,6 +337,7 @@ function ShapeGroup({ mask }: { mask: Mask }) {
             min={0}
             max={100}
             origin={0}
+            resetTo={RANGE_MASK_DEFAULTS.luminance.hi}
             onChange={(v) => updateMask(mask.id, { hi: Math.max(v, mask.lo + 1) }, `mask-hi-${mask.id}`)}
           />
         </>
@@ -347,6 +350,7 @@ function ShapeGroup({ mask }: { mask: Mask }) {
             value={mask.hue}
             min={0}
             max={360}
+            resetTo={RANGE_MASK_DEFAULTS.colour.hue}
             trackGradient="linear-gradient(90deg,#d44,#dd4,#4d4,#4dd,#44d,#d4d,#d44)"
             format={(v) => `${Math.round(v)}°`}
             onChange={(v) => updateMask(mask.id, { hue: v }, `mask-hue-${mask.id}`)}
@@ -357,6 +361,7 @@ function ShapeGroup({ mask }: { mask: Mask }) {
             min={1}
             max={100}
             origin={1}
+            resetTo={RANGE_MASK_DEFAULTS.colour.width}
             onChange={(v) => updateMask(mask.id, { width: v }, `mask-wid-${mask.id}`)}
           />
         </>
