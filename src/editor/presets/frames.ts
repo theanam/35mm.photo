@@ -1,11 +1,23 @@
 import type { FrameState } from '../edit-stack/types'
+import { padToAspect } from '../gpu/transform'
 
 export interface FramePreset {
   id: string
   name: string
   blurb: string
-  /** Widths and colour only — the link mode comes with them, as the shape. */
+  /**
+   * Widths and colour only — the link mode comes with them, as the shape.
+   *
+   * On a preset that pads, these are the margin kept between the picture and
+   * the edge of the shape, and the padding is added outside them.
+   */
   frame: FrameState
+  /**
+   * Width ÷ height of the whole framed picture. A preset with this set is not a
+   * fixed set of widths but a rule — pad this picture until it is that shape —
+   * so it has to be resolved against the photo it is applied to.
+   */
+  pad?: number
 }
 
 /**
@@ -26,6 +38,12 @@ export const FRAME_PRESETS: FramePreset[] = [
     name: 'Hairline',
     blurb: 'Just enough to separate the picture from the page',
     frame: { top: 1, right: 1, bottom: 1, left: 1, color: '#ffffff', link: 'all', unit: 'percent' },
+  },
+  {
+    id: 'keyline',
+    name: 'Keyline',
+    blurb: 'A thin dark rule, for a picture that ends in sky',
+    frame: { top: 1.5, right: 1.5, bottom: 1.5, left: 1.5, color: '#1a1a1a', link: 'all', unit: 'percent' },
   },
   {
     id: 'print',
@@ -64,6 +82,88 @@ export const FRAME_PRESETS: FramePreset[] = [
     blurb: 'A dark mat, for a photograph that ends in white',
     frame: { top: 6, right: 6, bottom: 6, left: 6, color: '#111111', link: 'all', unit: 'percent' },
   },
+
+  /*
+   * Shapes rather than widths: the picture is padded out to the frame a
+   * phone screen or a feed expects, with a border kept all the way round so it
+   * reads as a print in a mat rather than a picture that ran out of room.
+   */
+  {
+    id: 'square',
+    name: 'Square',
+    blurb: 'Padded to a square, with a border kept all the way round',
+    frame: { top: 4, right: 4, bottom: 4, left: 4, color: '#ffffff', link: 'free', unit: 'percent' },
+    pad: 1,
+  },
+  {
+    id: 'four-five',
+    name: '4:5',
+    blurb: 'Padded to the tall shape a feed shows largest',
+    frame: { top: 4, right: 4, bottom: 4, left: 4, color: '#ffffff', link: 'free', unit: 'percent' },
+    pad: 4 / 5,
+  },
+  {
+    id: 'story',
+    name: 'Story',
+    blurb: 'Padded to a phone screen, 9:16, with room above and below',
+    frame: { top: 5, right: 5, bottom: 5, left: 5, color: '#ffffff', link: 'free', unit: 'percent' },
+    pad: 9 / 16,
+  },
+  {
+    id: 'screen',
+    name: 'Screen',
+    blurb: 'Padded to a 16:9 screen, in black, so a portrait fills a television',
+    frame: { top: 0, right: 0, bottom: 0, left: 0, color: '#000000', link: 'free', unit: 'percent' },
+    pad: 16 / 9,
+  },
 ]
 
 export const FRAME_PRESETS_BY_ID = new Map(FRAME_PRESETS.map((p) => [p.id, p]))
+
+/**
+ * The widths a preset comes to on this picture.
+ *
+ * A fixed preset is its own answer. A padding one is worked out here, in two
+ * steps, because the margin and the padding are measured against different
+ * things: the margin goes on first, around the picture, and the padding then
+ * fills whatever the margined picture is short of the target shape. Both come
+ * back as percentages of the *photo's* shorter edge, which is what the sliders
+ * and the renderer read, so the margined size is converted back before the two
+ * are added.
+ *
+ * Stored as plain widths, not as a live rule, for the reason the pad buttons
+ * give: nudging a side afterwards should not fight a target, and a later crop
+ * should not silently re-pad a picture the user has finished with.
+ */
+export function resolveFramePreset(
+  preset: FramePreset,
+  photo: { width: number; height: number },
+): FrameState {
+  const base = preset.frame
+  if (!preset.pad) return base
+
+  const short = Math.min(photo.width, photo.height)
+  if (!(short > 0)) return { ...base, link: 'free', unit: 'percent' }
+
+  const px = (pct: number) => (pct / 100) * short
+  const margined = {
+    width: photo.width + px(base.left) + px(base.right),
+    height: photo.height + px(base.top) + px(base.bottom),
+  }
+  const pad = padToAspect(margined.width, margined.height, preset.pad)
+  // `padToAspect` measures against the margined picture's shorter edge.
+  const k = Math.min(margined.width, margined.height) / short
+  const round = (v: number) => Math.round(v * 10) / 10
+
+  return {
+    top: round(base.top + pad.top * k),
+    right: round(base.right + pad.right * k),
+    bottom: round(base.bottom + pad.bottom * k),
+    left: round(base.left + pad.left * k),
+    color: base.color,
+    // Two sides wide and two sides not, and calling that "pairs" would tie the
+    // narrow pair together and hide the asymmetry from the sliders.
+    link: 'free',
+    unit: 'percent',
+  }
+}

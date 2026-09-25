@@ -2285,6 +2285,13 @@ kbd {
   cursor: pointer;
 }
 
+/* A padding preset with no picture to measure: the shape is still shown, on
+   the placeholder, but there is nothing for it to act on yet. */
+.frame-preset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* A fixed box every shape is fitted inside, so the grid stays even while a
    square mat and a panorama still read as different shapes. */
 .frame-preview {

@@ -9,7 +9,7 @@ import {
   type FrameUnit,
 } from '../edit-stack/types'
 import { frameLayout, outputSize, padToAspect } from '../gpu/transform'
-import { FRAME_PRESETS } from '../presets/frames'
+import { FRAME_PRESETS, resolveFramePreset } from '../presets/frames'
 
 /** The box a preview is fitted inside, so a grid of them stays even. */
 const PREVIEW_BOX = 74
@@ -102,9 +102,17 @@ const UNITS: { id: FrameUnit; label: string; hint: string }[] = [
 const ASPECTS: { id: string; label: string; ratio: number }[] = [
   { id: '1:1', label: 'Square', ratio: 1 },
   { id: '4:5', label: '4:5', ratio: 4 / 5 },
+  { id: '2:3', label: '2:3', ratio: 2 / 3 },
+  { id: '9:16', label: '9:16', ratio: 9 / 16 },
   { id: '3:2', label: '3:2', ratio: 3 / 2 },
   { id: '16:9', label: '16:9', ratio: 16 / 9 },
 ]
+
+/**
+ * What a padding preset is drawn on when nothing is open: the same 3:2 the
+ * preview falls back to, so the tile shows the shape it would make.
+ */
+const PLACEHOLDER_PHOTO = { width: 3, height: 2 }
 
 /**
  * Whether two frames would render the same.
@@ -418,19 +426,27 @@ export function FrameTool() {
             </button>
           </header>
           <div className="frame-grid">
-            {FRAME_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                className="frame-preset"
-                data-active={sameFrame(preset.frame, frame) || undefined}
-                aria-pressed={sameFrame(preset.frame, frame)}
-                onClick={() => updateFrame(preset.frame, 'frame-preset')}
-                title={preset.blurb}
-              >
-                <FramePreview frame={preset.frame} photo={photoSize} thumbUrl={thumbUrl} />
-                <span className="frame-preset__name">{preset.name}</span>
-              </button>
-            ))}
+            {FRAME_PRESETS.map((preset) => {
+              // A padding preset is a rule about the picture, so with no
+              // picture there is nothing to apply it to — the tile still shows
+              // the shape, on the placeholder, but cannot be pressed.
+              const resolved = resolveFramePreset(preset, photoSize ?? PLACEHOLDER_PHOTO)
+              const active = sameFrame(resolved, frame)
+              return (
+                <button
+                  key={preset.id}
+                  className="frame-preset"
+                  data-active={active || undefined}
+                  aria-pressed={active}
+                  disabled={!!preset.pad && !photoSize}
+                  onClick={() => updateFrame(resolved, 'frame-preset')}
+                  title={preset.blurb}
+                >
+                  <FramePreview frame={resolved} photo={photoSize} thumbUrl={thumbUrl} />
+                  <span className="frame-preset__name">{preset.name}</span>
+                </button>
+              )
+            })}
           </div>
 
           {framePresets.length > 0 && (
