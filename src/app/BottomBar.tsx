@@ -1,4 +1,4 @@
-import { useEditor } from '../editor/edit-stack/store'
+import { useEditor, useRenderEdits } from '../editor/edit-stack/store'
 import { exportLayout } from '../editor/gpu/transform'
 import { IconCamera, IconLens, IconMinus, IconPlus, IconSplit } from './ui/icons'
 
@@ -12,7 +12,7 @@ export function BottomBar({ scale, fitScale }: { scale: number; fitScale: number
   const setSplit = useEditor((s) => s.setSplit)
   const cropping = useEditor((s) => s.cropping)
   const photo = useEditor((s) => s.photo)
-  const edits = useEditor((s) => s.edits)
+  const edits = useRenderEdits()
   const setExifOpen = useEditor((s) => s.setExifOpen)
   const meta = photo?.meta
 

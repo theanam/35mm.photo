@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
 import { isToolbarTool, toolbarTools } from '../editor/tools/registry'
 import { buildStack } from '../editor/edit-stack/summary'
-import { IconCopy, IconPaste, IconRedo, IconReset, IconUndo } from './ui/icons'
+import { IconCopy, IconEye, IconEyeOff, IconPaste, IconRedo, IconReset, IconUndo } from './ui/icons'
 
 /**
  * Geometry tools live here. Picking one puts its controls in the right rail,
@@ -24,6 +24,8 @@ export function Toolbar() {
   const pasteLook = useEditor((s) => s.pasteLook)
   const hasClipboard = useEditor((s) => s.clipboard !== null)
   const dirty = useEditor((s) => s.dirty())
+  const hidden = useEditor((s) => s.hidden)
+  const toggleHidden = useEditor((s) => s.toggleHidden)
 
   const tools = useMemo(() => toolbarTools(meta), [meta])
   const stack = useMemo(() => buildStack(edits, meta), [edits, meta])
@@ -55,19 +57,46 @@ export function Toolbar() {
       <span className="toolbar__divider" />
 
       <div className="toolbar__stack" aria-label="Applied edits">
-        {stack.map((chip) => (
-          <button
-            key={chip.id}
-            className="stack-chip"
-            data-accent={chip.accent || undefined}
-            // A chip jumps to wherever its control actually lives.
-            onClick={() => (isToolbarTool(chip.panel) ? openTool(chip.panel) : focusPanel(chip.panel))}
-            title={`${chip.label} — open this control`}
-          >
-            <span>{chip.label}</span>
-            <span className="mono stack-chip__value">{chip.value}</span>
-          </button>
-        ))}
+        {stack.map((chip) => {
+          const off = hidden.includes(chip.id)
+          return (
+            /*
+             * Two buttons in one chip, not one button with a button inside it:
+             * the eye must switch the edit off without also opening its panel,
+             * and a control nested in a control cannot promise that.
+             */
+            <span
+              key={chip.id}
+              className="stack-chip"
+              data-accent={chip.accent || undefined}
+              data-hidden={off || undefined}
+            >
+              <button
+                className="stack-chip__pick"
+                // A chip jumps to wherever its control actually lives.
+                onClick={() => (isToolbarTool(chip.panel) ? openTool(chip.panel) : focusPanel(chip.panel))}
+                title={`${chip.label} — open this control`}
+              >
+                <span>{chip.label}</span>
+                <span className="mono stack-chip__value">{chip.value}</span>
+              </button>
+              {chip.off && (
+                <button
+                  className="stack-chip__eye"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleHidden(chip.id)
+                  }}
+                  aria-pressed={off}
+                  title={off ? `Show ${chip.label.toLowerCase()}` : `Hide ${chip.label.toLowerCase()}`}
+                  aria-label={off ? `Show ${chip.label.toLowerCase()}` : `Hide ${chip.label.toLowerCase()}`}
+                >
+                  {off ? <IconEyeOff size={13} /> : <IconEye size={13} />}
+                </button>
+              )}
+            </span>
+          )
+        })}
       </div>
 
       <div className="toolbar__actions">

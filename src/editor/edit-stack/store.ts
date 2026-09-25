@@ -1,7 +1,8 @@
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import { cloneEdits, defaultEdits, editsEqual } from './defaults'
 import { emptyHistory, pushHistory, shouldPush, touchHistory, type History } from './history'
-import { countEdits, type PanelId } from './summary'
+import { countEdits, revealTouched, withHidden, type PanelId } from './summary'
 import { createMask, neutralMaskAdjust, replaceMask, replaceMaskAdjust } from './masks'
 import {
   DETECT_VERSION,
@@ -89,6 +90,13 @@ interface EditorState {
   edits: EditState
   history: History
   clipboard: EditState | null
+  /**
+   * Chips in the applied-edits strip whose eye is shut. The edit stays in the
+   * stack with its values intact; the renderer is handed its off state instead
+   * (`withHidden`). Session state for the open photo: it says what you are
+   * looking at right now, not what the photo is, so it goes in no sidecar.
+   */
+  hidden: readonly string[]
 
   /** LUTs and presets the user has imported (spec §4.3.1). */
   presets: CustomPreset[]
@@ -196,6 +204,8 @@ interface EditorState {
   setPresetInputSpace: (id: string, space: InputSpace) => Promise<void>
 
   update: (patch: Partial<EditState>, coalesceKey?: string) => void
+  /** Shut or open the eye on one chip of the applied-edits strip. */
+  toggleHidden: (chipId: string) => void
   updateCrop: (patch: Partial<EditState['crop']>, coalesceKey?: string) => void
   updateFrame: (patch: Partial<EditState['frame']>, coalesceKey?: string) => void
   applyLook: (id: string | null) => void
@@ -297,6 +307,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   edits: defaultEdits(),
   history: emptyHistory(),
   clipboard: null,
+  hidden: [],
   presets: [],
   framePresets: [],
 
@@ -439,6 +450,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         },
         edits,
         history: emptyHistory(),
+        hidden: [],
         histogram: null,
         // The selection named a mask on the photo being left behind.
         activeMaskId: edits.masks[0]?.id ?? null,
@@ -703,6 +715,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       activeFrameId: null,
       edits: defaultEdits(),
       history: emptyHistory(),
+      hidden: [],
       histogram: null,
       activeMaskId: null,
       exifOpen: false,
@@ -831,9 +844,16 @@ export const useEditor = create<EditorState>((set, get) => ({
       ? pushHistory(history, cloneEdits(edits), coalesceKey ?? null, now)
       : touchHistory(history, coalesceKey ?? null, now)
 
-    set({ edits: next, history: nextHistory })
+    set({ edits: next, history: nextHistory, hidden: hiddenAfter(get, edits, next) })
     maybeRedevelop(beforeRaw, get, set)
     scheduleAutosave(get, set)
+  },
+
+  toggleHidden(chipId) {
+    const { hidden } = get()
+    set({
+      hidden: hidden.includes(chipId) ? hidden.filter((id) => id !== chipId) : [...hidden, chipId],
+    })
   },
 
   updateFrame(patch, coalesceKey) {
@@ -1063,6 +1083,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({
       edits: cloneEdits(edits),
       history: pushHistory(get().history, cloneEdits(current), coalesceKey ?? null, now),
+      hidden: hiddenAfter(get, current, edits),
     })
     maybeRedevelop(current.raw, get, set)
     scheduleAutosave(get, set)
@@ -1081,6 +1102,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         coalesceKey: null,
         coalesceAt: 0,
       },
+      hidden: hiddenAfter(get, edits, previous),
     })
     maybeRedevelop(beforeRaw, get, set)
     scheduleAutosave(get, set)
@@ -1099,6 +1121,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         coalesceKey: null,
         coalesceAt: 0,
       },
+      hidden: hiddenAfter(get, edits, next),
     })
     maybeRedevelop(beforeRaw, get, set)
     scheduleAutosave(get, set)
@@ -1248,6 +1271,25 @@ let developGeneration = 0
  * edit state. Any of those can change what the decoder was asked for, and a
  * panel that disagreed with the pixels on screen would be worse than no panel.
  */
+/** The hidden set once `before` has become `after` — see `revealTouched`. */
+function hiddenAfter(get: Getter, before: EditState, after: EditState): readonly string[] {
+  const { hidden, photo } = get()
+  return revealTouched(hidden, before, after, photo?.meta ?? null)
+}
+
+/**
+ * The edits to draw, export and measure: the stack with every shut eye taken
+ * out. Everything that puts pixels on screen or in a file reads this; the
+ * panels and their sliders keep reading `edits`, because the value under a
+ * shut eye is still the user's value.
+ */
+export function useRenderEdits(): EditState {
+  const edits = useEditor((s) => s.edits)
+  const hidden = useEditor((s) => s.hidden)
+  const meta = useEditor((s) => s.photo?.meta ?? null)
+  return useMemo(() => withHidden(edits, hidden, meta), [edits, hidden, meta])
+}
+
 function maybeRedevelop(before: EditState['raw'], get: Getter, set: Setter): void {
   if (!get().photo?.meta.isRaw) return
   if (JSON.stringify(before) === JSON.stringify(get().edits.raw)) return

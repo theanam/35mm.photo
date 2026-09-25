@@ -1,4 +1,13 @@
-import { NEUTRAL_TEMPERATURE, defaultRawDevelop } from './defaults'
+import {
+  NEUTRAL_TEMPERATURE,
+  defaultRawDevelop,
+  identityCurves,
+  neutralColorGrade,
+  neutralFrame,
+  neutralHsl,
+  neutralLens,
+  neutralPerspective,
+} from './defaults'
 import { isIdentityCurve } from '../presets/curve'
 import { getLook } from '../presets/catalogue'
 import { maskIsActive } from './masks'
@@ -27,6 +36,12 @@ export interface StackChip {
   panel: PanelId
   /** The look chip is tinted in the design. */
   accent?: boolean
+  /**
+   * The values that switch this edit off while leaving it in the stack: what
+   * the renderer is handed in place of the user's when the chip's eye is shut.
+   * Absent on a chip that cannot be bypassed without re-reading the file.
+   */
+  off?: (edits: EditState) => Partial<EditState>
 }
 
 const signed = (v: number, digits = 0) =>
@@ -147,11 +162,23 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
       edits.temperature !== NEUTRAL_TEMPERATURE
         ? `${Math.round(edits.temperature)}K`
         : `tint ${signed(edits.tint)}`
-    chips.push({ id: 'wb', label: 'White balance', value, panel: 'light' })
+    chips.push({
+      id: 'wb',
+      label: 'White balance',
+      value,
+      panel: 'light',
+      off: () => ({ temperature: NEUTRAL_TEMPERATURE, tint: 0 }),
+    })
   }
 
   if (edits.exposure !== 0) {
-    chips.push({ id: 'exposure', label: 'Exposure', value: signed(edits.exposure, 2), panel: 'light' })
+    chips.push({
+      id: 'exposure',
+      label: 'Exposure',
+      value: signed(edits.exposure, 2),
+      panel: 'light',
+      off: () => ({ exposure: 0 }),
+    })
   }
 
   if (hasToneEdits(edits)) {
@@ -161,16 +188,34 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
         : edits.contrast !== 0
           ? signed(edits.contrast)
           : 'shaped'
-    chips.push({ id: 'tone', label: 'Tone', value, panel: 'light' })
+    chips.push({
+      id: 'tone',
+      label: 'Tone',
+      value,
+      panel: 'light',
+      off: () => ({ contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, dynamicRange: 0 }),
+    })
   }
 
   if (edits.vibrance !== 0 || edits.saturation !== 0) {
     const value = edits.vibrance !== 0 ? signed(edits.vibrance) : signed(edits.saturation)
-    chips.push({ id: 'colour', label: 'Colour', value, panel: 'light' })
+    chips.push({
+      id: 'colour',
+      label: 'Colour',
+      value,
+      panel: 'light',
+      off: () => ({ vibrance: 0, saturation: 0 }),
+    })
   }
 
   if (hasCurveEdits(edits)) {
-    chips.push({ id: 'curves', label: 'Curves', value: 'custom', panel: 'curves' })
+    chips.push({
+      id: 'curves',
+      label: 'Curves',
+      value: 'custom',
+      panel: 'curves',
+      off: () => ({ curves: identityCurves() }),
+    })
   }
 
   if (hasMixerEdits(edits)) {
@@ -178,7 +223,13 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
       const a = edits.hsl[b]
       return a.hue || a.sat || a.lum
     }).length
-    chips.push({ id: 'mixer', label: 'Colour mixer', value: `${count} band${count === 1 ? '' : 's'}`, panel: 'mixer' })
+    chips.push({
+      id: 'mixer',
+      label: 'Colour mixer',
+      value: `${count} band${count === 1 ? '' : 's'}`,
+      panel: 'mixer',
+      off: () => ({ hsl: neutralHsl() }),
+    })
   }
 
   if (hasGradeEdits(edits)) {
@@ -191,6 +242,7 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
       label: 'Colour grading',
       value: `${count} zone${count === 1 ? '' : 's'}`,
       panel: 'grade',
+      off: () => ({ colorGrade: neutralColorGrade() }),
     })
   }
 
@@ -208,7 +260,16 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
           : angle !== 0
             ? `${signed(angle, 1)}°`
             : 'full'
-    chips.push({ id: 'crop', label: 'Crop', value, panel: 'crop' })
+    chips.push({
+      id: 'crop',
+      label: 'Crop',
+      value,
+      panel: 'crop',
+      // The ratio lock is a setting, not a cut; only the cut comes off.
+      off: (e) => ({
+        crop: { ...e.crop, x: 0, y: 0, w: 1, h: 1, angle: 0, rotate90: 0, flipH: false, flipV: false },
+      }),
+    })
   }
 
   if (hasLensEdits(edits)) {
@@ -221,7 +282,13 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
           : edits.lens.distortion !== 0
             ? `distortion ${signed(edits.lens.distortion)}`
             : 'corrected'
-    chips.push({ id: 'lens', label: 'Optics', value, panel: 'lens' })
+    chips.push({
+      id: 'lens',
+      label: 'Optics',
+      value,
+      panel: 'lens',
+      off: () => ({ perspective: neutralPerspective(), lens: neutralLens() }),
+    })
   }
 
   if (hasDetailEdits(edits)) {
@@ -233,7 +300,13 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
           : edits.sharpen !== 0
             ? `sharpen ${Math.round(edits.sharpen)}`
             : `clarity ${signed(edits.clarity)}`
-    chips.push({ id: 'detail', label: 'Detail', value, panel: 'detail' })
+    chips.push({
+      id: 'detail',
+      label: 'Detail',
+      value,
+      panel: 'detail',
+      off: () => ({ clarity: 0, texture: 0, dehaze: 0, sharpen: 0, denoiseLuma: 0, denoiseChroma: 0 }),
+    })
   }
 
   if (hasMaskEdits(edits)) {
@@ -243,6 +316,7 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
       label: 'Masks',
       value: `${count} local`,
       panel: 'masks',
+      off: () => ({ masks: [] }),
     })
   }
 
@@ -254,6 +328,7 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
       value: String(Math.round(edits.look.strength)),
       panel: 'looks',
       accent: true,
+      off: (e) => ({ look: { ...e.look, id: null } }),
     })
   }
 
@@ -264,7 +339,13 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
         : edits.halation !== 0
           ? `halation ${Math.round(edits.halation)}`
           : `vignette ${signed(edits.vignette)}`
-    chips.push({ id: 'grain', label: 'Grain & vignette', value, panel: 'grain' })
+    chips.push({
+      id: 'grain',
+      label: 'Grain & vignette',
+      value,
+      panel: 'grain',
+      off: () => ({ grain: 0, vignette: 0, halation: 0 }),
+    })
   }
 
   if (hasFrameEdits(edits)) {
@@ -277,7 +358,13 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
     const value = even
       ? `${round1(sides[0])}${suffix}`
       : `up to ${round1(Math.max(...sides))}${suffix}`
-    chips.push({ id: 'frame', label: 'Frame', value, panel: 'frame' })
+    chips.push({
+      id: 'frame',
+      label: 'Frame',
+      value,
+      panel: 'frame',
+      off: () => ({ frame: neutralFrame() }),
+    })
   }
 
   return chips
@@ -286,4 +373,47 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
 /** Count used in the recents grid ("5 edits · yesterday"). */
 export function countEdits(edits: EditState): number {
   return buildStack(edits, null).length
+}
+
+/**
+ * The edits as the renderer should see them: every chip whose eye is shut is
+ * replaced by its off state. The user's values are untouched — this is a view
+ * of the stack, never a write to it — so opening the eye again is free.
+ */
+export function withHidden(
+  edits: EditState,
+  hidden: readonly string[],
+  meta: ImageMeta | null,
+): EditState {
+  if (!hidden.length) return edits
+  let out = edits
+  for (const chip of buildStack(edits, meta)) {
+    if (chip.off && hidden.includes(chip.id)) out = { ...out, ...chip.off(out) }
+  }
+  return out
+}
+
+/**
+ * The hidden set after an edit: a shut eye opens again the moment its own
+ * controls are touched. Dragging exposure while exposure is switched off would
+ * otherwise move a slider that changes nothing on screen, which reads as a
+ * broken slider rather than a hidden edit. A chip that has left the stack is
+ * forgotten too, so a stale id cannot come back to life on a later edit.
+ */
+export function revealTouched(
+  hidden: readonly string[],
+  before: EditState,
+  after: EditState,
+  meta: ImageMeta | null,
+): readonly string[] {
+  if (!hidden.length) return hidden
+  const chips = new Map(buildStack(after, meta).map((c) => [c.id, c]))
+  const kept = hidden.filter((id) => {
+    const chip = chips.get(id)
+    if (!chip?.off) return false
+    // The keys a chip's off state writes are the keys it governs.
+    const keys = Object.keys(chip.off(after)) as (keyof EditState)[]
+    return keys.every((k) => JSON.stringify(before[k]) === JSON.stringify(after[k]))
+  })
+  return kept.length === hidden.length ? hidden : kept
 }

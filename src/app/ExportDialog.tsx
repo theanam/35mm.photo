@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useEditor } from '../editor/edit-stack/store'
+import { useEditor, useRenderEdits } from '../editor/edit-stack/store'
 import {
   canOverwriteOriginal,
   exportFilename,
@@ -32,7 +32,8 @@ export function ExportDialog() {
   // A phone has no save dialog and a downloads folder nobody visits, so the
   // share sheet is what "save" means there.
   const phone = useIsPhone()
-  const edits = useEditor((s) => s.edits)
+  // What is on screen is what gets written: a hidden edit stays out of the file.
+  const edits = useRenderEdits()
   const toast = useEditor((s) => s.toast)
 
   const [busy, setBusy] = useState<string | null>(null)

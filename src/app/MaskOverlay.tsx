@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react'
-import { useEditor } from '../editor/edit-stack/store'
+import { useEditor, useRenderEdits } from '../editor/edit-stack/store'
 import { applyMat3Point, buildUprightTransform, mat3Invert } from '../editor/gpu/transform'
 import { isLinear, isRadial } from '../editor/edit-stack/masks'
 import type { LinearMask, Mask, RadialMask } from '../editor/edit-stack/types'
@@ -27,6 +27,8 @@ type Handle = 'move' | 'rx' | 'ry' | 'from' | 'to'
  */
 export function MaskOverlay({ width, height }: { width: number; height: number }) {
   const edits = useEditor((s) => s.edits)
+  // The overlay sits on the picture as drawn, so a hidden crop must not skew it.
+  const drawn = useRenderEdits()
   const photo = useEditor((s) => s.photo)
   const activeMaskId = useEditor((s) => s.activeMaskId)
   const updateMask = useEditor((s) => s.updateMask)
@@ -39,10 +41,10 @@ export function MaskOverlay({ width, height }: { width: number; height: number }
   /** Upright uv → output uv, and back. */
   const { toUpright, toOutput } = useMemo(() => {
     const m = meta
-      ? buildUprightTransform(meta.width, meta.height, edits.crop, edits.perspective)
+      ? buildUprightTransform(meta.width, meta.height, drawn.crop, drawn.perspective)
       : null
     return { toUpright: m, toOutput: m ? mat3Invert(m) : null }
-  }, [meta, edits.crop, edits.perspective])
+  }, [meta, drawn.crop, drawn.perspective])
 
   const dragRef = useRef<{ handle: Handle; mask: Mask; from: [number, number] } | null>(null)
 

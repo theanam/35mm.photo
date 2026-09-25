@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useEditor } from '../editor/edit-stack/store'
+import { useEditor, useRenderEdits } from '../editor/edit-stack/store'
 import { neutralFrame } from '../editor/edit-stack/defaults'
 import { Renderer } from '../editor/gpu/renderer'
 import { frameLayout, outputSize } from '../editor/gpu/transform'
@@ -35,7 +35,8 @@ const GESTURE_SLOP_PX = 24
 
 export function Viewport() {
   const photo = useEditor((s) => s.photo)
-  const edits = useEditor((s) => s.edits)
+  // The stack with every shut eye taken out — what is drawn, not what is set.
+  const edits = useRenderEdits()
   const zoom = useEditor((s) => s.zoom)
   const splitCompare = useEditor((s) => s.splitCompare)
   const splitAt = useEditor((s) => s.splitAt)

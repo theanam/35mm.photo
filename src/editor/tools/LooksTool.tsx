@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { Slider, formatPlain } from '../../app/ui/Slider'
-import { useEditor } from '../edit-stack/store'
+import { useEditor, useRenderEdits } from '../edit-stack/store'
 import { LOOKS } from '../presets/looks'
 import { useCustomLooks, useLooksCatalogue } from '../presets/catalogue'
 import { INPUT_SPACES, inputSpaceDef, type InputSpace } from '../presets/inputSpace'
@@ -18,6 +18,8 @@ type CanvasMap = React.MutableRefObject<Map<string, HTMLCanvasElement | null>>
 
 export function LooksTool() {
   const edits = useEditor((s) => s.edits)
+  // Swatches show each look on the picture as it is currently drawn.
+  const renderEdits = useRenderEdits()
   const photo = useEditor((s) => s.photo)
   const applyLook = useEditor((s) => s.applyLook)
   const update = useEditor((s) => s.update)
@@ -29,7 +31,7 @@ export function LooksTool() {
   const custom = useCustomLooks()
 
   const canvases: CanvasMap = useRef(new Map<string, HTMLCanvasElement | null>())
-  useLookPreviews(catalogue, photo?.preview ?? null, photo?.meta.orientation ?? 1, edits, canvases)
+  useLookPreviews(catalogue, photo?.preview ?? null, photo?.meta.orientation ?? 1, renderEdits, canvases)
 
   const activeId = edits.look.id
   const active = catalogue.find((l) => l.id === activeId) ?? null
