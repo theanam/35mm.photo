@@ -461,10 +461,6 @@ function SubjectEdge({ mask }: { mask: SubjectMask }) {
         resetTo={SUBJECT_EDGE_DEFAULTS.shift}
         onChange={(v) => updateMask(mask.id, { shift: v }, `mask-shift-${mask.id}`)}
       />
-      <p className="tool__hint">
-        Detail is how closely the edge follows hair and branches; low gives a clean outline.
-        Shift grows or shrinks the whole edge.
-      </p>
     </>
   )
 }

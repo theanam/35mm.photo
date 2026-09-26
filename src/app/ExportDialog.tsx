@@ -8,6 +8,7 @@ import {
   type ExportFormat,
 } from '../io/export'
 import { exportLayout } from '../editor/gpu/transform'
+import { edgeForHeight, edgeForWidth } from '../io/export-size'
 import { useIsPhone } from './phone/useLayoutMode'
 
 const FORMATS: { id: ExportFormat; label: string; note: string }[] = [
@@ -22,6 +23,59 @@ const SIZES: { id: string; label: string; maxEdge: number | null }[] = [
   { id: '2048', label: 'Long edge 2048', maxEdge: 2048 },
   { id: '1080', label: 'Long edge 1080', maxEdge: 1080 },
 ]
+
+/**
+ * One side of a custom size: typed, committed on Enter or on leaving, shown as
+ * what the file will actually be once the other side has had its say.
+ */
+function SideField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string
+  value: number
+  onCommit: (n: number) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  useEffect(() => setDraft(null), [value])
+  const commit = () => {
+    if (draft === null) return
+    const n = Number(draft.trim())
+    setDraft(null)
+    if (draft.trim() !== '' && Number.isFinite(n)) onCommit(n)
+  }
+  return (
+    <label className="size-link__side">
+      <span className="size-link__label">{label[0]}</span>
+      <input
+        className="size-link__field mono"
+        type="text"
+        inputMode="numeric"
+        value={draft ?? String(value)}
+        aria-label={`${label} in pixels`}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); e.currentTarget.blur() }
+          if (e.key === 'Escape') { e.preventDefault(); setDraft(null); e.currentTarget.blur() }
+        }}
+      />
+    </label>
+  )
+}
+
+/** Two numbers held in one shape: the chain between them says so. */
+function IconChain() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+      <path d="M6.8 9.2 9.2 6.8" />
+      <path d="M7.2 4.6 8.6 3.2a2.6 2.6 0 0 1 3.7 3.7L10.9 8.3" />
+      <path d="M8.8 11.4 7.4 12.8a2.6 2.6 0 0 1-3.7-3.7L5.1 7.7" />
+    </svg>
+  )
+}
 
 export function ExportDialog() {
   const open = useEditor((s) => s.exportOpen)
@@ -61,6 +115,12 @@ export function ExportDialog() {
   )
   const width = layout.width
   const height = layout.height
+
+  // The file at full size, which is what a custom width or height is measured
+  // against — and the size Custom starts from, so choosing it changes nothing
+  // until a number is typed.
+  const natural = exportLayout(photo.meta.width, photo.meta.height, edits.crop, edits.frame, null)
+  const custom = settings.maxEdge !== null && !SIZES.some((s) => s.maxEdge === settings.maxEdge)
 
   // Writing back in place is only offered when the file's own extension names
   // the format being encoded. Nearly everything 35mm opens it cannot write —
@@ -171,13 +231,38 @@ export function ExportDialog() {
                 <button
                   key={s.id}
                   className="chip"
-                  data-active={settings.maxEdge === s.maxEdge || undefined}
+                  data-active={(!custom && settings.maxEdge === s.maxEdge) || undefined}
                   onClick={() => setSettings({ maxEdge: s.maxEdge })}
                 >
                   {s.label}
                 </button>
               ))}
+              <button
+                className="chip"
+                data-active={custom || undefined}
+                onClick={() => setSettings({ maxEdge: Math.max(natural.width, natural.height) })}
+              >
+                Custom
+              </button>
             </div>
+            {custom && (
+              <div className="size-link" role="group" aria-label="Custom size" title="Width and height keep the picture's shape">
+                <SideField
+                  label="Width"
+                  value={width}
+                  onCommit={(n) => setSettings({ maxEdge: edgeForWidth(natural.width, natural.height, n) })}
+                />
+                <span className="size-link__chain">
+                  <IconChain />
+                </span>
+                <SideField
+                  label="Height"
+                  value={height}
+                  onCommit={(n) => setSettings({ maxEdge: edgeForHeight(natural.width, natural.height, n) })}
+                />
+                <span className="size-link__unit">px</span>
+              </div>
+            )}
           </div>
 
           <dl className="facts">
