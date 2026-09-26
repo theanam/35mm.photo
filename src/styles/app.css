@@ -2240,6 +2240,8 @@ kbd {
 /* The number as a field, where typing one is the point. Sized like the readout
    it replaces, so a column of sliders stays a column. */
 .slider__entry { display: flex; align-items: center; gap: 4px; flex: 0 0 62px; width: 62px; }
+/* Standing in for a readout, it takes the readout's width so the row holds still. */
+.slider__entry--readout { flex-basis: 52px; width: 52px; }
 .slider__field {
   width: 100%;
   min-width: 0;

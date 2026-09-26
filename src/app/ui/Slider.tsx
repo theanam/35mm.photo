@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 
 export interface SliderProps {
   label: string
@@ -61,6 +61,13 @@ export function Slider({
    * until then this is the only thing that knows what is in it.
    */
   const [draft, setDraft] = useState<string | null>(null)
+  /*
+   * A readout that has been double-clicked becomes a field until the edit is
+   * committed or abandoned. The typed-entry variant is the same field, always
+   * on; this is the same field, on demand, for every other slider.
+   */
+  const [typing, setTyping] = useState(false)
+  const fieldRef = useRef<HTMLInputElement>(null)
 
   const span = max - min || 1
   const pct = ((value - min) / span) * 100
@@ -100,11 +107,32 @@ export function Slider({
 
   /** Take what was typed, or put the field back if it was not a number. */
   const commit = useCallback(() => {
+    setTyping(false)
     if (draft === null) return
-    const n = Number(draft.replace(',', '.').trim())
+    // A readout shows "−25" with a real minus and "+0.40" with a sign; both
+    // are things somebody might type back, and neither is a number to `Number`.
+    const n = Number(draft.replace(',', '.').replace('−', '-').replace(/^\+/, '').trim())
     setDraft(null)
     if (draft.trim() !== '' && Number.isFinite(n)) onChange(clamp(n))
   }, [draft, onChange, clamp])
+
+  /*
+   * Escape blurs the field, and the blur commits — with the draft still in
+   * hand, because React has not re-rendered between the two. So an abandoned
+   * edit is flagged here, where the blur handler can see it at once.
+   */
+  const cancelled = useRef(false)
+  const abandon = useCallback(() => {
+    cancelled.current = true
+    setDraft(null)
+    setTyping(false)
+  }, [])
+
+  // The field arrives already focused and selected, so the number can simply
+  // be typed over.
+  useEffect(() => {
+    if (typing) fieldRef.current?.select()
+  }, [typing])
 
   // A value changed from elsewhere — a preset, a link mode, a unit switch —
   // must show through rather than be hidden behind a stale draft.
@@ -151,9 +179,10 @@ export function Slider({
         />
       </div>
 
-      {editable ? (
-        <span className="slider__entry">
+      {editable || typing ? (
+        <span className={editable ? 'slider__entry' : 'slider__entry slider__entry--readout'}>
           <input
+            ref={fieldRef}
             className="slider__field mono"
             type="text"
             inputMode="decimal"
@@ -162,11 +191,17 @@ export function Slider({
             aria-label={`${label}${unit ? ` in ${unit}` : ''}`}
             onChange={(e) => setDraft(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}
-            onBlur={() => commit()}
+            onBlur={() => {
+              if (cancelled.current) {
+                cancelled.current = false
+                return
+              }
+              commit()
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); commit(); e.currentTarget.blur() }
               // Escape abandons the edit rather than committing half of it.
-              if (e.key === 'Escape') { e.preventDefault(); setDraft(null); e.currentTarget.blur() }
+              if (e.key === 'Escape') { e.preventDefault(); abandon(); e.currentTarget.blur() }
               // The arrows step the value, the way they would on the slider.
               if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                 e.preventDefault()
@@ -179,7 +214,21 @@ export function Slider({
           {unit && <span className="slider__unit">{unit}</span>}
         </span>
       ) : (
-        <span className="slider__value mono">{format ? format(value) : formatSigned(value, step)}</span>
+        /*
+          Double-click to type an exact number. The readout stays a readout
+          the rest of the time — a permanent field on every row is a wall of
+          boxes, and most values here are felt rather than known — but a
+          number you do know should not have to be dragged to.
+        */
+        <span
+          className="slider__value mono"
+          title={disabled ? undefined : 'Double-click to type a value'}
+          onDoubleClick={() => {
+            if (!disabled) setTyping(true)
+          }}
+        >
+          {format ? format(value) : formatSigned(value, step)}
+        </span>
       )}
 
       {/*
