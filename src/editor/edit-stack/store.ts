@@ -5,6 +5,7 @@ import { emptyHistory, pushHistory, shouldPush, touchHistory, type History } fro
 import { countEdits, revealTouched, withHidden, type PanelId } from './summary'
 import { createMask, neutralMaskAdjust, replaceMask, replaceMaskAdjust } from './masks'
 import { SUBJECT_EDGE_DEFAULTS } from '../../subject/refine'
+import { openingLift } from '../tools/auto'
 import {
   DETECT_VERSION,
   forgetSubjects,
@@ -165,6 +166,21 @@ interface EditorState {
   resetOpen: boolean
   exportSettings: ExportSettings
   histogram: HistogramData | null
+  /**
+   * Whether a raw that opens with no edits of its own gets its exposure set
+   * from its histogram. An honest develop is darker than the camera's JPEG,
+   * because the JPEG has been lifted and this has not; this makes the lift,
+   * as an ordinary Exposure edit that can be undone, reset or switched off.
+   * A preference, not an edit, so it is kept in this browser rather than in
+   * any photo's sidecar.
+   */
+  autoExpose: boolean
+  /**
+   * The frame waiting for its first histogram so the lift above can be made.
+   * Set on open, cleared on the first histogram, on the next open, and by any
+   * edit the user makes first.
+   */
+  pendingAutoExpose: string | null
   /** Published by the viewport so the bottom bar can show the zoom level. */
   viewScale: number
   fitScale: number
@@ -258,6 +274,7 @@ interface EditorState {
   setResetOpen: (open: boolean) => void
   setExportSettings: (patch: Partial<ExportSettings>) => void
   setHistogram: (data: HistogramData) => void
+  setAutoExpose: (on: boolean) => void
   setViewScale: (scale: number, fit: number) => void
   toast: (message: string, tone?: Toast['tone']) => void
   dismissToast: (id: string) => void
@@ -341,6 +358,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   batch: { ...IDLE_BATCH },
   exportSettings: { ...DEFAULT_EXPORT },
   histogram: null,
+  autoExpose: loadAutoExpose(),
+  pendingAutoExpose: null,
   viewScale: 1,
   fitScale: 1,
   toasts: [],
@@ -457,6 +476,10 @@ export const useEditor = create<EditorState>((set, get) => ({
         history: emptyHistory(),
         hidden: [],
         histogram: null,
+        // Only a raw, and only one arriving with no edits of its own: a
+        // photo somebody has already worked on has an exposure they chose.
+        pendingAutoExpose:
+          get().autoExpose && meta.isRaw && !saved?.edits ? id : null,
         // The selection named a mask on the photo being left behind.
         activeMaskId: edits.masks[0]?.id ?? null,
         loading: false,
@@ -720,6 +743,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       history: emptyHistory(),
       hidden: [],
       histogram: null,
+      pendingAutoExpose: null,
       activeMaskId: null,
       exifOpen: false,
       resetOpen: false,
@@ -847,7 +871,14 @@ export const useEditor = create<EditorState>((set, get) => ({
       ? pushHistory(history, cloneEdits(edits), coalesceKey ?? null, now)
       : touchHistory(history, coalesceKey ?? null, now)
 
-    set({ edits: next, history: nextHistory, hidden: hiddenAfter(get, edits, next) })
+    set({
+      edits: next,
+      history: nextHistory,
+      hidden: hiddenAfter(get, edits, next),
+      // An edit made before the first histogram landed is the user's own
+      // decision about this photo, and the lift must not land on top of it.
+      pendingAutoExpose: coalesceKey === 'auto-expose' ? get().pendingAutoExpose : null,
+    })
     maybeRedevelop(beforeRaw, get, set)
     scheduleAutosave(get, set)
   },
@@ -1253,7 +1284,20 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setExportOpen(open) { set({ exportOpen: open }) },
   setExportSettings(patch) { set({ exportSettings: { ...get().exportSettings, ...patch } }) },
-  setHistogram(data) { set({ histogram: data }) },
+  setHistogram(data) {
+    const { pendingAutoExpose, activeFrameId, edits } = get()
+    set({ histogram: data })
+    if (!pendingAutoExpose || pendingAutoExpose !== activeFrameId) return
+    set({ pendingAutoExpose: null })
+    // Measured before the user has touched anything; if they have, theirs wins.
+    if (edits.exposure !== 0 || edits.highlights !== 0) return
+    const lift = openingLift(data)
+    if (Object.keys(lift).length) get().update(lift, 'auto-expose')
+  },
+  setAutoExpose(on) {
+    set({ autoExpose: on })
+    saveAutoExpose(on)
+  },
   setViewScale(scale, fit) {
     // Guard the write: the viewport recomputes this every frame.
     if (get().viewScale !== scale || get().fitScale !== fit) set({ viewScale: scale, fitScale: fit })
@@ -1295,6 +1339,32 @@ let developGeneration = 0
  * edit state. Any of those can change what the decoder was asked for, and a
  * panel that disagreed with the pixels on screen would be worse than no panel.
  */
+/*
+ * The one preference this app keeps. localStorage rather than IndexedDB: a
+ * boolean read once at startup does not need a transaction, and it must be
+ * there synchronously for the initial state. Wrapped, because storage can be
+ * absent or refuse in a private window, and that costs the default, not a
+ * broken app.
+ */
+const AUTO_EXPOSE_KEY = '35mm.autoExpose'
+
+function loadAutoExpose(): boolean {
+  try {
+    const stored = localStorage.getItem(AUTO_EXPOSE_KEY)
+    return stored === null ? true : stored === '1'
+  } catch {
+    return true
+  }
+}
+
+function saveAutoExpose(on: boolean): void {
+  try {
+    localStorage.setItem(AUTO_EXPOSE_KEY, on ? '1' : '0')
+  } catch {
+    // Nothing to do: the choice holds for this session.
+  }
+}
+
 /** The hidden set once `before` has become `after` — see `revealTouched`. */
 function hiddenAfter(get: Getter, before: EditState, after: EditState): readonly string[] {
   const { hidden, photo } = get()

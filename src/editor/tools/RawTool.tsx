@@ -48,6 +48,8 @@ const NOISE: { id: RawNoiseReduction; label: string; note: string }[] = [
 export function RawTool() {
   const photo = useEditor((s) => s.photo)
   const raw = useEditor((s) => s.edits.raw)
+  const autoExpose = useEditor((s) => s.autoExpose)
+  const setAutoExpose = useEditor((s) => s.setAutoExpose)
   const loading = useEditor((s) => s.loading)
   const updateRawDevelop = useEditor((s) => s.updateRawDevelop)
   if (!photo) return null
@@ -114,6 +116,20 @@ export function RawTool() {
           disabled={loading}
           onPick={(noiseReduction) => updateRawDevelop({ noiseReduction })}
         />
+
+        <section className="tool__group">
+          <header className="tool__group-head">
+            <span>On open</span>
+          </header>
+          <label className="mask-toggle">
+            <input
+              type="checkbox"
+              checked={autoExpose}
+              onChange={(e) => setAutoExpose(e.target.checked)}
+            />
+            <span>Auto-expose</span>
+          </label>
+        </section>
 
         <section className="tool__group">
           <header className="tool__group-head">

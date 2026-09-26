@@ -65,7 +65,8 @@ thing it was placed over.
   WebAssembly — demosaic, camera white balance, 16-bit pipeline, with the
   develop settings a photographer should have a say in: white balance basis,
   demosaic quality, highlight reconstruction, pre-demosaic noise reduction and
-  a half-size draft mode
+  a half-size draft mode — and an auto-expose on open, because an honest
+  develop is darker than the camera's JPEG, which has been lifted
 - **Light and colour** — exposure, contrast, highlights, shadows, whites,
   blacks, white balance, vibrance, saturation, and a **dynamic range** control
   that reads the area around each pixel rather than the pixel alone, so a
