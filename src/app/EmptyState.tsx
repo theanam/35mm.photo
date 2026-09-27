@@ -37,9 +37,9 @@ export function EmptyState({ dragging }: { dragging: boolean }) {
     void (async () => {
       const next: Record<string, string> = {}
       for (const recent of recents) {
-        const blob = await db.loadThumb(recent.key)
-        if (!blob) continue
-        const url = URL.createObjectURL(blob)
+        const stored = await db.loadThumb(recent.key)
+        if (!stored) continue
+        const url = URL.createObjectURL(stored.blob)
         urls.push(url)
         next[recent.key] = url
       }

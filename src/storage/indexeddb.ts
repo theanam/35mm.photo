@@ -253,12 +253,37 @@ export async function clearRecents(): Promise<void> {
   await tx(STORE_DEVELOP, 'readwrite', (s) => s.clear())
 }
 
-export async function saveThumb(key: string, blob: Blob): Promise<void> {
-  await tx(STORE_THUMBS, 'readwrite', (s) => s.put(blob, key))
+/**
+ * What a thumbnail is filed with: the as-shot facts the filmstrip sorts and
+ * groups on, so a photo can be gathered under its lens without being decoded
+ * again. Older records are a bare blob and come back without them.
+ */
+export type ShotFacts = Pick<ImageMeta, 'camera' | 'lens' | 'shotAt' | 'make' | 'model' | 'focal' | 'aperture' | 'iso'>
+
+export interface StoredThumb {
+  blob: Blob
+  shot?: ShotFacts
 }
 
-export async function loadThumb(key: string): Promise<Blob | null> {
-  return (await tx<Blob>(STORE_THUMBS, 'readonly', (s) => s.get(key))) ?? null
+export async function saveThumb(key: string, blob: Blob, shot?: ShotFacts): Promise<void> {
+  const record: StoredThumb = shot ? { blob, shot } : { blob }
+  await tx(STORE_THUMBS, 'readwrite', (s) => s.put(record, key))
+}
+
+export async function loadThumb(key: string): Promise<StoredThumb | null> {
+  const record = await tx<StoredThumb | Blob>(STORE_THUMBS, 'readonly', (s) => s.get(key))
+  if (!record) return null
+  return record instanceof Blob ? { blob: record } : record
+}
+
+/** The facts worth filing beside a thumbnail, and nothing that is undefined. */
+export function shotFacts(meta: ImageMeta): ShotFacts {
+  const out: ShotFacts = {}
+  for (const k of ['camera', 'lens', 'shotAt', 'make', 'model', 'focal', 'aperture', 'iso'] as const) {
+    const v = meta[k]
+    if (v !== undefined) (out as Record<string, unknown>)[k] = v
+  }
+  return out
 }
 
 /**

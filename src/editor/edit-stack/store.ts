@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { readShotInfo } from '../../io/exif-tags'
 import { create } from 'zustand'
 import { cloneEdits, defaultEdits, editsEqual } from './defaults'
 import { emptyHistory, pushHistory, shouldPush, touchHistory, type History } from './history'
@@ -24,7 +25,6 @@ import { displaySize } from '../gpu/transform'
 import { parseAspectRatio } from './aspect'
 import { applySyncScope, type SyncGroup } from './sync'
 import { MAX_MASKS, type EditState, type Frame, type ImageMeta, type Mask, type MaskAdjust, type MaskKind } from './types'
-import type { Orientation } from '../../io/exif'
 import { MAX_PREVIEW_EDGE, decodeFile, makeThumbnail } from '../../io/decode'
 import { developFor, developFullSource } from '../../io/develop'
 import type { DecodeStage } from '../../io/decode'
@@ -408,6 +408,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     }
     const added: Frame[] = files.map((f) => ({
       id: db.fileKey(f.file),
+      modifiedAt: f.file.lastModified,
       meta: {
         name: f.file.name,
         ext: extensionOf(f.file.name),
@@ -518,7 +519,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       })
 
       if (opened.handle) void db.saveHandle(key, opened.handle)
-      void cacheThumbnail(key, id, preview, meta.orientation, set, get)
+      void cacheThumbnail(key, id, preview, meta, set, get)
       void get().refreshRecents()
       // A subject mask covers nothing until its map is in hand. Bring back
       // whatever was found before; find the rest, if that costs no download.
@@ -1542,13 +1543,15 @@ async function cacheThumbnail(
   key: string,
   frameId: string,
   bitmap: ImageBitmap,
-  orientation: Orientation,
+  meta: ImageMeta,
   set: Setter,
   get: Getter,
 ) {
-  const blob = await makeThumbnail(bitmap, orientation)
+  const blob = await makeThumbnail(bitmap, meta.orientation)
   if (!blob) return
-  void db.saveThumb(key, blob)
+  // Filed with the shot facts, so a strip grouped by lens does not have to
+  // decode every photo it has ever shown a thumbnail of.
+  void db.saveThumb(key, blob, db.shotFacts(meta))
 
   const url = URL.createObjectURL(blob)
   set({
@@ -1559,6 +1562,9 @@ async function cacheThumbnail(
     }),
   })
 }
+
+/** An `ImageMeta` with nothing in it, to type the facts an EXIF read gives. */
+const blankMeta: ImageMeta = { name: '', ext: '', isRaw: false, width: 0, height: 0, orientation: 1, bytes: 0 }
 
 /** Decode the rest of a dropped batch at thumbnail size only. */
 async function hydrateThumbnails(ids: string[], set: Setter, get: Getter) {
@@ -1576,15 +1582,28 @@ async function hydrateThumbnails(ids: string[], set: Setter, get: Getter) {
     try {
       const cached = await db.loadThumb(db.fileKey(opened.file))
       if (cached) {
-        const url = URL.createObjectURL(cached)
-        set({ frames: get().frames.map((f) => (f.id === id && !f.thumbUrl ? { ...f, thumbUrl: url } : f)) })
+        // A thumbnail filed before the strip could sort by camera has no facts
+        // beside it. Reading the EXIF block is a few kilobytes, not a decode,
+        // so the record is brought up to date on the spot.
+        let shot = cached.shot
+        if (!shot) {
+          const facts = db.shotFacts({ ...blankMeta, ...(await readShotInfo(opened.file)) })
+          if (Object.keys(facts).length) {
+            shot = facts
+            void db.saveThumb(db.fileKey(opened.file), cached.blob, facts)
+          }
+        }
+        const url = URL.createObjectURL(cached.blob)
+        set({
+          frames: get().frames.map((f) =>
+            f.id === id && !f.thumbUrl ? { ...f, thumbUrl: url, meta: { ...f.meta, ...(shot ?? {}) } } : f,
+          ),
+        })
         continue
       }
 
       const decoded = await decodeFile(opened.file)
-      await cacheThumbnail(
-        db.fileKey(opened.file), id, decoded.bitmap, decoded.meta.orientation, set, get,
-      )
+      await cacheThumbnail(db.fileKey(opened.file), id, decoded.bitmap, decoded.meta, set, get)
       set({ frames: get().frames.map((f) => (f.id === id ? { ...f, meta: decoded.meta } : f)) })
       // The bitmap was only needed for the thumbnail — the active photo keeps
       // its own copy.

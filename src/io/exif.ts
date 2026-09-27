@@ -58,6 +58,23 @@ export async function readOrientation(file: Blob): Promise<ImageOrientationInfo>
     if (view.getUint32(0) === 0x89504e47) return readPng(view)
     if (view.getUint32(0) === 0x52494646 && view.getUint32(8) === 0x57454250) return readWebp(view)
 
+    // A Fujifilm RAF is its own container, but it carries an ordinary JPEG
+    // preview with an ordinary EXIF block, and the header says where: a
+    // big-endian offset at byte 84. The TIFF start is then measured from the
+    // file, not from the JPEG, so the reader can slice straight to it.
+    if (view.getUint32(0) === 0x46554a49 && view.getUint32(4) === 0x46494c4d && view.byteLength >= 88) {
+      const jpegAt = view.getUint32(84)
+      if (jpegAt > 0 && jpegAt < file.size) {
+        const jpeg = new DataView(await file.slice(jpegAt, jpegAt + HEADER_BYTES).arrayBuffer())
+        if (jpeg.byteLength >= 4 && jpeg.getUint16(0) === 0xffd8) {
+          const info = readJpeg(jpeg)
+          // LibRaw turns the pixels upright itself; only the EXIF location is wanted here.
+          return { ...info, tiffStart: info.tiffStart == null ? null : info.tiffStart + jpegAt }
+        }
+      }
+      return fallback
+    }
+
     // A bare TIFF, which is what most raw files are: ARW, NEF, CR2, DNG and
     // RW2 all open with a byte-order mark and put their EXIF in IFD0 directly,
     // with no container wrapped around it.

@@ -1,8 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
 import { pickFiles } from '../io/file-system'
 import { MarkEdited } from './ui/icons'
 import type { Frame } from '../editor/edit-stack/types'
+import {
+  GROUP_LABEL,
+  SORT_LABEL,
+  loadStripOrder,
+  orderFrames,
+  saveStripOrder,
+  type StripGroup,
+  type StripOrder,
+  type StripSort,
+} from './strip-order'
 
 type Filter = 'all' | 'raw' | 'rendered'
 
@@ -32,17 +42,24 @@ export function Filmstrip() {
   const [filter, setFilter] = useState<Filter>('all')
   const [editedOnly, setEditedOnly] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [orderOpen, setOrderOpen] = useState(false)
+  const [order, setOrder] = useState<StripOrder>(loadStripOrder)
+  useEffect(() => saveStripOrder(order), [order])
   const headerRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
-    if (!menuOpen) return
+    if (!menuOpen && !orderOpen) return
     // `pointerdown`, not `mousedown`: a tap only synthesises a mouse event
     // after it finishes, so on touch the menu stayed open until the second tap.
+    const close = () => {
+      setMenuOpen(false)
+      setOrderOpen(false)
+    }
     const onDown = (e: PointerEvent) => {
-      if (!headerRef.current?.contains(e.target as Node)) setMenuOpen(false)
+      if (!headerRef.current?.contains(e.target as Node)) close()
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false)
+      if (e.key === 'Escape') close()
     }
     window.addEventListener('pointerdown', onDown)
     window.addEventListener('keydown', onKey)
@@ -50,7 +67,7 @@ export function Filmstrip() {
       window.removeEventListener('pointerdown', onDown)
       window.removeEventListener('keydown', onKey)
     }
-  }, [menuOpen])
+  }, [menuOpen, orderOpen])
 
   // Nothing selected, nothing to decide about.
   useEffect(() => {
@@ -95,7 +112,15 @@ export function Filmstrip() {
   const byType = active === 'raw' ? raw : active === 'rendered' ? rendered : frames
   // Composed with the type tabs rather than replacing them, so "only the raws I
   // have edited" is a thing you can ask for.
-  const visible = editedOnly ? byType.filter((f) => (f.editCount ?? 0) > 0) : byType
+  const shown = editedOnly ? byType.filter((f) => (f.editCount ?? 0) > 0) : byType
+  // In the order and under the headings asked for. `visible` is the flat
+  // order, which is what a shift-click range and select-all run along.
+  const sections = useMemo(() => orderFrames(shown, order), [shown, order])
+  const visible = useMemo(() => sections.flatMap((s) => s.frames), [sections])
+
+  const pickSort = (sort: StripSort) =>
+    setOrder((o) => (o.sort === sort ? { ...o, descending: !o.descending } : { ...o, sort, descending: false }))
+  const pickGroup = (group: StripGroup) => setOrder((o) => ({ ...o, group }))
 
   const addPhotos = () => void pickFiles().then(openFiles)
 
@@ -184,6 +209,17 @@ export function Filmstrip() {
               <span className="mono">{visible.length}</span>
               <button
                 className="filmstrip__add"
+                data-active={(order.sort !== 'name' || order.descending || order.group !== 'none') || undefined}
+                onClick={() => setOrderOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={orderOpen}
+                title="Sort and group"
+                aria-label="Sort and group"
+              >
+                ⇅
+              </button>
+              <button
+                className="filmstrip__add"
                 onClick={addPhotos}
                 title="Add more photos…"
                 aria-label="Add more photos"
@@ -191,6 +227,38 @@ export function Filmstrip() {
                 +
               </button>
             </span>
+
+            {orderOpen && (
+              <div className="menu menu--strip" role="menu" aria-label="Sort and group">
+                <div className="menu__heading">Sort</div>
+                {(Object.keys(SORT_LABEL) as StripSort[]).map((sort) => (
+                  <button
+                    key={sort}
+                    className="menu__item"
+                    role="menuitemradio"
+                    aria-checked={order.sort === sort}
+                    data-active={order.sort === sort || undefined}
+                    onClick={() => pickSort(sort)}
+                  >
+                    {SORT_LABEL[sort]}
+                    {order.sort === sort && <span className="mono">{order.descending ? '↓' : '↑'}</span>}
+                  </button>
+                ))}
+                <div className="menu__heading">Group</div>
+                {(Object.keys(GROUP_LABEL) as StripGroup[]).map((group) => (
+                  <button
+                    key={group}
+                    className="menu__item"
+                    role="menuitemradio"
+                    aria-checked={order.group === group}
+                    data-active={order.group === group || undefined}
+                    onClick={() => pickGroup(group)}
+                  >
+                    {GROUP_LABEL[group]}
+                  </button>
+                ))}
+              </div>
+            )}
           </>
         )}
       </header>
@@ -227,7 +295,14 @@ export function Filmstrip() {
       )}
 
       <ol className="filmstrip__list">
-        {visible.map((frame) => (
+        {sections.map((section, i) => (
+          <Fragment key={section.label ?? i}>
+            {section.label !== null && (
+              <li className="filmstrip__group" title={section.label}>
+                {section.label}
+              </li>
+            )}
+            {section.frames.map((frame) => (
           <li key={frame.id} className="frame">
             <button
               className="thumb"
@@ -285,6 +360,8 @@ export function Filmstrip() {
               ✕
             </button>
           </li>
+            ))}
+          </Fragment>
         ))}
 
         {frames.length === 0 &&

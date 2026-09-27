@@ -468,6 +468,8 @@ export interface ImageMeta {
 export interface Frame {
   id: string
   meta: ImageMeta
+  /** The file's own modification time, for ordering before its EXIF has been read. */
+  modifiedAt?: number
   /** Object URL of a small preview, for the filmstrip and recents grid. */
   thumbUrl?: string
   /** Parameter groups away from default, for the filmstrip's edited marker. */
