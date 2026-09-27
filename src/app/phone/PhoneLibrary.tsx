@@ -48,6 +48,7 @@ export function PhoneLibrary({ onClose }: { onClose: () => void }) {
                 className="thumb"
                 data-active={frame.id === activeFrameId || undefined}
                 data-error={Boolean(frame.error) || undefined}
+                aria-busy={(!frame.thumbUrl && !frame.error) || undefined}
                 onClick={() => {
                   void selectFrame(frame.id)
                   onClose()
@@ -56,8 +57,11 @@ export function PhoneLibrary({ onClose }: { onClose: () => void }) {
                 {frame.thumbUrl ? (
                   <img src={frame.thumbUrl} alt="" loading="lazy" />
                 ) : (
-                  <span className="thumb__placeholder" aria-hidden />
+                  <span className="thumb__placeholder" data-loading={!frame.error || undefined} aria-hidden />
                 )}
+                <span className="thumb__type" data-raw={frame.meta.isRaw || undefined} aria-hidden>
+                  {frame.meta.ext === 'jpeg' ? 'JPG' : frame.meta.ext.toUpperCase()}
+                </span>
                 {frame.error && <span className="thumb__badge">!</span>}
                 <span className="visually-hidden">{frame.meta.name}</span>
               </button>

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { useEditor } from '../editor/edit-stack/store'
+import { prioritizeThumbnail, setThumbnailOrder, useEditor } from '../editor/edit-stack/store'
 import { pickFiles } from '../io/file-system'
 import { MarkEdited } from './ui/icons'
 import type { Frame } from '../editor/edit-stack/types'
@@ -45,7 +45,8 @@ export function Filmstrip() {
   const [orderOpen, setOrderOpen] = useState(false)
   const [order, setOrder] = useState<StripOrder>(loadStripOrder)
   useEffect(() => saveStripOrder(order), [order])
-  const headerRef = useRef<HTMLElement>(null)
+  // Whichever of the two menus is open; only one ever is.
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!menuOpen && !orderOpen) return
@@ -55,16 +56,24 @@ export function Filmstrip() {
       setMenuOpen(false)
       setOrderOpen(false)
     }
+    // Only the menu itself and the button that toggles it count as inside —
+    // the rest of the header is as much "elsewhere" as the viewport is. The
+    // toggle is left to its own click, or this would shut the menu and the
+    // click would open it straight back.
     const onDown = (e: PointerEvent) => {
-      if (!headerRef.current?.contains(e.target as Node)) close()
+      const target = e.target as Element
+      if (menuRef.current?.contains(target) || target.closest?.('[data-menu-toggle]')) return
+      close()
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close()
     }
-    window.addEventListener('pointerdown', onDown)
+    // Capture, because the crop and mask overlays stop their pointerdowns from
+    // bubbling, and a press on the photo is the most natural way to dismiss.
+    window.addEventListener('pointerdown', onDown, true)
     window.addEventListener('keydown', onKey)
     return () => {
-      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('pointerdown', onDown, true)
       window.removeEventListener('keydown', onKey)
     }
   }, [menuOpen, orderOpen])
@@ -118,9 +127,23 @@ export function Filmstrip() {
   const sections = useMemo(() => orderFrames(shown, order), [shown, order])
   const visible = useMemo(() => sections.flatMap((s) => s.frames), [sections])
 
-  const pickSort = (sort: StripSort) =>
+  // Thumbnails fill in the order the strip is drawn. What a filter hides still
+  // gets one, after everything on screen.
+  useEffect(() => {
+    const shownIds = new Set(visible.map((f) => f.id))
+    setThumbnailOrder([...visible.map((f) => f.id), ...frames.filter((f) => !shownIds.has(f.id)).map((f) => f.id)])
+  }, [visible, frames])
+
+  // Picking the current sort again flips its direction; the arrow beside it in
+  // the menu is where that shows, the next time it opens.
+  const pickSort = (sort: StripSort) => {
     setOrder((o) => (o.sort === sort ? { ...o, descending: !o.descending } : { ...o, sort, descending: false }))
-  const pickGroup = (group: StripGroup) => setOrder((o) => ({ ...o, group }))
+    setOrderOpen(false)
+  }
+  const pickGroup = (group: StripGroup) => {
+    setOrder((o) => ({ ...o, group }))
+    setOrderOpen(false)
+  }
 
   const addPhotos = () => void pickFiles().then(openFiles)
 
@@ -138,7 +161,7 @@ export function Filmstrip() {
         it holds cannot reflow anything — a panel that appeared above the list
         would shove every thumbnail down the moment a photo was picked.
       */}
-      <header className="filmstrip__header" ref={headerRef}>
+      <header className="filmstrip__header">
         {selection.length > 0 ? (
           <>
             <span>
@@ -156,6 +179,7 @@ export function Filmstrip() {
               <button
                 className="filmstrip__add"
                 onClick={() => setMenuOpen((v) => !v)}
+                data-menu-toggle
                 disabled={batch.running}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
@@ -167,7 +191,7 @@ export function Filmstrip() {
             </span>
 
             {menuOpen && (
-              <div className="menu menu--strip" role="menu">
+              <div className="menu menu--strip" role="menu" ref={menuRef}>
                 <button
                   className="menu__item"
                   role="menuitem"
@@ -211,6 +235,7 @@ export function Filmstrip() {
                 className="filmstrip__add"
                 data-active={(order.sort !== 'name' || order.descending || order.group !== 'none') || undefined}
                 onClick={() => setOrderOpen((v) => !v)}
+                data-menu-toggle
                 aria-haspopup="menu"
                 aria-expanded={orderOpen}
                 title="Sort and group"
@@ -229,7 +254,7 @@ export function Filmstrip() {
             </span>
 
             {orderOpen && (
-              <div className="menu menu--strip" role="menu" aria-label="Sort and group">
+              <div className="menu menu--strip" role="menu" aria-label="Sort and group" ref={menuRef}>
                 <div className="menu__heading">Sort</div>
                 {(Object.keys(SORT_LABEL) as StripSort[]).map((sort) => (
                   <button
@@ -310,7 +335,9 @@ export function Filmstrip() {
               data-selected={selection.includes(frame.id) || undefined}
               data-batch={batch.statuses[frame.id] || undefined}
               data-error={Boolean(frame.error) || undefined}
+              aria-busy={(!frame.thumbUrl && !frame.error) || undefined}
               onClick={(event) => {
+                prioritizeThumbnail(frame.id)
                 // Cmd/ctrl picks one out, shift extends; a plain click opens
                 // the photo, which is what clicking a thumbnail always meant.
                 if (event.metaKey || event.ctrlKey) toggleFrameSelected(frame.id)
@@ -328,7 +355,7 @@ export function Filmstrip() {
               {frame.thumbUrl ? (
                 <img src={frame.thumbUrl} alt="" loading="lazy" />
               ) : (
-                <span className="thumb__placeholder" aria-hidden />
+                <span className="thumb__placeholder" data-loading={!frame.error || undefined} aria-hidden />
               )}
               {batch.statuses[frame.id] === 'working' && (
                 <span className="thumb__spinner" aria-hidden />
@@ -338,6 +365,9 @@ export function Filmstrip() {
                   ✓
                 </span>
               )}
+              <span className="thumb__type" data-raw={frame.meta.isRaw || undefined} aria-hidden>
+                {frame.meta.ext === 'jpeg' ? 'JPG' : frame.meta.ext.toUpperCase()}
+              </span>
               {frame.error && <span className="thumb__badge">!</span>}
               {!frame.error && frame.unsaved && (
                 <span className="thumb__edited">

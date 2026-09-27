@@ -541,6 +541,50 @@
 .thumb[data-active] { border: 2px solid var(--accent); }
 .thumb[data-error] { border-color: #8a4a44; }
 .thumb__placeholder { display: block; width: 100%; height: 100%; }
+
+/*
+ * A raw can take seconds to reach thumbnail size, and a folder of them queues
+ * one decode at a time. A band of light sweeping the blank frame says the
+ * picture is on its way rather than missing. Transform only, so a strip of a
+ * few hundred of them stays on the compositor.
+ */
+.thumb__placeholder[data-loading] { position: relative; overflow: hidden; }
+.thumb__placeholder[data-loading]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(242, 234, 220, 0.07) 45%,
+    rgba(242, 234, 220, 0.13) 50%,
+    rgba(242, 234, 220, 0.07) 55%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  animation: thumb-shimmer 1500ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes thumb-shimmer {
+  to { transform: translateX(100%); }
+}
+
+/* Arrives rather than pops in over the sweep. */
+.thumb img { animation: thumb-in 220ms ease-out; }
+@keyframes thumb-in {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb__placeholder[data-loading]::after {
+    transform: none;
+    background: rgba(242, 234, 220, 0.06);
+    animation: thumb-breathe 2400ms ease-in-out infinite;
+  }
+  .thumb img { animation: none; }
+}
+@keyframes thumb-breathe {
+  50% { opacity: 0.2; }
+}
 .thumb__badge {
   position: absolute;
   left: 5px;
@@ -553,6 +597,25 @@
   font-size: 10px;
   line-height: 14px;
 }
+/* The file's type, small enough to read past. A raw says so in paper; the
+   rendered formats sit back in muted, since raw is the distinction that
+   decides how a photo can be developed. */
+.thumb__type {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(11, 10, 8, 0.72);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 12px;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+.thumb__type[data-raw] { color: var(--text); }
 .thumb--empty { border-style: dashed; background: none; cursor: default; list-style: none; }
 
 /* ───────────────────────────── viewport ───────────────────────────── */

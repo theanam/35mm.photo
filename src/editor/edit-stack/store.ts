@@ -432,7 +432,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     await get().selectFrame(added[0].id)
 
     // Thumbnails for the rest of the strip, after the first photo is up.
-    void hydrateThumbnails(added.map((f) => f.id), set, get)
+    queueThumbnails(added.map((f) => f.id), set, get)
   },
 
   async selectFrame(id) {
@@ -1566,15 +1566,72 @@ async function cacheThumbnail(
 /** An `ImageMeta` with nothing in it, to type the facts an EXIF read gives. */
 const blankMeta: ImageMeta = { name: '', ext: '', isRaw: false, width: 0, height: 0, orientation: 1, bytes: 0 }
 
+/**
+ * Thumbnails still to make, and the order to make them in.
+ *
+ * One queue for the whole strip rather than one loop per drop, so photos added
+ * while a folder is still filling in join the same line instead of racing it
+ * for LibRaw, which decodes one file at a time either way.
+ */
+const thumbQueue = new Set<string>()
+/** Most recent first: the photo just clicked is the one being looked at. */
+let thumbUrgent: string[] = []
+/** Where each photo sits in the strip as drawn, top first. */
+let thumbRank = new Map<string, number>()
+let thumbWorker: Promise<void> | null = null
+
+/**
+ * Tell the queue the order the strip is drawn in, so the thumbnails fill in
+ * from the top down rather than in the order the files were dropped — which,
+ * once the strip is sorted by date or grouped by lens, is no order at all.
+ */
+export function setThumbnailOrder(ids: string[]) {
+  thumbRank = new Map(ids.map((id, i) => [id, i]))
+}
+
+/** Put a photo still waiting for its thumbnail at the front of the line. */
+export function prioritizeThumbnail(id: string) {
+  if (!thumbQueue.has(id)) return
+  thumbUrgent = [id, ...thumbUrgent.filter((u) => u !== id)]
+}
+
+function nextThumbnail(get: Getter): string | undefined {
+  while (thumbUrgent.length) {
+    const id = thumbUrgent.shift()!
+    if (thumbQueue.has(id)) return id
+  }
+  // Anything the strip has not ranked — a phone, where the library draws the
+  // frames as they are — falls back to its place in the list, after the rest.
+  const frameIndex = new Map(get().frames.map((f, i) => [f.id, i]))
+  const rank = (id: string) => thumbRank.get(id) ?? thumbRank.size + (frameIndex.get(id) ?? Infinity)
+  let best: string | undefined
+  for (const id of thumbQueue) if (best === undefined || rank(id) < rank(best)) best = id
+  return best
+}
+
 /** Decode the rest of a dropped batch at thumbnail size only. */
-async function hydrateThumbnails(ids: string[], set: Setter, get: Getter) {
-  for (const id of ids) {
-    // Wait for any open the user is actually watching before queueing the next
+function queueThumbnails(ids: string[], set: Setter, get: Getter) {
+  for (const id of ids) thumbQueue.add(id)
+  thumbWorker ??= drainThumbnails(set, get).finally(() => {
+    thumbWorker = null
+  })
+}
+
+async function drainThumbnails(set: Setter, get: Getter) {
+  for (;;) {
+    // Wait for any open the user is actually watching before starting the next
     // thumbnail. LibRaw runs one decode at a time, so without this a folder of
     // raws puts every remaining file ahead of the photo they just clicked —
     // minutes of apparent freeze. Yielding here bounds that to a single decode.
     while (get().loading) await new Promise((r) => setTimeout(r, 120))
 
+    // Picked only now, after the wait, so a click made during it counts.
+    const id = nextThumbnail(get)
+    if (id === undefined) return
+    thumbQueue.delete(id)
+
+    // The open photo makes its own thumbnail from the develop it just did.
+    if (get().photo?.frameId === id) continue
     if (get().frames.find((f) => f.id === id)?.thumbUrl) continue
     const opened = openedFiles.get(id)
     if (!opened) continue
