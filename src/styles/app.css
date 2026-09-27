@@ -910,6 +910,7 @@
 .panel[data-focused] { background: var(--surface-row-hover); }
 
 .panel__header { display: flex; align-items: baseline; gap: 10px; padding: 14px 20px 0; }
+.panel__reset { margin-left: auto; font-size: 12px; }
 
 .panel__title-button {
   display: flex;
