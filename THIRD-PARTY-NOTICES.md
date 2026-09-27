@@ -24,6 +24,7 @@ dependencies — is not covered here. None of it is shipped to the browser.
 | [zustand](https://github.com/pmndrs/zustand) | 4.5.7 | MIT | pmndrs/zustand |
 | [ONNX Runtime Web](https://onnxruntime.ai/) | 1.30.0 | MIT | microsoft/onnxruntime |
 | [U²-Netp](https://github.com/xuebinqin/U-2-Net) weights (`public/models/u2netp.onnx`) | — | **Apache-2.0** | xuebinqin/U-2-Net |
+| [Lensfun](https://lensfun.github.io/) lens database, as JSON (`public/lensdb/`) | see `public/lensdb/ATTRIBUTION.md` | **CC BY-SA 3.0** (data, not code) | lensfun/lensfun |
 
 ### A note on the LibRaw wrapper
 

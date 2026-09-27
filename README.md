@@ -83,8 +83,11 @@ thing it was placed over.
   reportage, negative, cine, monochrome and exotic — plus your own imported
   LUTs and presets
 - **Crop and straighten**, with aspect presets and rotation
+- **Lens correction** — distortion, colour fringing and vignetting from the
+  [Lensfun](https://lensfun.github.io/) database, matched to the camera and
+  lens in the file; see [Lens profiles](#lens-profiles) below
 - **Perspective and optics** — keystone correction, plus manual distortion and
-  chromatic aberration
+  chromatic aberration on top of the profile
 - **Halation, grain and vignette**
 - **Live histogram and RGB parade**
 - **Batch editing** — select many photos, sync settings by group, export a
@@ -107,6 +110,30 @@ the format resting on HEVC. So 35mm carries one — [libheif](https://github.com
 compiled to WebAssembly, fetched the first time you open a HEIC on a browser
 that needs it and cached from then on. Safari and iOS decode HEIC themselves,
 and never download it at all.
+
+<a id="lens-profiles"></a>
+
+## Lens profiles
+
+The Lensfun project's database — a thousand-odd cameras and fifteen hundred
+lenses, measured by the photographers who own them — is converted at build
+time into a small index the app precaches and per-maker shards it fetches the
+first time a lens of that maker turns up, so a lens matched once matches
+offline. Only the data is used; none of the Lensfun library is compiled in.
+The conversion is `scripts/build-lensdb.ts`, pinned to one commit, and the
+output stays under Lensfun's own CC BY-SA 3.0 licence in `public/lensdb/`.
+
+Matching goes by what the file says: the body gives the mount and crop factor,
+the lens string is boiled down to tokens with the focal range and aperture
+counting for most, and a lens the string names by maker is never handed to a
+different maker's. A sure match applies silently; an uncertain one asks; a
+miss leaves a search over the lenses that fit the mount, and a choice can be
+remembered for that body and lens string. Coefficients are interpolated
+between calibrated focal lengths the way Lensfun does it, rescaled for the
+sensor the photo was actually taken on, and evaluated in one pass with the
+crop and perspective, so the picture is resampled once. By default a profile
+applies to raw files only, since a camera's own JPEG has usually been
+corrected already.
 
 <a id="looks-and-presets"></a>
 

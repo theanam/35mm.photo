@@ -40,9 +40,15 @@ uniform float uHslS[8];
 uniform float uHslL[8];
 uniform bool  uHasHsl;
 
-uniform float uFrameAspect;   // width / height of the frame being corrected
-uniform float uDistortion;    // -1..1, barrel through pincushion
-uniform float uCa;            // -1..1, lateral chromatic aberration
+// Lens correction, in the stored texture's hugin units: a radius of 1 is half
+// its shorter side. See lens/uniforms.ts for where every number comes from.
+uniform vec2  uLensNorm;      // (w, h) / min(w, h): uv offsets to hugin units, before the ×2
+uniform vec4  uDistK;         // Rd/Ru = 1 + k.x r + k.y r² + k.z r³ + k.w r⁴
+uniform float uLensZoom;      // output radii are divided by this first
+uniform vec3  uTcaR;          // red:  Rd/Ru = x + y r + z r²
+uniform vec3  uTcaB;          // blue: the same
+uniform vec3  uVigK;          // darkening 1 + x r² + y r⁴ + z r⁶
+uniform float uVigAmount;     // how much of that darkening to divide out
 
 // Colour grading. Each zone is packed hue(0..1), sat(0..1), lum(-1..1).
 uniform vec3  uGradeShadows;
@@ -135,16 +141,27 @@ vec3 applyGrade(vec3 c) {
 }
 
 /**
- * Radial remap about the frame centre, measured in aspect-corrected space so
- * the correction stays circular on a non-square frame. The factor scales radius by
- * a factor that grows with r², which is the first term of the usual polynomial
- * lens model — enough to straighten the bowed edges of a wide zoom.
+ * Lens geometry, from an output position to where in the source it came from.
+ *
+ * One radial polynomial covers every model the database has — poly3, poly5,
+ * ptlens and the manual slider are all coefficients of the same series — and
+ * the zoom is the auto-scale that keeps a straightened frame free of empty
+ * corners. Radius is measured from the centre of the stored texture in its
+ * own hugin units, which is what the coefficients were converted into.
  */
-vec2 lensRemap(vec2 uv, float amount) {
-  if (amount == 0.0) return uv;
-  vec2 d = (uv - 0.5) * vec2(uFrameAspect, 1.0);
-  float k = 1.0 + amount * 0.35 * dot(d, d);
-  return 0.5 + (d * k) / vec2(uFrameAspect, 1.0);
+vec2 toHugin(vec2 uv) { return (uv - 0.5) * uLensNorm * 2.0; }
+vec2 fromHugin(vec2 h) { return 0.5 + h / (uLensNorm * 2.0); }
+
+vec2 lensSource(vec2 uv) {
+  vec2 h = toHugin(uv) / uLensZoom;
+  float r = length(h);
+  float k = 1.0 + r * (uDistK.x + r * (uDistK.y + r * (uDistK.z + r * uDistK.w)));
+  return fromHugin(h * k);
+}
+
+/** A channel's own radius, as a scale on the source position. */
+vec2 tcaSample(vec2 h, float r, vec3 t) {
+  return fromHugin(h * (t.x + r * (t.y + r * t.z)));
 }
 
 /**
@@ -163,7 +180,7 @@ float coverage(vec2 p) {
 void main() {
   // The divide the vertex shader deliberately did not do. Without a keystone
   // vUvH.z is 1 and this costs nothing.
-  vec2 wanted = lensRemap(vUvH.xy / vUvH.z, uDistortion);
+  vec2 wanted = lensSource(vUvH.xy / vUvH.z);
 
   // A keystone or a distortion correction asks for source outside the picture,
   // and there is nothing there to show. Clamping alone answers with the edge
@@ -173,13 +190,16 @@ void main() {
   float cover = coverage(wanted);
   vec2 uv = clamp(wanted, vec2(0.0), vec2(1.0));
 
+  // Lateral CA is a per-channel magnification error, so it is undone by
+  // sampling red and blue at slightly different radii and leaving green —
+  // the channel the lens was focused for — where it is. Measured in the
+  // source, because that is where the calibration measured it.
+  vec2 hs = toHugin(uv);
+  float rs = length(hs);
   vec4 src;
-  if (uCa != 0.0) {
-    // Lateral CA is a per-channel magnification error, so it is undone by
-    // sampling red and blue at slightly different radii and leaving green —
-    // the channel the lens was focused for — where it is.
-    vec2 uvR = clamp(lensRemap(uv, uCa * 0.06), vec2(0.0), vec2(1.0));
-    vec2 uvB = clamp(lensRemap(uv, -uCa * 0.06), vec2(0.0), vec2(1.0));
+  if (uTcaR != vec3(1.0, 0.0, 0.0) || uTcaB != vec3(1.0, 0.0, 0.0)) {
+    vec2 uvR = clamp(tcaSample(hs, rs, uTcaR), vec2(0.0), vec2(1.0));
+    vec2 uvB = clamp(tcaSample(hs, rs, uTcaB), vec2(0.0), vec2(1.0));
     src = vec4(
       texture(uImage, uvR).r,
       texture(uImage, uv).g,
@@ -193,6 +213,15 @@ void main() {
   // White balance and exposure are scene-referred operations — do them in
   // linear light, where they mean what they say.
   vec3 lin = toLinear(clamp(src.rgb, 0.0, 1.0));
+  // Vignetting first: the lens darkened the corners before anything else
+  // happened to the light, so it is the first thing undone — as a gain, in
+  // linear light, on the radius in the source where this sample came from.
+  if (uVigAmount != 0.0) {
+    float r2 = dot(hs, hs);
+    // Half-diagonal units for this one, folded into the coefficients already.
+    float dark = 1.0 + r2 * (uVigK.x + r2 * (uVigK.y + r2 * uVigK.z));
+    lin *= mix(1.0, 1.0 / max(dark, 0.05), uVigAmount);
+  }
   lin *= uWbGain;
   lin *= exp2(uExposure);
   vec3 c = toSrgb(lin);

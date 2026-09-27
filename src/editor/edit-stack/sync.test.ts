@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultEdits } from './defaults'
+import { defaultEdits, neutralLensCorrection } from './defaults'
 import { createMask } from './masks'
 import { DEFAULT_SYNC_GROUPS, SYNC_GROUPS, applySyncScope, resetSyncScope } from './sync'
 import type { EditState } from './types'
@@ -196,7 +196,7 @@ describe('sync coverage', () => {
       raw: { ...defaultEdits().raw, demosaic: 'best', highlights: 'blend' },
       crop: { ...defaultEdits().crop, x: 0.1, y: 0.2, w: 0.5, h: 0.5, angle: 3 },
       perspective: { vertical: 20, horizontal: -10, aspect: 5, scale: 110 },
-      lens: { distortion: 15, ca: -8 },
+      lens: { distortion: 15, ca: -8, correction: { ...neutralLensCorrection(), mode: 'off', distortionAmount: 80 } },
     }
 
     const synced = applySyncScope(target, source, SYNC_GROUPS)

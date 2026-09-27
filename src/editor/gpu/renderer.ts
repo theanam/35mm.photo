@@ -22,12 +22,12 @@ const SUBJECT_UNIT = 5
 import {
   buildUprightTransform,
   buildUvTransform,
-  displaySize,
   mat3Identity,
   uprightSize,
 } from './transform'
 import { MAX_SUBJECT_MASKS, packMasks, type PackedMasks } from './mask-uniforms'
-import type { Orientation } from '../../io/exif'
+import { swapsAxes, type Orientation } from '../../io/exif'
+import { IDENTITY_LENS, type LensUniforms } from '../../lens/uniforms'
 import { whiteBalanceGain } from './whitebalance'
 
 /**
@@ -321,6 +321,19 @@ export class Renderer {
    * the answer. The maps arrive square, in stretched upright uv, which is the
    * space `maskUv` hands the shader, so no further mapping is needed.
    */
+  /** The lens correction in force; see `lens/uniforms.ts`. */
+  private lens: LensUniforms = IDENTITY_LENS
+
+  /**
+   * Set before a render, by whoever resolved the photo's lens. Kept here rather
+   * than passed with each render because every path in — the preview, the
+   * histogram readback, the export — must draw the same geometry, and a
+   * parameter can be forgotten on one of them.
+   */
+  setLens(lens: LensUniforms | null) {
+    this.lens = lens ?? IDENTITY_LENS
+  }
+
   setSubjectMaps(maps: ({ data: Uint8ClampedArray; size: number } | null)[]) {
     const gl = this.gl
     const live = maps.slice(0, MAX_SUBJECT_MASKS)
@@ -398,16 +411,21 @@ export class Renderer {
         : mat3Identity(),
     )
 
-    // Lens corrections work on the frame as displayed, so the aspect they use
-    // is the one after the quarter turns, not the stored one.
-    const display = displaySize(
-      this.uprightWidth || 1,
-      this.uprightHeight || 1,
-      edits.crop.rotate90,
-    )
-    this.colorU.f('uFrameAspect', display.width / Math.max(display.height, 1))
-    this.colorU.f('uDistortion', edits.lens.distortion / 100)
-    this.colorU.f('uCa', edits.lens.ca / 100)
+    // Lens correction works on the stored texture — the pixels as the sensor
+    // made them, before the EXIF turn — because that is the frame the lens
+    // drew. Its shorter side is the unit, whichever way the camera was held.
+    const swap = swapsAxes(this.orientation)
+    const storedW = swap ? this.uprightHeight : this.uprightWidth
+    const storedH = swap ? this.uprightWidth : this.uprightHeight
+    const short = Math.max(1, Math.min(storedW || 1, storedH || 1))
+    const lens = this.lens
+    this.colorU.v2('uLensNorm', (storedW || 1) / short, (storedH || 1) / short)
+    this.colorU.v4('uDistK', ...lens.distK)
+    this.colorU.f('uLensZoom', lens.zoom)
+    this.colorU.v3('uTcaR', ...lens.tcaR)
+    this.colorU.v3('uTcaB', ...lens.tcaB)
+    this.colorU.v3('uVigK', ...lens.vigK)
+    this.colorU.f('uVigAmount', lens.vigAmount)
 
     const [gr, gg, gb] = whiteBalanceGain(edits.temperature, edits.tint)
     this.colorU.v3('uWbGain', gr, gg, gb)

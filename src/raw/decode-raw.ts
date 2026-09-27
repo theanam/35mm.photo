@@ -196,10 +196,21 @@ function shotDetails(metadata: Awaited<ReturnType<LibRaw['metadata']>>) {
     .join(' ')
     .trim()
 
+  const lens = metadata.lens
+  const focal35 = lens?.FocalLengthIn35mmFormat || lens?.makernotes?.FocalLengthIn35mmFormat
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
+  const pos = (v: unknown) => (typeof v === 'number' && v > 0 && Number.isFinite(v) ? v : undefined)
+
   return {
     ...(metadata.iso_speed ? { iso: Math.round(metadata.iso_speed) } : {}),
     ...(camera ? { camera } : {}),
     ...(metadata.lens?.Lens ? { lens: String(metadata.lens.Lens).trim() } : {}),
+    ...(str(metadata.camera_make) ? { make: str(metadata.camera_make) } : {}),
+    ...(str(metadata.camera_model) ? { model: str(metadata.camera_model) } : {}),
+    ...(str(lens?.LensMake) ? { lensMake: str(lens?.LensMake) } : {}),
+    ...(pos(metadata.focal_len) ? { focal: metadata.focal_len } : {}),
+    ...(pos(metadata.aperture) ? { aperture: metadata.aperture } : {}),
+    ...(pos(focal35) ? { focal35 } : {}),
     ...(metadata.timestamp instanceof Date && !Number.isNaN(metadata.timestamp.valueOf())
       ? { shotAt: metadata.timestamp.valueOf() }
       : {}),

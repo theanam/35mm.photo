@@ -1,0 +1,1 @@
+{"fujian-35mm-f-1-7":[{"crop":2,"aspect":1.3333333333333333,"distortion":[{"model":"poly3","focal":35,"terms":[-0.0055]}],"tca":[{"model":"poly3","focal":35,"terms":[1.0005429,1.0008622,0,0,-0.0001764,0.0000786]}],"vignetting":[]}]}

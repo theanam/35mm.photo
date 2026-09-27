@@ -1,0 +1,1 @@
+{"kipon-elegant-35mm-f-2-4":[{"crop":1,"aspect":1.5,"distortion":[{"model":"ptlens","focal":35,"terms":[0.0120697,-0.0383129,0.0239143]}],"tca":[{"model":"poly3","focal":35,"terms":[1.000044,1.0000818,0,0,0,0]}],"vignetting":[]}]}

@@ -1,4 +1,5 @@
 import { Renderer } from '../editor/gpu/renderer'
+import { resolveLensUniforms } from '../lens/resolve'
 import { exportLayout, type FrameLayout } from '../editor/gpu/transform'
 import { getLut } from '../editor/presets/lutCache'
 import { getLook } from '../editor/presets/catalogue'
@@ -217,6 +218,10 @@ export async function renderToBlob(
     } else {
       renderer.setSubjectMaps([])
     }
+
+    // The lens profile, likewise inside the render path: the export must draw
+    // the geometry the viewport showed, and this is where it cannot be missed.
+    renderer.setLens(await resolveLensUniforms(meta, edits.lens))
 
     onProgress?.('Rendering')
     renderer.setImage(source, meta.orientation)

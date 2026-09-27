@@ -239,6 +239,12 @@ export interface ShotInfo {
   lens?: string
   iso?: number
   shotAt?: number
+  make?: string
+  model?: string
+  lensMake?: string
+  focal?: number
+  aperture?: number
+  focal35?: number
 }
 
 export async function readShotInfo(file: Blob): Promise<ShotInfo> {
@@ -265,11 +271,21 @@ export async function readShotInfo(file: Blob): Promise<ShotInfo> {
   const taken = dateText(exif.get(0x9003))
   const shotAt = taken ? Date.parse(taken.replace(' ', 'T')) : NaN
 
+  const focal = ratio(exif.get(0x920a))
+  const aperture = ratio(exif.get(0x829d))
+  const focal35 = int(exif.get(0xa405))
+
   return {
     camera: camera || undefined,
     lens: text(exif.get(0xa434)) ?? undefined,
     iso: int(exif.get(0x8827)) ?? undefined,
     shotAt: Number.isFinite(shotAt) ? shotAt : undefined,
+    make: make?.trim() || undefined,
+    model: model?.trim() || undefined,
+    lensMake: text(exif.get(0xa433))?.trim() || undefined,
+    focal: focal && focal > 0 ? focal : undefined,
+    aperture: aperture && aperture > 0 ? aperture : undefined,
+    focal35: focal35 && focal35 > 0 ? focal35 : undefined,
   }
 }
 

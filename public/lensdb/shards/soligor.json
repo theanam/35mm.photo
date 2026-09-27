@@ -1,0 +1,1 @@
+{"soligor-mc-soligor-c-d-wide-auto-1-2-8-f-24mm":[{"crop":1.531,"aspect":1.5,"distortion":[{"model":"ptlens","focal":24,"terms":[0.00094,-0.00031,-0.02187]}],"tca":[{"model":"poly3","focal":24,"terms":[1.0007959,0.9994169,0,0,-0.000149,0.0001683]}],"vignetting":[]}]}

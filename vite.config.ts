@@ -68,6 +68,8 @@ function precache(): Plugin {
         'icon.svg',
         'favicon.svg',
         'models/u2netp.onnx',
+        // The lens index, so a photo matches offline; shards are cached as used.
+        'lensdb/index.json',
       ]
       const groups = groupAssets([...Object.keys(bundle), ...alsoShipped])
 

@@ -119,10 +119,40 @@ export interface PerspectiveState {
  * these are the two a photographer can dial in by eye.
  */
 export interface LensState {
-  /** Barrel (negative) through pincushion (positive), −100..100. */
+  /** Barrel (negative) through pincushion (positive), −100..100. Adds to the profile. */
   distortion: number
-  /** Lateral chromatic aberration: red and blue scaled apart, −100..100. */
+  /** Lateral chromatic aberration: red and blue scaled apart, −100..100. Adds to the profile. */
   ca: number
+  /** The profile-driven correction: what to apply of what the database knows. */
+  correction: LensCorrectionState
+}
+
+/**
+ * Whether a lens profile is used at all. `auto` means raw files only: a
+ * camera's own JPEG or HEIF has usually been corrected already, and correcting
+ * twice is worse than not at all. `on` corrects every file; `off` none.
+ */
+export type LensProfileMode = 'auto' | 'on' | 'off'
+
+/**
+ * Settings, not coefficients. The profile itself is looked up per photo when
+ * it is rendered, from the camera and lens the file names, so copying these
+ * to another photo copies the *intent* — correct distortion at full strength —
+ * and never one lens's numbers onto another lens's picture.
+ */
+export interface LensCorrectionState {
+  mode: LensProfileMode
+  /** The user's own choice of lens, by database id, when the match was wrong or missing. */
+  lensId: string | null
+  distortion: boolean
+  tca: boolean
+  vignetting: boolean
+  /** 0..200, where 100 is the profile as measured. */
+  distortionAmount: number
+  tcaAmount: number
+  vignettingAmount: number
+  /** Zoom just enough that a straightened frame has no empty corners. */
+  constrain: boolean
 }
 
 /** Border sides, in the order CSS names them, so the four stay in one order. */
@@ -424,6 +454,14 @@ export interface ImageMeta {
   lens?: string
   camera?: string
   shotAt?: number
+  /** The maker and body separately, as written, for the lens database. */
+  make?: string
+  model?: string
+  lensMake?: string
+  /** Focal length in mm, aperture as an f-number, and the 35 mm-equivalent focal length. */
+  focal?: number
+  aperture?: number
+  focal35?: number
 }
 
 /** One entry in the filmstrip — a file the user opened or dropped. */

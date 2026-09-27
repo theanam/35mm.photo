@@ -5,6 +5,8 @@ import { emptyHistory, pushHistory, shouldPush, touchHistory, type History } fro
 import { countEdits, revealTouched, withHidden, type PanelId } from './summary'
 import { createMask, neutralMaskAdjust, replaceMask, replaceMaskAdjust } from './masks'
 import { SUBJECT_EDGE_DEFAULTS } from '../../subject/refine'
+import { rememberKey, resolveLens, shotOf, type ResolvedLens } from '../../lens/resolve'
+import { loadRemembered, rememberLens } from '../../lens/remember'
 import { openingLift } from '../tools/auto'
 import {
   DETECT_VERSION,
@@ -108,6 +110,15 @@ interface EditorState {
   presets: CustomPreset[]
   /** Frames the user has saved, newest first. Kept in this browser only. */
   framePresets: StoredFramePreset[]
+
+  /**
+   * What the lens database knows about the open photo, resolved once per photo
+   * and again when the user picks a lens. Not edit state: the edit state holds
+   * the intent, and this is the answer for this file.
+   */
+  lensProfile: ResolvedLens | null
+  /** True while a profile is being looked up, so the panel can say so. */
+  lensResolving: boolean
 
   /* UI */
   loading: boolean
@@ -227,6 +238,10 @@ interface EditorState {
   update: (patch: Partial<EditState>, coalesceKey?: string) => void
   /** Shut or open the eye on one chip of the applied-edits strip. */
   toggleHidden: (chipId: string) => void
+  /** Look the open photo's lens up again, from its metadata and the user's choice. */
+  resolveLensProfile: () => Promise<void>
+  /** Choose a lens by hand, and optionally for every photo that names it the same way. */
+  pickLens: (lensId: string | null, remember: boolean) => void
   updateCrop: (patch: Partial<EditState['crop']>, coalesceKey?: string) => void
   updateFrame: (patch: Partial<EditState['frame']>, coalesceKey?: string) => void
   applyLook: (id: string | null) => void
@@ -330,6 +345,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   history: emptyHistory(),
   clipboard: null,
   hidden: [],
+  lensProfile: null,
+  lensResolving: false,
   presets: [],
   framePresets: [],
 
@@ -506,6 +523,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       // A subject mask covers nothing until its map is in hand. Bring back
       // whatever was found before; find the rest, if that costs no download.
       void get().autoDetectSubjects()
+      void get().resolveLensProfile()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not open that file'
       set({
@@ -744,6 +762,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       hidden: [],
       histogram: null,
       pendingAutoExpose: null,
+      lensProfile: null,
       activeMaskId: null,
       exifOpen: false,
       resetOpen: false,
@@ -880,6 +899,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       pendingAutoExpose: coalesceKey === 'auto-expose' ? get().pendingAutoExpose : null,
     })
     maybeRedevelop(beforeRaw, get, set)
+    maybeReresolveLens(edits, get)
     scheduleAutosave(get, set)
   },
 
@@ -888,6 +908,31 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({
       hidden: hidden.includes(chipId) ? hidden.filter((id) => id !== chipId) : [...hidden, chipId],
     })
+  },
+
+  async resolveLensProfile() {
+    const { photo, activeFrameId, edits } = get()
+    if (!photo || !activeFrameId) {
+      set({ lensProfile: null })
+      return
+    }
+    set({ lensResolving: true })
+    try {
+      const profile = await resolveLens(shotOf(photo.meta), edits.lens.correction.lensId, loadRemembered())
+      // The photo may have changed under a slow fetch.
+      if (get().activeFrameId !== activeFrameId) return
+      set({ lensProfile: profile })
+    } finally {
+      if (get().activeFrameId === activeFrameId) set({ lensResolving: false })
+    }
+  },
+
+  pickLens(lensId, remember) {
+    const { photo, edits } = get()
+    if (photo && remember) rememberLens(rememberKey(shotOf(photo.meta)), lensId)
+    get().update({ lens: { ...edits.lens, correction: { ...edits.lens.correction, lensId } } }, 'lens-pick')
+    // A remembered choice can change the answer without the id changing.
+    if (photo && remember && !lensId) void get().resolveLensProfile()
   },
 
   updateFrame(patch, coalesceKey) {
@@ -1137,6 +1182,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       hidden: hiddenAfter(get, current, edits),
     })
     maybeRedevelop(current.raw, get, set)
+    maybeReresolveLens(current, get)
     scheduleAutosave(get, set)
   },
 
@@ -1156,6 +1202,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       hidden: hiddenAfter(get, edits, previous),
     })
     maybeRedevelop(beforeRaw, get, set)
+    maybeReresolveLens(edits, get)
     scheduleAutosave(get, set)
   },
 
@@ -1175,6 +1222,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       hidden: hiddenAfter(get, edits, next),
     })
     maybeRedevelop(beforeRaw, get, set)
+    maybeReresolveLens(edits, get)
     scheduleAutosave(get, set)
   },
 
@@ -1363,6 +1411,11 @@ function saveAutoExpose(on: boolean): void {
   } catch {
     // Nothing to do: the choice holds for this session.
   }
+}
+
+/** A different lens picked — by an edit, an undo, a paste — is a different profile. */
+function maybeReresolveLens(before: EditState, get: Getter): void {
+  if (get().edits.lens.correction.lensId !== before.lens.correction.lensId) void get().resolveLensProfile()
 }
 
 /** The hidden set once `before` has become `after` — see `revealTouched`. */
@@ -1577,7 +1630,12 @@ function migrate(edits: Partial<EditState>): EditState {
     curves: { ...base.curves, ...(edits.curves ?? {}) },
     hsl: { ...base.hsl, ...(edits.hsl ?? {}) },
     perspective: { ...base.perspective, ...(edits.perspective ?? {}) },
-    lens: { ...base.lens, ...(edits.lens ?? {}) },
+    lens: {
+      ...base.lens,
+      ...(edits.lens ?? {}),
+      // The profile settings arrived after the sliders; an older record has none.
+      correction: { ...base.lens.correction, ...(edits.lens?.correction ?? {}) },
+    },
     colorGrade: { ...base.colorGrade, ...(edits.colorGrade ?? {}) },
     // A subject mask names the detector that produced it, and a sidecar can
     // name one this build no longer has. Point it at what is actually here:

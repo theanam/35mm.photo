@@ -156,7 +156,7 @@ export const TOOLS: ToolDef[] = [
   {
     id: 'lens',
     label: 'Optics',
-    hint: 'perspective, distortion and chromatic aberration',
+    hint: 'lens profile, perspective, distortion and chromatic aberration',
     Icon: IconLens,
     Content: LensTool,
     isDirty: hasLensEdits,

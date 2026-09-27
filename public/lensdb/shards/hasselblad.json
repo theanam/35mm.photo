@@ -1,0 +1,1 @@
+{"hasselblad-l1d-20c-compatibles":[{"crop":2.8,"aspect":1.5,"distortion":[{"model":"ptlens","focal":10,"terms":[0.013,-0.071,0.021]}],"tca":[],"vignetting":[]}],"hasselblad-l2d-20c-compatibles":[{"crop":1.953,"aspect":1.3333333333333333,"distortion":[{"model":"ptlens","focal":12.3,"terms":[-0.0167982,0.00725109,-0.03131]}],"tca":[],"vignetting":[]}]}

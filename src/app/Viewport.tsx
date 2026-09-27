@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { storedSize } from '../lens/resolve'
+import { IDENTITY_LENS, lensUniforms } from '../lens/uniforms'
 import { useEditor, useRenderEdits } from '../editor/edit-stack/store'
 import { neutralFrame } from '../editor/edit-stack/defaults'
 import { Renderer } from '../editor/gpu/renderer'
@@ -240,6 +242,14 @@ export function Viewport() {
    * that is already sitting inside a border, and you cannot place a mask on one
    * either. It returns the moment the tool closes.
    */
+  // The lens profile the store resolved for this photo, as shader numbers.
+  // Recomputed only when the profile or the optics settings change.
+  const lensProfile = useEditor((s) => s.lensProfile)
+  const lensU = useMemo(() => {
+    if (!photo) return IDENTITY_LENS
+    return lensUniforms(lensProfile, edits.lens, photo.meta.isRaw, ...storedSize(photo.meta))
+  }, [photo, lensProfile, edits.lens])
+
   const renderEdits = useMemo(() => {
     if (!cropping && !masking) return edits
     return {
@@ -685,6 +695,7 @@ export function Viewport() {
     const overlay =
       masking && maskOverlay ? renderEdits.masks.findIndex((m) => m.id === activeMaskId) : -1
 
+    renderer.setLens(lensU)
     renderer.render(bufferW, bufferH, {
       frame: bufferFrame,
       edits: renderEdits,
@@ -695,7 +706,7 @@ export function Viewport() {
   }, [
     cssWidth, cssHeight, cssPhotoWidth, cssPhotoHeight, output.width,
     renderEdits, splitCompare, splitAt, cropping,
-    masking, maskOverlay, activeMaskId, activeFrameId, maskMapsAt,
+    masking, maskOverlay, activeMaskId, activeFrameId, maskMapsAt, lensU,
   ])
 
   useEffect(() => {
@@ -724,6 +735,7 @@ export function Viewport() {
       const h = Math.max(16, Math.round(aspect >= 1 ? HISTOGRAM_EDGE / aspect : HISTOGRAM_EDGE))
 
       // Always measure the edited result, never the split view.
+      renderer.setLens(lensU)
       const pixels = renderer.renderToPixels(w, h, edits, getLook(edits.look.id))
       client.compute(pixels)
       // The readback bound another framebuffer; put the canvas back on screen.
@@ -733,7 +745,7 @@ export function Viewport() {
     return () => {
       if (histogramTimer.current) clearTimeout(histogramTimer.current)
     }
-  }, [edits, output.width, output.height, draw, lutReady])
+  }, [edits, lensU, output.width, output.height, draw, lutReady])
 
   /* ── split handle ── */
 

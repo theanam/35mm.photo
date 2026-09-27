@@ -6,6 +6,7 @@ import {
   neutralFrame,
   neutralHsl,
   neutralLens,
+  neutralLensCorrection,
   neutralPerspective,
 } from './defaults'
 import { isIdentityCurve } from '../presets/curve'
@@ -86,8 +87,15 @@ export function hasLensEdits(edits: EditState): boolean {
   const l = edits.lens
   return (
     p.vertical !== 0 || p.horizontal !== 0 || p.aspect !== 0 || p.scale !== 100 ||
-    l.distortion !== 0 || l.ca !== 0
+    l.distortion !== 0 || l.ca !== 0 || hasProfileEdits(edits)
   )
+}
+
+/** The profile settings moved off their defaults: a lens chosen, a correction off or scaled. */
+export function hasProfileEdits(edits: EditState): boolean {
+  const c = edits.lens.correction
+  const base = neutralLensCorrection()
+  return (Object.keys(base) as (keyof typeof base)[]).some((k) => c[k] !== base[k])
 }
 
 export function hasToneEdits(edits: EditState): boolean {
@@ -281,7 +289,11 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
           ? `horizontal ${signed(p.horizontal)}`
           : edits.lens.distortion !== 0
             ? `distortion ${signed(edits.lens.distortion)}`
-            : 'corrected'
+            : edits.lens.correction.mode === 'off'
+              ? 'profile off'
+              : hasProfileEdits(edits)
+                ? 'profile'
+                : 'corrected'
     chips.push({
       id: 'lens',
       label: 'Optics',

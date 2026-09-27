@@ -2239,6 +2239,54 @@ kbd {
 
 /* The number as a field, where typing one is the point. Sized like the readout
    it replaces, so a column of sliders stays a column. */
+/* ───────────────────────── lens profile ───────────────────────── */
+
+.lens-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.lens-status::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.lens-status[data-confidence='high']::before { background: var(--accent); }
+.lens-status[data-confidence='ambiguous']::before { background: #d9a441; }
+.lens-status .link-button { margin-left: auto; }
+
+.lens-picker { display: flex; flex-direction: column; gap: 6px; }
+.lens-picker__ask { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: var(--text-muted); text-transform: uppercase; }
+.lens-picker__search {
+  width: 100%;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-app);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+.lens-picker__search:focus-visible { border-color: var(--accent); outline: none; }
+.lens-picker__result {
+  text-align: left;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.lens-picker__result:hover { background: var(--surface-hover); border-color: var(--line-soft); }
+
 /*
  * The custom export size: one control, not two. Both numbers sit in the same
  * box, joined by a chain, so it reads as a size held to a shape rather than

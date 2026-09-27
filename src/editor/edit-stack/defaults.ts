@@ -10,7 +10,7 @@ import {
   type RawDevelopState,
   type HslBand,
   type HslAdjustment,
-} from './types'
+ LensCorrectionState } from './types'
 
 /** A straight line — the curve that changes nothing. */
 export const IDENTITY_CURVE = [
@@ -52,7 +52,22 @@ export function neutralPerspective(): PerspectiveState {
 }
 
 export function neutralLens(): LensState {
-  return { distortion: 0, ca: 0 }
+  return { distortion: 0, ca: 0, correction: neutralLensCorrection() }
+}
+
+/** The profile applied as measured, to raw files, with nothing switched off. */
+export function neutralLensCorrection(): LensCorrectionState {
+  return {
+    mode: 'auto',
+    lensId: null,
+    distortion: true,
+    tca: true,
+    vignetting: true,
+    distortionAmount: 100,
+    tcaAmount: 100,
+    vignettingAmount: 100,
+    constrain: true,
+  }
 }
 
 /**
