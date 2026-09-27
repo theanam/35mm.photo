@@ -18,6 +18,8 @@ import { BatchBar } from './BatchBar'
 import { Toasts } from './Toasts'
 import { useKeyboard } from './useKeyboard'
 import { useDropTarget } from './useDropTarget'
+import { useLayout } from './useLayout'
+import { Splitter } from './Splitter'
 import { useIsPhone } from './phone/useLayoutMode'
 import { PhoneShell } from './phone/PhoneShell'
 import { useEditor } from '../editor/edit-stack/store'
@@ -32,6 +34,7 @@ export function App() {
   const viewScale = useEditor((s) => s.viewScale)
   const fitScale = useEditor((s) => s.fitScale)
   const dragging = useDropTarget()
+  const layout = useLayout()
   useKeyboard()
 
   // Build the LUTs up front; the first click on a look should not wait for one.
@@ -86,13 +89,19 @@ export function App() {
   if (isPhone) return <PhoneShell />
 
   return (
-    <div className="app" data-dragging={dragging || undefined}>
+    <div className="app" data-dragging={dragging || undefined} style={layout.style}>
       <TopBar />
 
       {photo && <Toolbar />}
 
       <div className="app__body">
         <Filmstrip />
+        <Splitter
+          side="left"
+          label="Resize the filmstrip"
+          onResize={layout.setStrip}
+          onReset={() => layout.setStrip(undefined)}
+        />
 
         {photo ? (
           <>
@@ -101,6 +110,12 @@ export function App() {
               <LoadingOverlay />
               <BottomBar scale={viewScale} fitScale={fitScale} />
             </main>
+            <Splitter
+              side="right"
+              label="Resize the panels"
+              onResize={layout.setRail}
+              onReset={() => layout.setRail(undefined)}
+            />
             {/* One column, two things it can show. A tool takes the rail
                 over rather than a band off the top of the picture, so the
                 viewport is the same height whatever is open. */}
@@ -115,6 +130,12 @@ export function App() {
               <EmptyState dragging={dragging} />
               <LoadingOverlay />
             </main>
+            <Splitter
+              side="right"
+              label="Resize the panels"
+              onResize={layout.setRail}
+              onReset={() => layout.setRail(undefined)}
+            />
             <IdleRail />
           </>
         )}

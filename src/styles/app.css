@@ -441,9 +441,11 @@
 
 /* ───────────────────────────── filmstrip ───────────────────────────── */
 
+.app { --strip-width: 148px; --rail-width: 372px; }
+
 .filmstrip {
-  width: 148px;
-  flex: 0 0 148px;
+  width: var(--strip-width);
+  flex: 0 0 var(--strip-width);
   display: flex;
   flex-direction: column;
   background: var(--bg-rail);
@@ -464,10 +466,12 @@
 }
 .filmstrip__header .mono { font-weight: 400; letter-spacing: 0; }
 
+/* A grid, so a wider strip is more thumbnails across rather than bigger ones. */
 .filmstrip__list {
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  align-content: start;
   gap: 8px;
   margin: 0;
   padding: 0 14px 14px;
@@ -475,11 +479,34 @@
   overflow-y: auto;
 }
 
+/* The seam between columns. Six pixels, over the borders it sits between. */
+.splitter {
+  flex: 0 0 6px;
+  width: 6px;
+  margin: 0 -3px;
+  position: relative;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+.splitter::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: transparent;
+  transition: background 120ms ease-out;
+}
+.splitter:hover::after, .splitter[data-active]::after { background: var(--accent); }
+/* Only the seam being dragged lights; hover on the other one is off while it is. */
+:root[data-resizing] .splitter:not([data-active]):hover::after { background: transparent; }
+:root[data-resizing] { cursor: col-resize; user-select: none; }
+:root[data-resizing] iframe, :root[data-resizing] canvas { pointer-events: none; }
+
 .thumb {
   position: relative;
   display: block;
   width: 100%;
-  height: 80px;
+  aspect-ratio: 3 / 2;
   padding: 0;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
@@ -811,8 +838,8 @@
 .rail-dock {
   --swap: 130ms;
 
-  width: 372px;
-  flex: 0 0 372px;
+  width: var(--rail-width);
+  flex: 0 0 var(--rail-width);
   display: grid;
   grid-template: "dock" 1fr / 1fr;
   min-height: 0;
@@ -928,8 +955,8 @@
 /* ───────────────────────────── idle rail ───────────────────────────── */
 
 .rail--idle {
-  width: 372px;
-  flex: 0 0 372px;
+  width: var(--rail-width);
+  flex: 0 0 var(--rail-width);
   border-left: 1px solid var(--line);
   gap: 28px;
   padding: 26px 20px;
@@ -1496,7 +1523,7 @@
 /* ───────────────────────────── narrow screens ───────────────────────────── */
 
 @media (max-width: 1240px) {
-  .rail-dock, .rail--idle { width: 330px; flex-basis: 330px; }
+  .app { --rail-width: 330px; }
 }
 
 @media (max-width: 1000px) {
