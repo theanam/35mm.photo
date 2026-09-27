@@ -200,15 +200,60 @@ export function effectiveCrop(imgW: number, imgH: number, crop: CropState): Crop
   if (crop.angle === 0) return crop
 
   const d = displaySize(imgW, imgH, crop.rotate90)
-  const boxAspect = (crop.w * d.width) / (crop.h * d.height)
-  if (!Number.isFinite(boxAspect) || boxAspect <= 0) return crop
+  const W = crop.w * d.width
+  const H = crop.h * d.height
+  if (!(W > 0) || !(H > 0)) return crop
 
-  const inset = insetCropForAngle(1, 1, crop.angle, boxAspect)
-  if (crop.w <= inset.w && crop.h <= inset.h) return crop
+  /*
+   * The box keeps its shape and shrinks about its own centre, the way
+   * Lightroom's does: the picture turns behind a crop that stays where it was
+   * put, and only gets smaller if a corner would otherwise reach past the
+   * picture's edge.
+   *
+   * Every corner of the box, rotated back by the straighten angle about the
+   * picture's centre (which is how the render samples it), has to land inside
+   * the picture. Each corner and each edge gives one linear bound on the
+   * scale, and the tightest one wins. Scaling the width and height by the
+   * same factor is what keeps the aspect: the old version clamped them
+   * separately, and a 3:2 crop came back a little squarer for every degree.
+   */
+  const rad = (-crop.angle * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const cx = (crop.x + crop.w / 2) * d.width
+  const cy = (crop.y + crop.h / 2) * d.height
+  // The box centre as the render samples it, and the rotated half-extents.
+  const ox = cx - d.width / 2
+  const oy = cy - d.height / 2
+  const px = d.width / 2 + ox * cos - oy * sin
+  const py = d.height / 2 + ox * sin + oy * cos
 
-  const w = Math.min(crop.w, inset.w)
-  const h = Math.min(crop.h, inset.h)
-  // Shrink about the centre, so a constrained box stays over what it framed.
+  let s = 1
+  for (const [hx, hy] of [[W / 2, H / 2], [-W / 2, H / 2], [-W / 2, -H / 2], [W / 2, -H / 2]] as const) {
+    const rx = hx * cos - hy * sin
+    const ry = hx * sin + hy * cos
+    // px + s·rx within [0, width]; py + s·ry within [0, height].
+    if (rx > 0) s = Math.min(s, (d.width - px) / rx)
+    else if (rx < 0) s = Math.min(s, -px / rx)
+    if (ry > 0) s = Math.min(s, (d.height - py) / ry)
+    else if (ry < 0) s = Math.min(s, -py / ry)
+  }
+  if (s >= 1) return crop
+
+  // A box whose very centre has turned out of the picture — only possible
+  // hard against a corner at a steep angle — cannot be saved by shrinking.
+  // Re-centre it on the picture and size it there instead.
+  if (!(s > 0.02)) {
+    const boundW = W * Math.abs(cos) + H * Math.abs(sin)
+    const boundH = W * Math.abs(sin) + H * Math.abs(cos)
+    const k = Math.min(1, d.width / boundW, d.height / boundH)
+    const w = crop.w * k
+    const h = crop.h * k
+    return { ...crop, w, h, x: (1 - w) / 2, y: (1 - h) / 2 }
+  }
+
+  const w = crop.w * s
+  const h = crop.h * s
   return {
     ...crop,
     w,
@@ -410,32 +455,3 @@ const ROT90_INVERSE: Record<number, Mat3> = {
   3: new Float32Array([0, 1, 0, -1, 0, 0, 1, 0, 1]), // → (1−dy, dx)
 }
 
-/**
- * Largest axis-aligned rect of the given aspect that fits inside the frame once
- * it is rotated by `angle`. Straightening without this leaves empty corners.
- */
-export function insetCropForAngle(
-  frameW: number,
-  frameH: number,
-  angleDeg: number,
-  aspect: number,
-): { w: number; h: number } {
-  const rad = Math.abs((angleDeg * Math.PI) / 180)
-  if (rad < 1e-6) return { w: 1, h: 1 }
-
-  const cos = Math.cos(rad)
-  const sin = Math.sin(rad)
-
-  // Target rect is aspect · h wide by h tall, in pixels.
-  const w = aspect
-  const h = 1
-  // Rotated bounding box of a w×h rect must fit within frameW×frameH.
-  const boundW = w * cos + h * sin
-  const boundH = w * sin + h * cos
-  const s = Math.min(frameW / boundW, frameH / boundH)
-
-  return {
-    w: Math.min(1, (w * s) / frameW),
-    h: Math.min(1, (h * s) / frameH),
-  }
-}

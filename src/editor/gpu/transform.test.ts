@@ -9,7 +9,6 @@ import {
   mat3Mul,
   effectiveCrop,
   frameLayout,
-  insetCropForAngle,
   outputSize,
   padToAspect,
   uprightSize,
@@ -232,16 +231,60 @@ describe('straighten and the crop', () => {
   const H = 4000
   const full = (angle: number) => ({ ...crop(), angle })
 
-  it('holds the box inside the rotated frame', () => {
-    const c = effectiveCrop(W, H, full(10))
-    const inset = insetCropForAngle(1, 1, 10, W / H)
+  /** The corners of a box, rotated back the way the render samples them. */
+  function sourceCorners(c: ReturnType<typeof crop>, angle: number) {
+    const rad = (-angle * Math.PI) / 180
+    const cos = Math.cos(rad)
+    const sin = Math.sin(rad)
+    const out: [number, number][] = []
+    for (const [u, v] of [[0, 0], [1, 0], [1, 1], [0, 1]]) {
+      const x = (c.x + u * c.w) * W - W / 2
+      const y = (c.y + v * c.h) * H - H / 2
+      out.push([W / 2 + x * cos - y * sin, H / 2 + x * sin + y * cos])
+    }
+    return out
+  }
 
-    expect(c.w).toBeCloseTo(inset.w, 6)
-    expect(c.h).toBeCloseTo(inset.h, 6)
+  it('holds the box inside the rotated frame, shrunk about its centre', () => {
+    const c = effectiveCrop(W, H, full(10))
     expect(c.w).toBeLessThan(1)
+    for (const [x, y] of sourceCorners(c, 10)) {
+      expect(x).toBeGreaterThanOrEqual(-1e-6)
+      expect(x).toBeLessThanOrEqual(W + 1e-6)
+      expect(y).toBeGreaterThanOrEqual(-1e-6)
+      expect(y).toBeLessThanOrEqual(H + 1e-6)
+    }
+    // And touching it: the box is as large as it can be.
+    const reach = sourceCorners(c, 10).some(([x, y]) => x < 1e-3 || y < 1e-3 || x > W - 1e-3 || y > H - 1e-3)
+    expect(reach).toBe(true)
     // Shrunk about the centre, so it still frames what it framed.
     expect(c.x + c.w / 2).toBeCloseTo(0.5, 6)
     expect(c.y + c.h / 2).toBeCloseTo(0.5, 6)
+  })
+
+  it('keeps the aspect ratio, which is the whole point', () => {
+    // A 3:2 frame straightened is still 3:2; a 1:1 box straightened is still 1:1.
+    for (const angle of [3, 10, 25, -14]) {
+      const whole = effectiveCrop(W, H, full(angle))
+      expect((whole.w * W) / (whole.h * H)).toBeCloseTo(W / H, 6)
+      const square = effectiveCrop(W, H, { ...crop(), x: 0.1, y: 0.05, w: 0.6, h: 0.9, angle })
+      expect((square.w * W) / (square.h * H)).toBeCloseTo((0.6 * W) / (0.9 * H), 6)
+    }
+  })
+
+  it('shrinks an off-centre box in place and keeps it inside', () => {
+    const stored = { ...crop(), x: 0.55, y: 0.4, w: 0.45, h: 0.6, angle: 12 }
+    const c = effectiveCrop(W, H, stored)
+    expect(c.w).toBeLessThan(stored.w)
+    expect((c.w * W) / (c.h * H)).toBeCloseTo((stored.w * W) / (stored.h * H), 6)
+    expect(c.x + c.w / 2).toBeCloseTo(stored.x + stored.w / 2, 6)
+    expect(c.y + c.h / 2).toBeCloseTo(stored.y + stored.h / 2, 6)
+    for (const [x, y] of sourceCorners(c, 12)) {
+      expect(x).toBeGreaterThanOrEqual(-1e-6)
+      expect(x).toBeLessThanOrEqual(W + 1e-6)
+      expect(y).toBeGreaterThanOrEqual(-1e-6)
+      expect(y).toBeLessThanOrEqual(H + 1e-6)
+    }
   })
 
   it('gives the whole frame back at zero', () => {
