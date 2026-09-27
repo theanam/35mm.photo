@@ -228,7 +228,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.82, y: 0.88 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 8, size: 34, shadowBias: 0.5 },
+    grain: { amount: 8, size: 13, shadowBias: 0.5 },
     defaultStrength: 100,
   },
 
@@ -265,7 +265,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.82, y: 0.86 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 18, size: 42, shadowBias: 0.6 },
+    grain: { amount: 18, size: 16, shadowBias: 0.6 },
     defaultStrength: 78,
   },
   {
@@ -294,7 +294,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.84, y: 0.89 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 10, size: 36, shadowBias: 0.55 },
+    grain: { amount: 10, size: 14, shadowBias: 0.55 },
     defaultStrength: 100,
   },
   {
@@ -321,7 +321,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.86, y: 0.89 },
       { x: 1, y: 0.985 },
     ],
-    grain: { amount: 16, size: 46, shadowBias: 0.6 },
+    grain: { amount: 16, size: 18, shadowBias: 0.6 },
     defaultStrength: 100,
   },
 
@@ -351,7 +351,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.85, y: 0.88 },
       { x: 1, y: 0.97 },
     ],
-    grain: { amount: 26, size: 55, shadowBias: 0.65 },
+    grain: { amount: 26, size: 16, shadowBias: 0.65 },
     defaultStrength: 100,
   },
   {
@@ -382,7 +382,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.84, y: 0.89 },
       { x: 1, y: 0.995 },
     ],
-    grain: { amount: 24, size: 50, shadowBias: 0.6 },
+    grain: { amount: 24, size: 14, shadowBias: 0.6 },
     defaultStrength: 100,
   },
   {
@@ -407,7 +407,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.7, y: 0.72 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 22, size: 62, shadowBias: 0.4 },
+    grain: { amount: 22, size: 18, shadowBias: 0.4 },
     defaultStrength: 100,
   },
 
@@ -442,7 +442,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.88, y: 0.9 },
       { x: 1, y: 0.985 },
     ],
-    grain: { amount: 18, size: 50, shadowBias: 0.55 },
+    grain: { amount: 18, size: 14, shadowBias: 0.55 },
     defaultStrength: 100,
   },
   {
@@ -478,7 +478,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.85, y: 0.9 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 24, size: 52, shadowBias: 0.6 },
+    grain: { amount: 24, size: 15, shadowBias: 0.6 },
     defaultStrength: 100,
   },
   {
@@ -511,7 +511,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.88, y: 0.91 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 20, size: 48, shadowBias: 0.5 },
+    grain: { amount: 20, size: 14, shadowBias: 0.5 },
     defaultStrength: 100,
   },
 
@@ -534,7 +534,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.6, y: 0.61 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 12, size: 48, shadowBias: 0.5 },
+    grain: { amount: 12, size: 19, shadowBias: 0.5 },
     defaultStrength: 100,
   },
   {
@@ -562,7 +562,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.62, y: 0.64 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 14, size: 50, shadowBias: 0.55 },
+    grain: { amount: 14, size: 19, shadowBias: 0.55 },
     defaultStrength: 100,
   },
   {
@@ -584,7 +584,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.82, y: 0.92 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 20, size: 40, shadowBias: 0.6 },
+    grain: { amount: 20, size: 16, shadowBias: 0.6 },
     defaultStrength: 100,
   },
 
@@ -621,7 +621,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.85, y: 0.88 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 28, size: 52, shadowBias: 0.6 },
+    grain: { amount: 28, size: 20, shadowBias: 0.6 },
     defaultStrength: 100,
   },
 
@@ -642,7 +642,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.8, y: 0.86 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 34, size: 38, shadowBias: 0.55 },
+    grain: { amount: 34, size: 15, shadowBias: 0.55 },
     defaultStrength: 100,
   },
   {
@@ -670,7 +670,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.82, y: 0.91 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 30, size: 36, shadowBias: 0.5 },
+    grain: { amount: 30, size: 14, shadowBias: 0.5 },
     defaultStrength: 100,
   },
   {
@@ -688,7 +688,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.6, y: 0.62 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 26, size: 40, shadowBias: 0.55 },
+    grain: { amount: 26, size: 16, shadowBias: 0.55 },
     defaultStrength: 100,
   },
   {
@@ -706,7 +706,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.72, y: 0.75 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 22, size: 48, shadowBias: 0.45 },
+    grain: { amount: 22, size: 19, shadowBias: 0.45 },
     defaultStrength: 100,
   },
 
@@ -755,7 +755,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.6, y: 0.63 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 24, size: 50, shadowBias: 0.5 },
+    grain: { amount: 24, size: 19, shadowBias: 0.5 },
     defaultStrength: 100,
   },
   {
@@ -774,7 +774,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.85, y: 0.93 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 60, size: 58, shadowBias: 0.55 },
+    grain: { amount: 60, size: 23, shadowBias: 0.55 },
     defaultStrength: 100,
   },
 
@@ -825,7 +825,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.82, y: 0.89 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 24, size: 46, shadowBias: 0.5 },
+    grain: { amount: 24, size: 18, shadowBias: 0.5 },
     defaultStrength: 100,
   },
   {
@@ -853,7 +853,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.82, y: 0.93 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 46, size: 52, shadowBias: 0.4 },
+    grain: { amount: 46, size: 20, shadowBias: 0.4 },
     defaultStrength: 100,
   },
   {
@@ -900,7 +900,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.8, y: 0.9 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 20, size: 48, shadowBias: 0.55 },
+    grain: { amount: 20, size: 19, shadowBias: 0.55 },
     defaultStrength: 100,
   },
   {
@@ -931,7 +931,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.6, y: 0.64 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 28, size: 55, shadowBias: 0.6 },
+    grain: { amount: 28, size: 22, shadowBias: 0.6 },
     defaultStrength: 100,
   },
   {
@@ -959,7 +959,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.68, y: 0.72 },
       { x: 1, y: 1 },
     ],
-    grain: { amount: 18, size: 60, shadowBias: 0.45 },
+    grain: { amount: 18, size: 23, shadowBias: 0.45 },
     defaultStrength: 100,
   },
   {
@@ -989,7 +989,7 @@ export const LOOKS: LookConfig[] = [
       { x: 0.8, y: 0.44 },
       { x: 1, y: 0.16 },
     ],
-    grain: { amount: 26, size: 44, shadowBias: 0.5 },
+    grain: { amount: 26, size: 17, shadowBias: 0.5 },
     defaultStrength: 100,
   },
 ]
