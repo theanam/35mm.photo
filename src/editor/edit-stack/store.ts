@@ -152,6 +152,8 @@ interface EditorState {
    * under the finger doing the dragging — so the zoom settles on release.
    */
   cropDragging: boolean
+  /** The crop overlay is taking a drawn line as the horizon, not a box drag. */
+  drawingHorizon: boolean
   /**
    * True while the phone's tool sheet is being dragged between its heights.
    * Same problem as `cropDragging`, one level up: the sheet shortens the stage
@@ -263,6 +265,7 @@ interface EditorState {
   updateMask: (id: string, patch: Partial<Mask>, coalesceKey?: string) => void
   updateMaskAdjust: (id: string, patch: Partial<MaskAdjust>, coalesceKey?: string) => void
   setCropDragging: (on: boolean) => void
+  setDrawingHorizon: (on: boolean) => void
   setSheetDragging: (on: boolean) => void
   setMaskOverlay: (on: boolean) => void
   replaceEdits: (edits: EditState, coalesceKey?: string) => void
@@ -363,6 +366,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   cropping: false,
   activeMaskId: null,
   cropDragging: false,
+  drawingHorizon: false,
   sheetDragging: false,
   maskOverlay: true,
   maskMapsAt: 0,
@@ -439,6 +443,17 @@ export const useEditor = create<EditorState>((set, get) => ({
     const opened = openedFiles.get(id)
     if (!opened) return
 
+    /*
+     * Crop and masks draw over the photo and hold a snapshot of its edits for
+     * Discard; carried onto another photo they would frame and restore the
+     * wrong one. They close as the photo changes, kept as Apply would keep
+     * them, since what was on screen is what was asked for. Other tools keep
+     * their panel open and take a fresh snapshot once the new photo is in.
+     */
+    const tool = get().activeTool
+    if (tool === 'crop' || tool === 'masks') get().applyTool()
+    flushAutosave(get, set)
+
     set({
       loading: true,
       loadingLabel: isRawFile(opened.file.name) ? STAGE_LABELS.reading : 'Opening',
@@ -446,6 +461,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       activeFrameId: id,
       selectionAnchor: id,
       cropping: false,
+      drawingHorizon: false,
     })
 
     try {
@@ -500,6 +516,8 @@ export const useEditor = create<EditorState>((set, get) => ({
           get().autoExpose && meta.isRaw && !saved?.edits ? id : null,
         // The selection named a mask on the photo being left behind.
         activeMaskId: edits.masks[0]?.id ?? null,
+        // Discard in a still-open tool returns to this photo's edits, not the last one's.
+        toolSnapshot: get().activeTool ? cloneEdits(edits) : null,
         loading: false,
         loadingLabel: '',
         loadingName: '',
@@ -1165,6 +1183,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (get().cropDragging !== on) set({ cropDragging: on })
   },
 
+  setDrawingHorizon(on) {
+    if (get().drawingHorizon !== on) set({ drawingHorizon: on })
+  },
+
   setSheetDragging(on) {
     if (get().sheetDragging !== on) set({ sheetDragging: on })
   },
@@ -1298,7 +1320,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   closeTool() {
-    set({ activeTool: null, toolSnapshot: null, cropping: false })
+    set({ activeTool: null, toolSnapshot: null, cropping: false, drawingHorizon: false })
   },
 
   applyTool() {
@@ -1314,7 +1336,9 @@ export const useEditor = create<EditorState>((set, get) => ({
     get().closeTool()
   },
 
-  setCropping(on) { set({ cropping: on, splitCompare: on ? false : get().splitCompare }) },
+  setCropping(on) {
+    set({ cropping: on, splitCompare: on ? false : get().splitCompare, drawingHorizon: on && get().drawingHorizon })
+  },
   setAboutOpen(open) {
     set({ aboutOpen: open })
   },
@@ -1674,27 +1698,42 @@ async function drainThumbnails(set: Setter, get: Getter) {
 
 function scheduleAutosave(get: Getter, set: Setter) {
   if (autosaveTimer) clearTimeout(autosaveTimer)
-  autosaveTimer = setTimeout(() => {
-    const { photo, edits } = get()
-    if (!photo) return
-    const editCount = countEdits(edits)
-    void db.saveEdits({
-      key: photo.key,
-      meta: photo.meta,
-      edits,
-      editCount,
-      updatedAt: Date.now(),
-    })
-    // Debounced with the save rather than run on every slider tick: the marker
-    // is a state, not an animation, and re-rendering the strip per frame of a
-    // drag would cost more than it tells anyone.
-    set({
-      frames: get().frames.map((f) =>
-        f.id === photo.frameId ? { ...f, editCount, unsaved: editCount > 0 } : f,
-      ),
-    })
-    void get().refreshRecents()
-  }, AUTOSAVE_DELAY)
+  autosaveTimer = setTimeout(() => saveNow(get, set), AUTOSAVE_DELAY)
+}
+
+/**
+ * Write a pending autosave immediately. Called on the way to another photo:
+ * the save reads whichever photo is open when it fires, and a JPEG can open
+ * inside the debounce, so the last edits to the photo being left would be
+ * filed against the one arriving — and lost from their own.
+ */
+function flushAutosave(get: Getter, set: Setter) {
+  if (!autosaveTimer) return
+  clearTimeout(autosaveTimer)
+  saveNow(get, set)
+}
+
+function saveNow(get: Getter, set: Setter) {
+  autosaveTimer = null
+  const { photo, edits } = get()
+  if (!photo) return
+  const editCount = countEdits(edits)
+  void db.saveEdits({
+    key: photo.key,
+    meta: photo.meta,
+    edits,
+    editCount,
+    updatedAt: Date.now(),
+  })
+  // Debounced with the save rather than run on every slider tick: the marker
+  // is a state, not an animation, and re-rendering the strip per frame of a
+  // drag would cost more than it tells anyone.
+  set({
+    frames: get().frames.map((f) =>
+      f.id === photo.frameId ? { ...f, editCount, unsaved: editCount > 0 } : f,
+    ),
+  })
+  void get().refreshRecents()
 }
 
 /** Fill in fields added after a sidecar or IndexedDB record was written. */

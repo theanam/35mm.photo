@@ -1,6 +1,7 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
 import { parseAspectRatio } from '../editor/edit-stack/aspect'
+import { horizonAngle } from '../editor/edit-stack/horizon'
 import { displaySize, effectiveCrop } from '../editor/gpu/transform'
 
 type Handle = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w' | 'move'
@@ -13,6 +14,26 @@ export function CropOverlay({ width, height }: { width: number; height: number }
   const photo = useEditor((s) => s.photo)
   const updateCrop = useEditor((s) => s.updateCrop)
   const setCropDragging = useEditor((s) => s.setCropDragging)
+  const drawingHorizon = useEditor((s) => s.drawingHorizon)
+  const setDrawingHorizon = useEditor((s) => s.setDrawingHorizon)
+  const rootRef = useRef<HTMLDivElement>(null)
+  /** The line being drawn, in pixels from the overlay's top-left. */
+  const [line, setLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+
+  // Escape backs out of drawing before the tool sees it, so it cancels the
+  // line rather than the whole crop. Capture, to get there first.
+  useEffect(() => {
+    if (!drawingHorizon) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      e.preventDefault()
+      setLine(null)
+      setDrawingHorizon(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [drawingHorizon, setDrawingHorizon])
 
   // Draw and drag the box that is actually rendered. While straightened that is
   // the stored rect held inside the rotated frame, and handles that sat on the
@@ -27,7 +48,55 @@ export function CropOverlay({ width, height }: { width: number; height: number }
       ? parseAspectRatio(crop.aspect)! / (frame.width / frame.height)
       : null
 
+  /**
+   * Draw a line along something that should be level, and the picture turns
+   * to make it so. From the Level button, or ⌘/Ctrl-drag anywhere on the
+   * frame, the way Lightroom's straighten tool is reached.
+   */
+  const startHorizon = (event: React.PointerEvent) => {
+    const root = rootRef.current
+    if (!root) return
+    event.preventDefault()
+    event.stopPropagation()
+    const origin = root.getBoundingClientRect()
+    const x1 = event.clientX - origin.left
+    const y1 = event.clientY - origin.top
+    setLine({ x1, y1, x2: x1, y2: y1 })
+    const target = event.currentTarget as Element
+    target.setPointerCapture(event.pointerId)
+
+    let last = { x: event.clientX, y: event.clientY }
+    const move = (e: PointerEvent) => {
+      last = { x: e.clientX, y: e.clientY }
+      setLine({ x1, y1, x2: e.clientX - origin.left, y2: e.clientY - origin.top })
+    }
+    const end = (commit: boolean) => () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+      target.removeEventListener('lostpointercapture', cancel)
+      setLine(null)
+      if (commit) {
+        const angle = horizonAngle(stored.angle, last.x - event.clientX, last.y - event.clientY)
+        // A slip leaves the mode on, so the next attempt needs no second click.
+        if (angle === null) return
+        if (angle !== stored.angle) updateCrop({ angle })
+      }
+      setDrawingHorizon(false)
+    }
+    const up = end(true)
+    const cancel = end(false)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
+    target.addEventListener('lostpointercapture', cancel)
+  }
+
   const onPointerDown = (handle: Handle) => (event: React.PointerEvent) => {
+    if (event.metaKey || event.ctrlKey) {
+      startHorizon(event)
+      return
+    }
     event.preventDefault()
     event.stopPropagation()
     dragRef.current = { handle, startX: event.clientX, startY: event.clientY, start: { ...crop } }
@@ -74,7 +143,13 @@ export function CropOverlay({ width, height }: { width: number; height: number }
   }
 
   return (
-    <div className="crop">
+    <div
+      className="crop"
+      ref={rootRef}
+      onPointerDown={(event) => {
+        if (event.metaKey || event.ctrlKey) startHorizon(event)
+      }}
+    >
       {/* Four shades rather than one box-shadow: the mask stays crisp at any size. */}
       <div className="crop__shade" style={{ left: 0, top: 0, right: 0, height: box.top }} />
       <div className="crop__shade" style={{ left: 0, top: `${(crop.y + crop.h) * 100}%`, right: 0, bottom: 0 }} />
@@ -96,7 +171,30 @@ export function CropOverlay({ width, height }: { width: number; height: number }
           />
         ))}
       </div>
+
+      {drawingHorizon && (
+        <div className="crop__horizon" onPointerDown={startHorizon} aria-label="Draw along the horizon" />
+      )}
+      {line && <HorizonLine {...line} current={stored.angle} />}
     </div>
+  )
+}
+
+/** The line as it is drawn, and the angle letting go would set. */
+function HorizonLine({ x1, y1, x2, y2, current }: { x1: number; y1: number; x2: number; y2: number; current: number }) {
+  const angle = horizonAngle(current, x2 - x1, y2 - y1)
+  return (
+    <svg className="crop__line" aria-hidden>
+      <line x1={x1} y1={y1} x2={x2} y2={y2} className="crop__line-halo" />
+      <line x1={x1} y1={y1} x2={x2} y2={y2} />
+      <circle cx={x1} cy={y1} r={3} />
+      <circle cx={x2} cy={y2} r={3} />
+      {angle !== null && (
+        <text x={x2 + 10} y={y2 - 10} className="mono">
+          {`${angle > 0 ? '+' : angle < 0 ? '−' : ''}${Math.abs(angle).toFixed(1)}°`}
+        </text>
+      )}
+    </svg>
   )
 }
 

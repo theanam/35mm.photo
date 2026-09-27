@@ -1,11 +1,14 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { prioritizeThumbnail, setThumbnailOrder, useEditor } from '../editor/edit-stack/store'
 import { pickFiles } from '../io/file-system'
-import { MarkEdited } from './ui/icons'
+import { IconCross, IconSearch, MarkEdited } from './ui/icons'
+import { FrameTip } from './FrameTip'
 import type { Frame } from '../editor/edit-stack/types'
 import {
   GROUP_LABEL,
   SORT_LABEL,
+  SORT_STARTS_DESCENDING,
+  isDefaultOrder,
   loadStripOrder,
   orderFrames,
   saveStripOrder,
@@ -44,6 +47,12 @@ export function Filmstrip() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [orderOpen, setOrderOpen] = useState(false)
   const [order, setOrder] = useState<StripOrder>(loadStripOrder)
+  const [query, setQuery] = useState('')
+  const [tip, setTip] = useState<{ id: string; anchor: DOMRect } | null>(null)
+  const tipTimer = useRef<ReturnType<typeof setTimeout>>()
+  // Once one card is up, running the pointer down the strip swaps it straight
+  // across; waiting out the delay on every frame would read as lag.
+  const tipWarmUntil = useRef(0)
   useEffect(() => saveStripOrder(order), [order])
   // Whichever of the two menus is open; only one ever is.
   const menuRef = useRef<HTMLDivElement>(null)
@@ -121,7 +130,9 @@ export function Filmstrip() {
   const byType = active === 'raw' ? raw : active === 'rendered' ? rendered : frames
   // Composed with the type tabs rather than replacing them, so "only the raws I
   // have edited" is a thing you can ask for.
-  const shown = editedOnly ? byType.filter((f) => (f.editCount ?? 0) > 0) : byType
+  const edited = editedOnly ? byType.filter((f) => (f.editCount ?? 0) > 0) : byType
+  const needle = query.trim().toLocaleLowerCase()
+  const shown = needle ? edited.filter((f) => f.meta.name.toLocaleLowerCase().includes(needle)) : edited
   // In the order and under the headings asked for. `visible` is the flat
   // order, which is what a shift-click range and select-all run along.
   const sections = useMemo(() => orderFrames(shown, order), [shown, order])
@@ -137,7 +148,7 @@ export function Filmstrip() {
   // Picking the current sort again flips its direction; the arrow beside it in
   // the menu is where that shows, the next time it opens.
   const pickSort = (sort: StripSort) => {
-    setOrder((o) => (o.sort === sort ? { ...o, descending: !o.descending } : { ...o, sort, descending: false }))
+    setOrder((o) => (o.sort === sort ? { ...o, descending: !o.descending } : { ...o, sort, descending: SORT_STARTS_DESCENDING[sort] }))
     setOrderOpen(false)
   }
   const pickGroup = (group: StripGroup) => {
@@ -146,6 +157,24 @@ export function Filmstrip() {
   }
 
   const addPhotos = () => void pickFiles().then(openFiles)
+
+  const hideTip = () => {
+    clearTimeout(tipTimer.current)
+    setTip((t) => {
+      if (t) tipWarmUntil.current = Date.now() + 300
+      return null
+    })
+  }
+  const hoverFrame = (id: string, event: React.PointerEvent<HTMLElement>) => {
+    // A touch has no hover to end, so the card would stay up over the photo.
+    if (event.pointerType === 'touch') return
+    const anchor = event.currentTarget.getBoundingClientRect()
+    clearTimeout(tipTimer.current)
+    if (Date.now() < tipWarmUntil.current) setTip({ id, anchor })
+    else tipTimer.current = setTimeout(() => setTip({ id, anchor }), 450)
+  }
+  useEffect(() => () => clearTimeout(tipTimer.current), [])
+  const tipFrame = tip ? frames.find((f) => f.id === tip.id) : undefined
 
   const tabs: [Filter, string, number][] = [
     ['all', 'All', frames.length],
@@ -233,13 +262,15 @@ export function Filmstrip() {
               <span className="mono">{visible.length}</span>
               <button
                 className="filmstrip__add"
-                data-active={(order.sort !== 'name' || order.descending || order.group !== 'none') || undefined}
+                data-active={
+                  !isDefaultOrder(order) || active !== 'all' || editedOnly || undefined
+                }
                 onClick={() => setOrderOpen((v) => !v)}
                 data-menu-toggle
                 aria-haspopup="menu"
                 aria-expanded={orderOpen}
-                title="Sort and group"
-                aria-label="Sort and group"
+                title="Sort, group and filter"
+                aria-label="Sort, group and filter"
               >
                 ⇅
               </button>
@@ -254,7 +285,7 @@ export function Filmstrip() {
             </span>
 
             {orderOpen && (
-              <div className="menu menu--strip" role="menu" aria-label="Sort and group" ref={menuRef}>
+              <div className="menu menu--strip" role="menu" aria-label="Sort, group and filter" ref={menuRef}>
                 <div className="menu__heading">Sort</div>
                 {(Object.keys(SORT_LABEL) as StripSort[]).map((sort) => (
                   <button
@@ -282,44 +313,81 @@ export function Filmstrip() {
                     {GROUP_LABEL[group]}
                   </button>
                 ))}
+                {/* Only when there is something to tell apart: a folder of one
+                    kind of file has nothing to filter by type. */}
+                {mixed && (
+                  <>
+                    <div className="menu__heading">File type</div>
+                    {tabs.map(([id, label, count]) => (
+                      <button
+                        key={id}
+                        className="menu__item"
+                        role="menuitemradio"
+                        aria-checked={active === id}
+                        data-active={active === id || undefined}
+                        onClick={() => {
+                          setFilter(id)
+                          setOrderOpen(false)
+                        }}
+                      >
+                        {label}
+                        <span className="mono">{count}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+                {editedIds.length > 0 && (
+                  <>
+                    <div className="menu__heading">Show</div>
+                    <button
+                      className="menu__item"
+                      role="menuitemcheckbox"
+                      aria-checked={editedOnly}
+                      data-active={editedOnly || undefined}
+                      onClick={() => {
+                        setEditedOnly((v) => !v)
+                        setOrderOpen(false)
+                      }}
+                    >
+                      Edited only
+                      <span className="mono">{editedIds.length}</span>
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </>
         )}
       </header>
 
-      {mixed && (
-        <div className="filmstrip__tabs" role="tablist" aria-label="Filter by file type">
-          {tabs.map(([id, label, count]) => (
-            <button
-              key={id}
-              role="tab"
-              className="filmstrip__tab"
-              data-active={active === id || undefined}
-              aria-selected={active === id}
-              onClick={() => setFilter(id)}
-              title={`${label} · ${count}`}
-            >
-              {label}
+      {frames.length > 1 && (
+        <label className="filmstrip__search">
+          <IconSearch size={13} />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape') return
+              // Kept from the shortcuts either way: Escape here is about this box.
+              e.stopPropagation()
+              if (query) setQuery('')
+              else e.currentTarget.blur()
+            }}
+            placeholder="Search"
+            aria-label="Search by file name"
+            spellCheck={false}
+            autoComplete="off"
+          />
+          {query && (
+            <button className="filmstrip__search-clear" onClick={() => setQuery('')} aria-label="Clear the search">
+              <IconCross size={11} />
             </button>
-          ))}
-        </div>
+          )}
+        </label>
       )}
 
-      {editedIds.length > 0 && (
-        <button
-          className="filmstrip__edited-filter"
-          data-active={editedOnly || undefined}
-          aria-pressed={editedOnly}
-          onClick={() => setEditedOnly((v) => !v)}
-        >
-          <MarkEdited />
-          <span>Edited only</span>
-          <span className="mono">{editedIds.length}</span>
-        </button>
-      )}
-
-      <ol className="filmstrip__list">
+      <ol className="filmstrip__list" onScroll={hideTip}>
         {sections.map((section, i) => (
           <Fragment key={section.label ?? i}>
             {section.label !== null && (
@@ -336,6 +404,9 @@ export function Filmstrip() {
               data-batch={batch.statuses[frame.id] || undefined}
               data-error={Boolean(frame.error) || undefined}
               aria-busy={(!frame.thumbUrl && !frame.error) || undefined}
+              onPointerEnter={(event) => hoverFrame(frame.id, event)}
+              onPointerLeave={hideTip}
+              onPointerDown={hideTip}
               onClick={(event) => {
                 prioritizeThumbnail(frame.id)
                 // Cmd/ctrl picks one out, shift extends; a plain click opens
@@ -344,13 +415,6 @@ export function Filmstrip() {
                 else if (event.shiftKey) selectRangeTo(frame.id, visible.map((f) => f.id))
                 else void selectFrame(frame.id)
               }}
-              title={
-                frame.error
-                  ? `${frame.meta.name} — ${frame.error}`
-                  : frame.unsaved
-                    ? `${frame.meta.name} — edited, not yet written to a sidecar`
-                    : frame.meta.name
-              }
             >
               {frame.thumbUrl ? (
                 <img src={frame.thumbUrl} alt="" loading="lazy" />
@@ -394,14 +458,34 @@ export function Filmstrip() {
           </Fragment>
         ))}
 
+        {frames.length > 0 && needle && visible.length === 0 && (
+          <li className="filmstrip__none">No match</li>
+        )}
+
         {frames.length === 0 &&
           [0, 1, 2].map((i) => <li key={i} className="thumb thumb--empty" aria-hidden />)}
       </ol>
 
+      {tipFrame && tip && <FrameTip frame={tipFrame} anchor={tip.anchor} />}
+
       {frames.length > 0 && (
-        <button className="filmstrip__add-row" onClick={addPhotos}>
-          + Add photos…
-        </button>
+        <div className="filmstrip__footer">
+          <button className="filmstrip__add-row" onClick={addPhotos}>
+            + Add photos…
+          </button>
+          {/* Nothing on disk is touched, and edits stay filed against each
+              photo, so opening the folder again brings everything back. */}
+          <button
+            className="filmstrip__close"
+            onClick={() => {
+              setQuery('')
+              removeFrames(frames.map((f) => f.id))
+            }}
+            disabled={batch.running}
+          >
+            Close folder
+          </button>
+        </div>
       )}
     </nav>
   )

@@ -222,6 +222,7 @@
   max-width: 340px;
 }
 .transform-grid .button { justify-content: center; }
+.transform-grid__wide { grid-column: 1 / -1; }
 
 /* ───────────────────────────── tool bar ───────────────────────────── */
 
@@ -500,6 +501,9 @@
   color: var(--text-dim);
 }
 .menu__item[data-active]::after { content: '✓'; margin-left: auto; color: var(--accent-text); }
+/* A count or an arrow beside the tick sits against it, not mid-row. */
+.menu--strip .menu__item .mono { margin-left: auto; }
+.menu--strip .menu__item:has(.mono)::after { margin-left: -8px; }
 
 /* The seam between columns. Six pixels, over the borders it sits between. */
 .splitter {
@@ -719,6 +723,28 @@
 
 .crop { position: absolute; inset: 0; }
 .crop__shade { position: absolute; background: rgba(11, 10, 8, 0.62); pointer-events: none; }
+
+/* Drawing a horizon: the whole frame takes the line, above the box. */
+.crop__horizon { position: absolute; inset: 0; z-index: 3; cursor: crosshair; touch-action: none; }
+.crop__line {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.crop__line line { stroke: var(--text); stroke-width: 1.5; stroke-linecap: round; }
+.crop__line .crop__line-halo { stroke: rgba(11, 10, 8, 0.6); stroke-width: 4; }
+.crop__line circle { fill: var(--text); stroke: rgba(11, 10, 8, 0.6); stroke-width: 1.5; }
+.crop__line text {
+  font-size: 11px;
+  fill: var(--text);
+  paint-order: stroke;
+  stroke: rgba(11, 10, 8, 0.8);
+  stroke-width: 3px;
+}
 
 .crop__box {
   position: absolute;
@@ -1810,8 +1836,16 @@
    sections scroll as one column rather than each getting its own bar. */
 .filmstrip__list--grouped { overflow-y: visible; flex: none; }
 
+/* Its own band under the list, so a full strip scrolls away beneath a rule
+   rather than running into the button. */
+.filmstrip__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line-hair);
+}
 .filmstrip__add-row {
-  margin: 0 14px 14px;
   padding: 8px 10px;
   font-size: 13px;
   color: var(--text-muted);
@@ -1821,6 +1855,17 @@
   cursor: pointer;
 }
 .filmstrip__add-row:hover { color: var(--text); border-color: var(--line-soft); }
+.filmstrip__close {
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.filmstrip__close:hover { color: var(--text); background: var(--surface-row-hover); }
+.filmstrip__close:disabled { display: none; }
 
 /* ──────────────────────── colour grading ──────────────────────── */
 
@@ -1857,36 +1902,7 @@
 }
 .grade-zone[data-touched] .grade-zone__dot { border-color: transparent; }
 
-/* ──────────────────── filmstrip tabs and edited marker ──────────────────── */
-
-.filmstrip__tabs {
-  display: flex;
-  gap: 2px;
-  margin: 0 14px 10px;
-  padding: 2px;
-  background: var(--bg-app);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-}
-
-.filmstrip__tab {
-  flex: 1;
-  min-width: 0;
-  padding: 5px 2px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--text-faint);
-  background: transparent;
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.filmstrip__tab:hover { color: var(--text); }
-.filmstrip__tab[data-active] { color: var(--text); background: var(--surface); }
+/* ──────────────────────── filmstrip edited marker ──────────────────────── */
 
 /*
  * A 35mm perforation, at the proportions of the real thing: a KS hole is wider
@@ -2190,27 +2206,93 @@ kbd {
 
 /* ──────────────────── edited filter & export menu ──────────────────── */
 
-.filmstrip__edited-filter {
+.filmstrip__search {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin: 0 14px 10px;
-  padding: 6px 9px;
-  font-size: 12px;
-  color: var(--text-muted);
-  background: transparent;
+  padding: 0 6px 0 8px;
+  height: 28px;
+  color: var(--text-dim);
+  background: var(--bg-app);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
+  cursor: text;
+}
+.filmstrip__search:focus-within { border-color: var(--line-soft); color: var(--text-muted); }
+.filmstrip__search svg { flex: none; }
+.filmstrip__search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: none;
+  border: none;
+  outline: none;
+}
+.filmstrip__search input::placeholder { color: var(--text-faint); }
+.filmstrip__search-clear {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  border-radius: 50%;
   cursor: pointer;
 }
-.filmstrip__edited-filter:hover { color: var(--text); border-color: var(--line-strong); }
-.filmstrip__edited-filter[data-active] {
-  color: var(--text);
-  background: var(--surface);
-  border-color: var(--accent);
+.filmstrip__search-clear:hover { color: var(--text); background: var(--surface-hover); }
+.filmstrip__none {
+  grid-column: 1 / -1;
+  padding: 18px 0;
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-dim);
 }
-.filmstrip__edited-filter span:first-of-type { flex: 1; text-align: left; }
-.filmstrip__edited-filter svg { flex: none; }
+
+/* The hover card for a frame. Fixed, beside the strip, never over the photo. */
+.frame-tip {
+  position: fixed;
+  z-index: 60;
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  animation: frame-tip-in 120ms ease-out;
+}
+.frame-tip__name {
+  margin-bottom: 3px;
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.frame-tip__row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frame-tip__row.mono { font-size: 11px; }
+.frame-tip__status {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--line);
+  color: var(--text-warm);
+}
+.frame-tip__status[data-tone='error'] { color: #e8b6ae; white-space: normal; }
+@keyframes frame-tip-in {
+  from { opacity: 0; transform: translateX(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frame-tip { animation: none; }
+}
 
 .export-split { position: relative; display: flex; }
 /*

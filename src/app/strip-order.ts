@@ -15,7 +15,19 @@ export interface StripOrder {
   group: StripGroup
 }
 
-export const DEFAULT_ORDER: StripOrder = { sort: 'name', descending: false, group: 'none' }
+/** Newest shot first: the photos just off the card are the ones being opened. */
+export const DEFAULT_ORDER: StripOrder = { sort: 'date', descending: true, group: 'none' }
+
+/** Which way each sort runs when first picked. A date means newest first. */
+export const SORT_STARTS_DESCENDING: Record<StripSort, boolean> = { name: false, date: true, edited: false }
+
+export function isDefaultOrder(order: StripOrder): boolean {
+  return (
+    order.sort === DEFAULT_ORDER.sort &&
+    order.descending === DEFAULT_ORDER.descending &&
+    order.group === DEFAULT_ORDER.group
+  )
+}
 
 export const SORT_LABEL: Record<StripSort, string> = { name: 'Name', date: 'Date', edited: 'Edited' }
 export const GROUP_LABEL: Record<StripGroup, string> = { none: 'None', camera: 'Camera', lens: 'Lens', day: 'Day' }
@@ -107,7 +119,9 @@ export function orderFrames(frames: Frame[], order: StripOrder): StripSection[] 
   return out.map(([, s]) => ({ label: s.label, frames: s.frames }))
 }
 
-const KEY = '35mm.stripOrder'
+// Versioned: the old default was saved on every visit, not only when chosen, so
+// under the old key a stored "by name" cannot be told from nobody choosing.
+const KEY = '35mm.stripOrder.v2'
 
 export function loadStripOrder(): StripOrder {
   try {

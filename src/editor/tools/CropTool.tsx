@@ -3,7 +3,8 @@ import { Slider } from '../../app/ui/Slider'
 import { useEditor } from '../edit-stack/store'
 import { displaySize, outputSize } from '../gpu/transform'
 import { formatAspect, parseAspectRatio } from '../edit-stack/aspect'
-import { IconFlipH, IconFlipV, IconRotateLeft, IconRotateRight, IconSwap } from '../../app/ui/icons'
+import { IconFlipH, IconFlipV, IconLevel, IconRotateLeft, IconRotateRight, IconSwap } from '../../app/ui/icons'
+import { STRAIGHTEN_LIMIT } from '../edit-stack/horizon'
 import { isModelCached } from '../../subject/detect'
 
 /** Aspect presets, in the design's order. The ratio comes from the id itself. */
@@ -22,6 +23,8 @@ export function CropTool() {
   const updateCrop = useEditor((s) => s.updateCrop)
   const cropToSubject = useEditor((s) => s.cropToSubject)
   const detecting = useEditor((s) => s.detecting)
+  const drawingHorizon = useEditor((s) => s.drawingHorizon)
+  const setDrawingHorizon = useEditor((s) => s.setDrawingHorizon)
 
   /*
    * Offered only once the detector is already here. Cropping is not a reason to
@@ -284,8 +287,8 @@ export function CropTool() {
           <Slider
             label="Straighten"
             value={edits.crop.angle}
-            min={-15}
-            max={15}
+            min={-STRAIGHTEN_LIMIT}
+            max={STRAIGHTEN_LIMIT}
             step={0.1}
             resetTo={0}
             format={(v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}°`}
@@ -293,6 +296,16 @@ export function CropTool() {
           />
           {/* Two rotates, then two flips — see .transform-grid. */}
           <div className="transform-grid">
+            <button
+              className="button button--toggle transform-grid__wide"
+              data-on={drawingHorizon || undefined}
+              aria-pressed={drawingHorizon}
+              onClick={() => setDrawingHorizon(!drawingHorizon)}
+              title="Draw along the horizon to level it · ⌘/Ctrl-drag on the photo"
+            >
+              <IconLevel size={15} />
+              Draw horizon
+            </button>
             <button
               className="button button--toggle"
               onClick={() => updateCrop({ rotate90: (edits.crop.rotate90 + 3) % 4 }, 'rotate')}

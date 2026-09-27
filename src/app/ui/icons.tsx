@@ -265,6 +265,23 @@ export const IconCheck = ({ size = 16 }: Props) => (
   </svg>
 )
 
+export const IconSearch = ({ size = 16 }: Props) => (
+  <svg {...base(size)} strokeWidth={1.6}>
+    <circle cx="7" cy="7" r="4.5" />
+    <path d="M10.4 10.4 14 14" />
+  </svg>
+)
+
+/** A tilted line brought level: the straighten-by-drawing tool. */
+export const IconLevel = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M2.5 11 13.5 5" strokeDasharray="1.6 2" />
+    <path d="M2 8h12" />
+    <circle cx="2.5" cy="11" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="13.5" cy="5" r="1.1" fill="currentColor" stroke="none" />
+  </svg>
+)
+
 export const IconCross = ({ size = 16 }: Props) => (
   <svg {...base(size)} strokeWidth={1.8}>
     <path d="M4 4l8 8M12 4l-8 8" />
