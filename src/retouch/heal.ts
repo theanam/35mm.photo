@@ -130,8 +130,13 @@ export interface SourcePlan {
   score: number
 }
 
-/** Rings of candidates, in brush radii from the spot. */
-const SEARCH_RINGS = [2.2, 2.8, 3.6, 4.6, 6]
+/**
+ * Rings of candidates, as multiples of how far the spot reaches in each
+ * direction — so the first ring clears it by a little whichever way it
+ * points. For a dab that is 2.2 to 6 brush radii; for a long stroke, just
+ * past its end along its length and just past its width across it.
+ */
+const SEARCH_RINGS = [1.1, 1.4, 1.8, 2.3, 3]
 /** Directions tried on each ring. */
 const SEARCH_ANGLES = 24
 /** Samples a cost is estimated from. Plenty to rank candidates; cheap per try. */
@@ -227,13 +232,18 @@ export function findSource(img: Plane, alpha: Float32Array, radius: number): Sou
     if (c < best.cost) best = { dx, dy, cost: c }
   }
 
-  // A long stroke needs to look further than a dab: a source a few radii off
-  // along the stroke's own length would overlap it.
-  const reach = Math.max(radius, Math.min(hole.x1 - hole.x0, hole.y1 - hole.y0) / 2)
+  // Measured per direction, because a long stroke is long one way only. A
+  // single reach for every angle either overlaps the stroke along its length
+  // — so the only sources left are above and below it, which is how a canoe
+  // on a lake once got healed from the forest on the far shore — or sends a
+  // short stroke's search off across the frame.
+  const bw = hole.x1 - hole.x0
+  const bh = hole.y1 - hole.y0
   for (const ring of SEARCH_RINGS) {
     for (let a = 0; a < SEARCH_ANGLES; a++) {
       const t = (a / SEARCH_ANGLES) * Math.PI * 2
-      consider(Math.round(Math.cos(t) * ring * reach), Math.round(Math.sin(t) * ring * reach))
+      const clear = Math.abs(Math.cos(t)) * bw + Math.abs(Math.sin(t)) * bh
+      consider(Math.round(Math.cos(t) * ring * clear), Math.round(Math.sin(t) * ring * clear))
     }
   }
   if (!Number.isFinite(best.cost)) return null

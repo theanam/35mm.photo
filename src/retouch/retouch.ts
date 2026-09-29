@@ -431,10 +431,10 @@ export async function planStroke(
   const b = strokeToStored({ ...stroke, id: '', enabled: true, mode: 'heal', dx: 0, dy: 0 }, picture)
   const brush = { points: b.points, radius: b.radius, feather: b.feather }
   const box = brushBounds(brush, Infinity, Infinity)
-  // As far as `findSource` will look: its outermost ring, plus the brush and
-  // the ring it compares, on the longer of a dab's radius and a stroke's width.
-  const reach = Math.max(b.radius, Math.min(box.x1 - box.x0, box.y1 - box.y0) / 2)
-  const rect = clip(grow(box, reach * 6 + b.radius + 12), picture.storedWidth, picture.storedHeight)
+  // As far as `findSource` will look: its outermost ring is three times the
+  // stroke's extent, plus the ring it compares around the source.
+  const reach = Math.max(box.x1 - box.x0, box.y1 - box.y0) * 3
+  const rect = clip(grow(box, reach + 12), picture.storedWidth, picture.storedHeight)
 
   const rgba = readRegion(source, rect, patches)
   const { plan } = await tracked(

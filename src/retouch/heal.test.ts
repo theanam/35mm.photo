@@ -114,6 +114,27 @@ describe('findSource', () => {
     }
   })
 
+  it('heals a long stroke from beside it, not only from above or below', () => {
+    // A band of water between a dark shore and a dark reflection, like a canoe
+    // on a lake: the only good source is along the stroke, and a search that
+    // measured every direction by its width alone could not reach past its
+    // length.
+    const img = field(640, 200, 140, 0, 8)
+    for (let y = 0; y < 200; y++) {
+      if (y >= 70 && y < 130) continue
+      for (let x = 0; x < 640; x++) {
+        const i = (y * 640 + x) * 4
+        img.data[i] = 30
+        img.data[i + 1] = 45
+        img.data[i + 2] = 30
+      }
+    }
+    const alpha = brushCoverage({ points: [270, 100, 370, 100], radius: 12, feather: 0.3 }, 640, 200)
+    const plan = findSource(img, alpha, 12)!
+    expect(Math.abs(plan.dx)).toBeGreaterThan(Math.abs(plan.dy))
+    expect(plan.score).toBeLessThanOrEqual(1)
+  })
+
   it('says a heal holds on plain texture', () => {
     const img = field(160, 160)
     spot(img, 80, 80, 5)
