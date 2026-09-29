@@ -429,6 +429,21 @@ export function mat3Invert(m: Mat3): Mat3 | null {
 }
 
 /**
+ * Upright uv → the uv of the pixels as they are stored, and back. For the
+ * code that reads the stored pixels itself rather than through the shader.
+ */
+export function uprightToStored(u: number, v: number, orientation: Orientation): [number, number] {
+  const m = ORIENTATION_INVERSE[orientation]
+  return m ? applyMat3Point(m, u, v) : [u, v]
+}
+
+export function storedToUpright(u: number, v: number, orientation: Orientation): [number, number] {
+  const m = ORIENTATION_INVERSE[orientation]
+  const inverse = m ? mat3Invert(m) : null
+  return inverse ? applyMat3Point(inverse, u, v) : [u, v]
+}
+
+/**
  * Upright uv → stored uv, per EXIF orientation. Each is the inverse of the
  * transform the tag asks a viewer to perform:
  *

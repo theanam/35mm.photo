@@ -24,7 +24,19 @@ import { fitAspect, offsetBounds, subjectBounds } from '../../subject/bounds'
 import { displaySize } from '../gpu/transform'
 import { parseAspectRatio } from './aspect'
 import { applySyncScope, type SyncGroup } from './sync'
-import { MAX_MASKS, type EditState, type Frame, type ImageMeta, type Mask, type MaskAdjust, type MaskKind } from './types'
+import {
+  MAX_MASKS,
+  type EditState,
+  type Frame,
+  type ImageMeta,
+  type Mask,
+  type MaskAdjust,
+  type MaskKind,
+  type RetouchStroke,
+} from './types'
+import { planStroke, prepareFillModel } from '../../retouch/retouch'
+import { loadFillReady, loadSmartFill, saveSmartFill } from '../../retouch/preference'
+import { DEFAULT_BRUSH_SIZE } from '../../retouch/brush'
 import { MAX_PREVIEW_EDGE, decodeFile, makeThumbnail } from '../../io/decode'
 import { developFor, developFullSource } from '../../io/develop'
 import type { DecodeStage } from '../../io/decode'
@@ -164,6 +176,25 @@ interface EditorState {
   sheetDragging: boolean
   /** Paint the selected mask over the picture while the tool is open. */
   maskOverlay: boolean
+  /** The retouch stroke the tool is editing. UI state, like `activeMaskId`. */
+  activeRetouchId: string | null
+  /**
+   * The brush the next stroke is drawn with. Size is a share of the picture's
+   * shorter edge, as a stroke stores it, so the brush covers the same part of
+   * any photograph whatever its resolution.
+   */
+  retouchBrush: { size: number; feather: number }
+  /**
+   * Whether a stroke a heal cannot hold may be handed to the fill model. A
+   * preference, kept in this browser, and only in force once `fillReady`.
+   */
+  smartFill: boolean
+  /** The fill model has been loaded in this browser, and is kept. */
+  fillReady: boolean
+  /** True while a new stroke's source is being searched for. */
+  retouchPlanning: boolean
+  /** True while the fill model is downloading, after smart fill was switched on. */
+  fillLoading: boolean
   /**
    * Bumped when a derived mask map changes. Subject coverage lives outside the
    * edit stack — it is pixels, not numbers — so there is nothing in `edits` for
@@ -268,6 +299,17 @@ interface EditorState {
   setDrawingHorizon: (on: boolean) => void
   setSheetDragging: (on: boolean) => void
   setMaskOverlay: (on: boolean) => void
+  /** Commit a drawn stroke: find where it heals from, and whether it should fill. */
+  addRetouchStroke: (stroke: Pick<RetouchStroke, 'points' | 'size' | 'feather'>) => Promise<void>
+  updateRetouchStroke: (id: string, patch: Partial<RetouchStroke>, coalesceKey?: string) => void
+  removeRetouchStroke: (id: string) => void
+  selectRetouchStroke: (id: string | null) => void
+  setRetouchBrush: (patch: Partial<EditorState['retouchBrush']>) => void
+  setSmartFill: (on: boolean) => void
+  /** Download the fill model, once; after that it is kept. */
+  loadFillModel: () => Promise<void>
+  /** Record that the model turned up by another route — an installed app's prefetch. */
+  setFillReady: () => void
   replaceEdits: (edits: EditState, coalesceKey?: string) => void
   undo: () => void
   redo: () => void
@@ -359,7 +401,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   splitCompare: false,
   splitAt: 0.38,
   zoom: 'fit',
-  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, lens: false, detail: false, grain: false, frame: false, masks: false, raw: false },
+  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, lens: false, detail: false, grain: false, frame: false, masks: false, retouch: false, raw: false },
   focusedPanel: null,
   activeTool: null,
   toolSnapshot: null,
@@ -369,6 +411,12 @@ export const useEditor = create<EditorState>((set, get) => ({
   drawingHorizon: false,
   sheetDragging: false,
   maskOverlay: true,
+  activeRetouchId: null,
+  retouchBrush: { size: DEFAULT_BRUSH_SIZE, feather: 50 },
+  smartFill: loadSmartFill(),
+  retouchPlanning: false,
+  fillLoading: false,
+  fillReady: loadFillReady(),
   maskMapsAt: 0,
   detecting: false,
   exportOpen: false,
@@ -451,7 +499,7 @@ export const useEditor = create<EditorState>((set, get) => ({
      * their panel open and take a fresh snapshot once the new photo is in.
      */
     const tool = get().activeTool
-    if (tool === 'crop' || tool === 'masks') get().applyTool()
+    if (tool === 'crop' || tool === 'masks' || tool === 'retouch') get().applyTool()
     flushAutosave(get, set)
 
     set({
@@ -516,6 +564,7 @@ export const useEditor = create<EditorState>((set, get) => ({
           get().autoExpose && meta.isRaw && !saved?.edits ? id : null,
         // The selection named a mask on the photo being left behind.
         activeMaskId: edits.masks[0]?.id ?? null,
+        activeRetouchId: null,
         // Discard in a still-open tool returns to this photo's edits, not the last one's.
         toolSnapshot: get().activeTool ? cloneEdits(edits) : null,
         loading: false,
@@ -783,6 +832,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       pendingAutoExpose: null,
       lensProfile: null,
       activeMaskId: null,
+      activeRetouchId: null,
       exifOpen: false,
       resetOpen: false,
     })
@@ -1191,6 +1241,88 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (get().sheetDragging !== on) set({ sheetDragging: on })
   },
 
+  async addRetouchStroke(stroke) {
+    const { photo, activeFrameId, smartFill, fillReady } = get()
+    if (!photo || !activeFrameId || stroke.points.length < 2) return
+
+    set({ retouchPlanning: true })
+    try {
+      const planned = await planStroke(
+        photo.preview,
+        photo.meta.orientation,
+        get().edits.retouch.filter((s) => s.enabled),
+        stroke,
+        activeFrameId,
+        smartFill && fillReady,
+      )
+      // The photo can change while the search runs; the stroke belongs to the
+      // one it was drawn on, and nowhere else.
+      if (get().activeFrameId !== activeFrameId) return
+      const added: RetouchStroke = {
+        id: crypto.randomUUID(),
+        enabled: true,
+        points: stroke.points.map(round6),
+        size: round6(stroke.size),
+        feather: stroke.feather,
+        ...planned,
+        dx: round6(planned.dx),
+        dy: round6(planned.dy),
+      }
+      // Not selected: a selected spot is drawn on the picture, and a spot you
+      // have just taken out should leave nothing behind to look at.
+      get().update({ retouch: [...get().edits.retouch, added] }, `retouch-add-${added.id}`)
+    } catch (err) {
+      get().toast(err instanceof Error ? `Could not heal there — ${err.message}` : 'Could not heal there', 'error')
+    } finally {
+      set({ retouchPlanning: false })
+    }
+  },
+
+  updateRetouchStroke(id, patch, coalesceKey) {
+    const retouch = get().edits.retouch.map((s) => (s.id === id ? { ...s, ...patch } : s))
+    get().update({ retouch }, coalesceKey)
+  },
+
+  removeRetouchStroke(id) {
+    const { edits, activeRetouchId } = get()
+    const index = edits.retouch.findIndex((s) => s.id === id)
+    if (index === -1) return
+    const remaining = edits.retouch.filter((s) => s.id !== id)
+    get().update({ retouch: remaining }, `retouch-remove-${id}`)
+    if (activeRetouchId === id) set({ activeRetouchId: remaining[Math.min(index, remaining.length - 1)]?.id ?? null })
+  },
+
+  selectRetouchStroke(id) {
+    set({ activeRetouchId: id })
+  },
+
+  setRetouchBrush(patch) {
+    set({ retouchBrush: { ...get().retouchBrush, ...patch } })
+  },
+
+  setSmartFill(on) {
+    set({ smartFill: on })
+    saveSmartFill(on)
+  },
+
+  async loadFillModel() {
+    if (get().fillLoading) return
+    set({ fillLoading: true })
+    try {
+      await prepareFillModel()
+      set({ fillReady: true, smartFill: true })
+      saveSmartFill(true)
+    } catch {
+      get().toast('Could not load the fill model — check the connection and try again', 'error')
+    } finally {
+      set({ fillLoading: false })
+    }
+  },
+
+  setFillReady() {
+    if (!get().fillReady) set({ fillReady: true })
+  },
+
   setMaskOverlay(on) {
     set({ maskOverlay: on })
   },
@@ -1266,8 +1398,12 @@ export const useEditor = create<EditorState>((set, get) => ({
       get().toast('Nothing copied yet', 'error')
       return
     }
-    // Crop is about this frame, not the look, so it stays put.
-    get().replaceEdits({ ...cloneEdits(clipboard), crop: get().edits.crop }, 'paste')
+    // Crop is about this frame, not the look, so it stays put — and so do the
+    // retouch strokes, which are spots on one particular photograph.
+    get().replaceEdits(
+      { ...cloneEdits(clipboard), crop: get().edits.crop, retouch: get().edits.retouch },
+      'paste',
+    )
     get().toast('Look pasted')
   },
 
@@ -1436,6 +1572,11 @@ function saveAutoExpose(on: boolean): void {
   } catch {
     // Nothing to do: the choice holds for this session.
   }
+}
+
+/** Six places is a tenth of a pixel on a 100-megapixel frame, and keeps sidecars short. */
+function round6(v: number): number {
+  return Math.round(v * 1e6) / 1e6
 }
 
 /** A different lens picked — by an edit, an undo, a paste — is a different profile. */
@@ -1772,6 +1913,17 @@ function migrate(edits: Partial<EditState>): EditState {
     }),
     dynamicRange: edits.dynamicRange ?? base.dynamicRange,
     raw: { ...base.raw, ...(edits.raw ?? {}) },
+    // Anything malformed is dropped rather than repaired: a stroke with no
+    // points has nowhere to heal, and a missing number reaches the heal as NaN.
+    retouch: (Array.isArray(edits.retouch) ? edits.retouch : base.retouch).filter(
+      (s) =>
+        s &&
+        Array.isArray(s.points) &&
+        s.points.length >= 2 &&
+        s.points.every(Number.isFinite) &&
+        [s.size, s.feather, s.dx, s.dy].every(Number.isFinite) &&
+        (s.mode === 'heal' || s.mode === 'fill'),
+    ).map((s) => ({ ...s, enabled: s.enabled !== false })),
     look: { ...base.look, ...(edits.look ?? {}) },
     crop: { ...base.crop, ...(edits.crop ?? {}) },
     // Its own line for the same reason every sub-object above has one: the

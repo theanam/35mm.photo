@@ -27,6 +27,7 @@ export type PanelId =
   | 'grain'
   | 'frame'
   | 'masks'
+  | 'retouch'
   | 'raw'
 
 export interface StackChip {
@@ -121,6 +122,11 @@ export function hasMaskEdits(edits: EditState): boolean {
   return edits.masks.some(maskIsActive)
 }
 
+/** Only the spots that are switched on change the picture. */
+export function hasRetouchEdits(edits: EditState): boolean {
+  return edits.retouch.some((s) => s.enabled)
+}
+
 /** True when the decoder is being asked for something other than the default. */
 export function hasRawEdits(edits: EditState): boolean {
   const base = defaultRawDevelop()
@@ -163,6 +169,19 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
 
   if (meta?.isRaw) {
     chips.push({ id: 'raw', label: 'RAW develop', value: rawSummary(edits), panel: 'raw' })
+  }
+
+  // First after the develop, because that is where it happens: the strokes
+  // change the picture every other adjustment then works on.
+  if (hasRetouchEdits(edits)) {
+    const count = edits.retouch.filter((s) => s.enabled).length
+    chips.push({
+      id: 'retouch',
+      label: 'Retouch',
+      value: `${count} spot${count === 1 ? '' : 's'}`,
+      panel: 'retouch',
+      off: () => ({ retouch: [] }),
+    })
   }
 
   if (edits.temperature !== NEUTRAL_TEMPERATURE || edits.tint !== 0) {

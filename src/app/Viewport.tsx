@@ -12,6 +12,8 @@ import { HistogramClient } from '../editor/histogram'
 import { detectCapabilities } from '../editor/gpu/caps'
 import { CropOverlay } from './CropOverlay'
 import { MaskOverlay } from './MaskOverlay'
+import { RetouchOverlay } from './RetouchOverlay'
+import { onFillFallback, retouchPatches } from '../retouch/retouch'
 
 /** Histogram readback size — enough bins to be representative, cheap to read. */
 const HISTOGRAM_EDGE = 192
@@ -45,6 +47,8 @@ export function Viewport() {
   const setSplitAt = useEditor((s) => s.setSplitAt)
   const cropping = useEditor((s) => s.cropping)
   const masking = useEditor((s) => s.activeTool === 'masks')
+  const retouching = useEditor((s) => s.activeTool === 'retouch')
+  const smartFill = useEditor((s) => s.smartFill && s.fillReady)
   const activeMaskId = useEditor((s) => s.activeMaskId)
   const maskOverlay = useEditor((s) => s.maskOverlay)
   const cropDragging = useEditor((s) => s.cropDragging)
@@ -69,6 +73,8 @@ export function Viewport() {
   const [stage, setStage] = useState({ width: 0, height: 0 })
   const [glError, setGlError] = useState<string | null>(null)
   const [lutReady, setLutReady] = useState(0)
+  /** Bumped when new retouch patches reach the GPU, which the edit stack cannot say. */
+  const [retouchAt, setRetouchAt] = useState(0)
   const [panning, setPanning] = useState(false)
 
   /** Live pointers on the stage, so one finger pans and two pinch. */
@@ -251,13 +257,49 @@ export function Viewport() {
   }, [photo, lensProfile, edits.lens])
 
   const renderEdits = useMemo(() => {
-    if (!cropping && !masking) return edits
+    if (!cropping && !masking && !retouching) return edits
     return {
       ...edits,
       crop: cropping ? { ...edits.crop, x: 0, y: 0, w: 1, h: 1 } : edits.crop,
       frame: neutralFrame(),
     }
-  }, [cropping, masking, edits])
+  }, [cropping, masking, retouching, edits])
+
+  /* ── retouch ── */
+
+  /*
+   * Healed in a worker and uploaded when it lands, so a slider never waits on
+   * a heal. A stroke's patch is cached against everything under it, so an
+   * edit that is not to the strokes costs a lookup and nothing else.
+   */
+  useEffect(() => {
+    const renderer = rendererRef.current
+    if (!renderer || !photo || !activeFrameId) return
+    const strokes = renderEdits.retouch.filter((s) => s.enabled)
+    if (!strokes.length) {
+      renderer.setRetouch(null, '')
+      setRetouchAt((n) => n + 1)
+      return
+    }
+
+    let live = true
+    retouchPatches(photo.preview, photo.meta.orientation, strokes, activeFrameId, smartFill)
+      .then((result) => {
+        if (!live || rendererRef.current !== renderer) return
+        renderer.setRetouch(result.patches, result.key)
+        setRetouchAt((n) => n + 1)
+      })
+      .catch((err) => {
+        if (live) toast(err instanceof Error ? `Could not heal — ${err.message}` : 'Could not heal', 'error')
+      })
+    return () => {
+      live = false
+    }
+  }, [photo, activeFrameId, renderEdits.retouch, smartFill, toast])
+
+  useEffect(() => {
+    onFillFallback(() => toast('Smart fill could not run, so that spot was healed instead', 'error'))
+  }, [toast])
 
   const output = useMemo(() => {
     if (!photo) return { width: 0, height: 0 }
@@ -706,7 +748,7 @@ export function Viewport() {
   }, [
     cssWidth, cssHeight, cssPhotoWidth, cssPhotoHeight, output.width,
     renderEdits, splitCompare, splitAt, cropping,
-    masking, maskOverlay, activeMaskId, activeFrameId, maskMapsAt, lensU,
+    masking, maskOverlay, activeMaskId, activeFrameId, maskMapsAt, lensU, retouchAt,
   ])
 
   useEffect(() => {
@@ -859,6 +901,9 @@ export function Viewport() {
 
           {cropping && <CropOverlay width={cssWidth} height={cssHeight} />}
           {masking && !cropping && <MaskOverlay width={cssWidth} height={cssHeight} />}
+          {retouching && !cropping && (
+            <RetouchOverlay width={cssWidth} height={cssHeight} lens={lensU} />
+          )}
         </div>
       </div>
 

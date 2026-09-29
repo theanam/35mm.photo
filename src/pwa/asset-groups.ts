@@ -11,6 +11,9 @@
  *   heic     ~2.0 MB   libheif, for the photos phones actually take
  *   subject  ~17 MB    the detector and its runtime, which the user is asked
  *                      about before it is ever fetched
+ *   fill     ~14 MB    the retouch fill model and its worker, fetched only
+ *                      once smart fill has been switched on; the runtime is
+ *                      the detector's, and shared
  *
  * ## Why this matches names, and why that is guarded
  *
@@ -36,6 +39,7 @@ export interface AssetGroups {
   raw: string[]
   heic: string[]
   subject: string[]
+  fill: string[]
 }
 
 /**
@@ -44,6 +48,13 @@ export interface AssetGroups {
  * references are the whole of it, plus the weights from `public/`.
  */
 const SUBJECT = /(^|\/)(ort-wasm|subject-worker)|\.onnx$/
+
+/**
+ * The retouch fill model. Checked before the detector's pattern, which would
+ * otherwise take its weights for the detector's by their extension. The heal
+ * worker is not here: it is a few kilobytes of arithmetic, and part of the app.
+ */
+const FILL = /(^|\/)fill-worker-|(^|\/)migan[^/]*\.onnx$/
 
 /**
  * HEIC. `wasm-bundle` is libheif — verified by reading the built worker, which
@@ -64,11 +75,12 @@ const RAW = /(^|\/)(libraw|decode-raw|preview-worker|worker)-/
 const NEVER = /(^|\/)(sw\.js|precache\.json|sitemap\.xml|chunks\.json)$/
 
 export function groupAssets(files: string[]): AssetGroups {
-  const groups: AssetGroups = { shell: [], raw: [], heic: [], subject: [] }
+  const groups: AssetGroups = { shell: [], raw: [], heic: [], subject: [], fill: [] }
 
   for (const file of files) {
     if (NEVER.test(file)) continue
-    if (SUBJECT.test(file)) groups.subject.push(file)
+    if (FILL.test(file)) groups.fill.push(file)
+    else if (SUBJECT.test(file)) groups.subject.push(file)
     else if (HEIC.test(file)) groups.heic.push(file)
     else if (RAW.test(file)) groups.raw.push(file)
     // Anything unrecognised is part of the app. An app that will not start
@@ -100,7 +112,7 @@ export function verifyGroups(groups: AssetGroups): string[] {
     }
   }
 
-  for (const key of ['shell', 'raw', 'heic', 'subject'] as const) {
+  for (const key of ['shell', 'raw', 'heic', 'subject', 'fill'] as const) {
     if (!groups[key].length) {
       problems.push(
         `the "${key}" group is empty, which means its files were renamed and are ` +

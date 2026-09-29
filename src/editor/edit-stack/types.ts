@@ -340,6 +340,49 @@ export type MaskKind = Mask['kind']
 export const MAX_MASKS = 8
 
 /**
+ * Retouching (spec §7.4): spots, dust and small things taken out of the
+ * picture with a brush.
+ *
+ * A stroke is stored the way a mask is — a few numbers, in upright image
+ * coordinates — and the healed pixels are derived from it, per resolution,
+ * the way a subject map is. So the stroke survives a sidecar and a re-crop,
+ * and an export heals at full resolution rather than scaling up the preview's
+ * answer.
+ *
+ * How a stroke is healed is decided once, when it is drawn, and kept: `heal`
+ * copies texture from `dx`/`dy` away, and `fill` has a model paint the area in
+ * — for what a copy from anywhere nearby would visibly smear. Deciding at draw
+ * time rather than per render is what makes the preview and the export the
+ * same kind of answer.
+ */
+export type RetouchMode = 'heal' | 'fill'
+
+export interface RetouchStroke {
+  id: string
+  /** Off keeps the spot in the list but out of the render. */
+  enabled: boolean
+  mode: RetouchMode
+  /**
+   * The centre of the brush, in upright uv, as flat x, y pairs — one pair for
+   * a dab. Positions on the picture's content: lens correction is undone before
+   * they are stored, so a stroke stays on its spot whether the profile is on.
+   */
+  points: number[]
+  /** Brush radius as a fraction of the upright picture's shorter edge. */
+  size: number
+  /** How much of the radius fades into its surroundings, 0..100. */
+  feather: number
+  /**
+   * Where the texture is copied from, as an offset in upright uv. Kept for a
+   * fill too: it is what the stroke heals from if the model cannot be had.
+   */
+  dx: number
+  dy: number
+  /** Which inpainting model filled it — part of the cache key, like a subject mask's. */
+  model?: string
+}
+
+/**
  * Raw development (spec §5). These are not adjustments — they decide what the
  * decoder hands the pipeline in the first place, and changing one means
  * developing the file again rather than moving a slider.
@@ -423,6 +466,9 @@ export interface EditState {
 
   /* Local adjustments */
   masks: Mask[]
+
+  /* Retouching, applied to the picture before anything else */
+  retouch: RetouchStroke[]
 
   /* Geometry */
   crop: CropState

@@ -77,6 +77,10 @@ thing it was placed over.
 - **Masks and local adjustments** — radial, linear, luminance or colour range,
   and **subject**, found by a salient-object model that runs on your own
   machine; each carries its own tone, colour and detail
+- **Retouch** — a brush that heals spots, dust and stray hairs by copying
+  texture from nearby and taking the tone from around the spot; strokes a heal
+  would smear, it can hand to an inpainting model (MI-GAN) that runs on your
+  own machine
 - **Detail** — texture, clarity, dehaze, sharpening, luminance and chroma
   noise reduction
 - **Looks** — thirty-two built-ins across seven groups — everyday, reversal,

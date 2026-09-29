@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
 import { LOOKS } from '../editor/presets/looks'
 import { pickFiles } from '../io/file-system'
+import { stepBrush } from '../retouch/brush'
 
 /** Keyboard shortcuts, aimed at the habits a Lightroom user already has. */
 export function useKeyboard() {
@@ -47,6 +48,21 @@ export function useKeyboard() {
       }
       if (mod) return
 
+      // The retouch brush borrows the bracket keys for its size, as every
+      // brush does, and Delete for the spot it has selected.
+      if (s.activeTool === 'retouch') {
+        if (event.key === '[' || event.key === ']') {
+          event.preventDefault()
+          s.setRetouchBrush({ size: stepBrush(s.retouchBrush.size, event.key === ']' ? 1 : -1) })
+          return
+        }
+        if ((event.key === 'Delete' || event.key === 'Backspace') && s.activeRetouchId) {
+          event.preventDefault()
+          s.removeRetouchStroke(s.activeRetouchId)
+          return
+        }
+      }
+
       switch (event.key) {
         case '\\':
           event.preventDefault()
@@ -61,6 +77,12 @@ export function useKeyboard() {
         case 'M':
           event.preventDefault()
           s.openTool('masks')
+          break
+        case 'q':
+        case 'Q':
+          // Lightroom's key for spot removal.
+          event.preventDefault()
+          if (s.photo) s.openTool('retouch')
           break
         case 'Escape':
           // The open tool owns Escape while it is open.

@@ -135,6 +135,7 @@ export function defaultEdits(): EditState {
 
     raw: defaultRawDevelop(),
     masks: [],
+    retouch: [],
 
     perspective: neutralPerspective(),
     lens: neutralLens(),

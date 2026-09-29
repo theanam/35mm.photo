@@ -53,6 +53,7 @@ function edited(): EditState {
   e.frame = { top: 6, right: 3, bottom: 12, left: 4, color: '#101010', link: 'free', unit: 'percent' }
   e.raw = { ...e.raw, draft: !e.raw.draft }
   e.masks = [structuredClone(FIXTURE_MASK)]
+  e.retouch = [{ id: 'dust', enabled: true, mode: 'heal', points: [0.3, 0.4], size: 0.01, feather: 50, dx: 0.02, dy: 0 }]
   return e
 }
 

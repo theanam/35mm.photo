@@ -8,6 +8,8 @@ import { saveBlob, writeToHandle } from './file-system'
 import { extensionOf } from './formats'
 import { attachExif } from './exif-write'
 import { ensureSubjectMaps } from '../subject/detect'
+import { retouchPatches } from '../retouch/retouch'
+import { fillEnabled } from '../retouch/preference'
 
 export type ExportFormat = 'jpeg' | 'png' | 'webp'
 
@@ -225,6 +227,23 @@ export async function renderToBlob(
 
     onProgress?.('Rendering')
     renderer.setImage(source, meta.orientation)
+
+    // Healed here, at the resolution being written, from the same strokes the
+    // preview healed — never the preview's pixels scaled up.
+    const strokes = edits.retouch.filter((s) => s.enabled)
+    if (strokes.length) {
+      onProgress?.('Retouching')
+      const healed = await retouchPatches(
+        source,
+        meta.orientation,
+        strokes,
+        request.frameId ?? meta.name,
+        fillEnabled(),
+      )
+      renderer.setRetouch(healed.patches, healed.key)
+    } else {
+      renderer.setRetouch(null, '')
+    }
 
     // Through the cache, so the export reuses the cube the viewport already
     // built rather than resampling an imported LUT a second time.

@@ -168,6 +168,16 @@ export const IconEyeOff = ({ size = 16 }: Props) => (
 )
 
 /** A disc half-painted: the mask, and the picture showing through beside it. */
+/** A sticking plaster, laid across the diagonal: healing. */
+export const IconHeal = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <g transform="rotate(-45 8 8)">
+      <rect x="1.6" y="5.4" width="12.8" height="5.2" rx="2.6" />
+      <path d="M5.8 5.4v5.2M10.2 5.4v5.2" />
+    </g>
+  </svg>
+)
+
 export const IconMask = ({ size = 16 }: Props) => (
   <svg {...base(size)}>
     <circle cx="8" cy="8" r="5.6" />

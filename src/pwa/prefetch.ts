@@ -1,4 +1,5 @@
 import type { AssetGroups } from './asset-groups'
+import { loadFillReady, saveFillReady } from '../retouch/preference'
 
 /**
  * Warming the file decoders once the app is sitting idle.
@@ -22,6 +23,14 @@ import type { AssetGroups } from './asset-groups'
  * that is a real cost on a real connection, and spending it quietly here would
  * go behind the back of a question the app already knows to ask. Once somebody
  * has said yes, the service worker keeps it; until then it stays unfetched.
+ *
+ * ## What an installed app fetches as well
+ *
+ * The retouch fill model (~15 MB with its runtime). A site in a tab asks
+ * before loading it; an app someone has chosen to install is expected to come
+ * with its features, and to have them offline. So an installed copy fetches
+ * it once the app has settled, after the decoders, and from then on the
+ * Retouch panel never offers the download.
  */
 
 /** Long enough that the first photo, the LUTs and the histogram are all done. */
@@ -70,14 +79,42 @@ async function readManifest(): Promise<AssetGroups | null> {
  * are silent by design — this is an optimisation, and an optimisation that
  * reports errors to someone who did not ask for it is a bug.
  */
-async function warm(paths: string[]): Promise<void> {
+async function warm(paths: string[]): Promise<boolean> {
   for (const path of paths) {
     try {
       const url = new URL(path, document.baseURI).href
-      await fetch(url, { credentials: 'same-origin' })
+      const response = await fetch(url, { credentials: 'same-origin' })
+      if (!response.ok) return false
+      // Read to the end: the service worker caches the response it hands on,
+      // but only a body that finishes arriving is worth anything offline.
+      await response.arrayBuffer()
     } catch {
-      return
+      return false
     }
+  }
+  return true
+}
+
+/** Running as an installed app, rather than in a browser tab. */
+function isInstalledApp(): boolean {
+  const standalone = ['standalone', 'fullscreen', 'window-controls-overlay'].some(
+    (mode) => window.matchMedia?.(`(display-mode: ${mode})`).matches,
+  )
+  return standalone || (navigator as Navigator & { standalone?: boolean }).standalone === true
+}
+
+/**
+ * The fill model and what runs it, for an installed app. Through the service
+ * worker, so it lands in the cache the worker keeps across deploys; waiting
+ * for the worker to be in control first, or the fetch would go around it.
+ */
+async function warmFill(manifest: AssetGroups): Promise<void> {
+  if (loadFillReady() || !manifest.fill?.length) return
+  if ('serviceWorker' in navigator) await navigator.serviceWorker.ready
+  const runtime = (manifest.subject ?? []).filter((f) => /ort-wasm/.test(f))
+  if (await warm([...runtime, ...manifest.fill])) {
+    saveFillReady()
+    void navigator.storage?.persist?.().catch(() => {})
   }
 }
 
@@ -93,7 +130,9 @@ export function prefetchDecoders(): void {
     whenIdle(() => {
       void readManifest().then((manifest) => {
         if (!manifest) return
-        void warm([...(manifest.raw ?? []), ...(manifest.heic ?? [])])
+        void warm([...(manifest.raw ?? []), ...(manifest.heic ?? [])]).then(() => {
+          if (isInstalledApp()) void warmFill(manifest)
+        })
       })
     })
   }, SETTLE_MS)

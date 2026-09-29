@@ -19,12 +19,13 @@ import {
   hasMaskEdits,
   hasMixerEdits,
   hasRawEdits,
+  hasRetouchEdits,
   hasToneEdits,
   type PanelId,
 } from '../edit-stack/summary'
 import {
   IconCrop, IconCurves, IconDetail, IconGrade, IconGrain, IconLens, IconLight, IconLooks,
-  IconFrame, IconMask, IconMixer, IconRaw,
+  IconFrame, IconHeal, IconMask, IconMixer, IconRaw,
 } from '../../app/ui/icons'
 import { LooksTool } from './LooksTool'
 import { LightTool } from './LightTool'
@@ -34,6 +35,7 @@ import { ColorGradeTool } from './ColorGradeTool'
 import { LensTool } from './LensTool'
 import { CropTool } from './CropTool'
 import { MasksTool } from './MasksTool'
+import { RetouchTool } from './RetouchTool'
 import { DetailTool } from './DetailTool'
 import { GrainTool } from './GrainTool'
 import { FrameTool } from './FrameTool'
@@ -44,8 +46,8 @@ export type ToolId = PanelId
 export interface ToolDef {
   id: ToolId
   label: string
-  /** Sits under the title in the tool panel's header. */
-  hint: string
+  /** Sits under the title in the tool panel's header, when there is one. */
+  hint?: string
   /**
    * Used where a tab is only as wide as its word — the phone's tool strip.
    * Only a tool whose full label is a phrase needs one.
@@ -138,6 +140,14 @@ export const TOOLS: ToolDef[] = [
     reset: () => ({ masks: [] }),
   },
   {
+    id: 'retouch',
+    label: 'Retouch',
+    Icon: IconHeal,
+    Content: RetouchTool,
+    isDirty: hasRetouchEdits,
+    reset: () => ({ retouch: [] }),
+  },
+  {
     id: 'crop',
     label: 'Crop & transform',
     short: 'Crop',
@@ -212,11 +222,12 @@ export const TOOLS: ToolDef[] = [
  * own apply/discard. Geometry goes here because it needs the whole viewport and
  * a commit gesture; the continuous colour adjustments are what the rail holds
  * the rest of the time. Masks join them for the same reason: placing one is a
- * gesture on the picture, not a slider you leave open.
+ * gesture on the picture, not a slider you leave open. Retouch is nothing but
+ * gestures on the picture.
  *
  * Add an id here to promote a tool to the toolbar — nothing else needs to change.
  */
-export const TOOLBAR_TOOL_IDS: ToolId[] = ['crop', 'masks']
+export const TOOLBAR_TOOL_IDS: ToolId[] = ['crop', 'masks', 'retouch']
 
 export const TOOLS_BY_ID = new Map(TOOLS.map((t) => [t.id, t]))
 

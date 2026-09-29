@@ -21,6 +21,9 @@ const BUILD = [
   'assets/ort-wasm-simd-threaded-DcHrbrbl.wasm',
   'assets/subject-worker-BFhRgHye.js',
   'models/u2netp.onnx',
+  'assets/fill-worker-Cw3pLq9a.js',
+  'assets/heal-worker-D1xZr7Qe.js',
+  'models/migan.onnx',
   'sw.js',
   'precache.json',
   'sitemap.xml',
@@ -48,6 +51,15 @@ describe('groupAssets', () => {
     ])
   })
 
+  it('files the fill model and its worker under fill, apart from the detector', () => {
+    expect(groups.fill).toEqual(['assets/fill-worker-Cw3pLq9a.js', 'models/migan.onnx'])
+    expect(groups.subject).not.toContain('models/migan.onnx')
+  })
+
+  it('keeps the heal worker in the shell, where the brush needs it', () => {
+    expect(groups.shell).toContain('assets/heal-worker-D1xZr7Qe.js')
+  })
+
   it('files LibRaw and its own worker under raw', () => {
     expect(groups.raw).toEqual([
       'assets/decode-raw-DoHRyVYN.js',
@@ -72,13 +84,13 @@ describe('groupAssets', () => {
   })
 
   it('never caches the worker or the manifest that describe the cache', () => {
-    const all = [...groups.shell, ...groups.raw, ...groups.heic, ...groups.subject]
+    const all = [...groups.shell, ...groups.raw, ...groups.heic, ...groups.subject, ...groups.fill]
     expect(all).not.toContain('sw.js')
     expect(all).not.toContain('precache.json')
   })
 
   it('accounts for every file exactly once', () => {
-    const all = [...groups.shell, ...groups.raw, ...groups.heic, ...groups.subject]
+    const all = [...groups.shell, ...groups.raw, ...groups.heic, ...groups.subject, ...groups.fill]
     expect(new Set(all).size).toBe(all.length)
     expect(all.length).toBe(BUILD.length - 3) // sw.js, precache.json, sitemap.xml
   })

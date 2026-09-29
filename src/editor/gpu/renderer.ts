@@ -29,6 +29,7 @@ import { MAX_SUBJECT_MASKS, packMasks, type PackedMasks } from './mask-uniforms'
 import { swapsAxes, type Orientation } from '../../io/exif'
 import { IDENTITY_LENS, type LensUniforms } from '../../lens/uniforms'
 import { whiteBalanceGain } from './whitebalance'
+import type { RetouchPatch } from '../../retouch/retouch'
 
 /**
  * Where the defocused copy a mask's blur reads from is bound. The detail pass
@@ -127,7 +128,19 @@ export class Renderer {
   private curveTexture: WebGLTexture
   private lutTexture: WebGLTexture | null = null
   private subjectTexture: WebGLTexture | null = null
+  /**
+   * The source with the retouch strokes healed into it, or null when there are
+   * none. A copy rather than an edit of `imageTexture`, because the before view
+   * and every render with the retouch chip's eye shut still need the original.
+   */
+  private retouchTexture: WebGLTexture | null = null
+  /** What `retouchTexture` currently holds, so a redraw does not re-upload it. */
+  private retouchKey = ''
+  private retouchSize = { w: 0, h: 0 }
   private lutSize = 0
+  /** The image texture as stored, before the EXIF turn. */
+  private storedWidth = 0
+  private storedHeight = 0
 
   /** Dimensions of the image the right way up — what the transform works in. */
   private uprightWidth = 0
@@ -225,6 +238,14 @@ export class Renderer {
 
     this.imageTexture = tex
     this.orientation = orientation
+    this.storedWidth = source.width
+    this.storedHeight = source.height
+    // Healed against the pixels that were here before. Dropped rather than
+    // merely marked stale: until the new photo's own patches arrive, drawing
+    // it through the old one's would paint that photo's heals onto this one.
+    if (this.retouchTexture) gl.deleteTexture(this.retouchTexture)
+    this.retouchTexture = null
+    this.retouchKey = ''
 
     const upright = uprightSize(source.width, source.height, orientation)
     this.uprightWidth = upright.width
@@ -367,6 +388,74 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
   }
 
+  /**
+   * Heal the retouch strokes into a copy of the source.
+   *
+   * Handed patches rather than strokes: finding the source of a heal and
+   * running the fill model are a worker's business (see `retouch/retouch.ts`),
+   * and the render graph only ever samples the answer. The patches are in the
+   * stored texture's own pixels, so they drop in with no mapping at all, and
+   * every later stage — lens correction, geometry, the grade — sees a picture
+   * that simply never had the spots.
+   */
+  setRetouch(patches: RetouchPatch[] | null, key: string) {
+    const gl = this.gl
+    if (!patches?.length || !this.imageTexture) {
+      if (this.retouchTexture) gl.deleteTexture(this.retouchTexture)
+      this.retouchTexture = null
+      this.retouchKey = ''
+      return
+    }
+    if (key === this.retouchKey && this.retouchTexture) return
+
+    const w = this.storedWidth
+    const h = this.storedHeight
+    if (!this.retouchTexture) {
+      this.retouchTexture = gl.createTexture()
+      if (!this.retouchTexture) throw new Error('WebGL: could not allocate the retouch texture')
+      gl.activeTexture(gl.TEXTURE0 + SCRATCH_UNIT)
+      gl.bindTexture(gl.TEXTURE_2D, this.retouchTexture)
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      this.retouchSize = { w, h }
+    } else if (this.retouchSize.w !== w || this.retouchSize.h !== h) {
+      // texStorage is immutable: a new picture of a different size needs a new texture.
+      gl.deleteTexture(this.retouchTexture)
+      this.retouchTexture = null
+      this.setRetouch(patches, key)
+      return
+    }
+
+    // Start from the original on the GPU, then lay the patches over it in
+    // stroke order — a later stroke's patch already contains any earlier one
+    // it overlaps, so plain overwriting is the right composite.
+    const read = gl.createFramebuffer()
+    const draw = gl.createFramebuffer()
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, read)
+    gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.imageTexture, 0)
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, draw)
+    gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.retouchTexture, 0)
+    gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST)
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null)
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null)
+    gl.deleteFramebuffer(read)
+    gl.deleteFramebuffer(draw)
+
+    gl.activeTexture(gl.TEXTURE0 + SCRATCH_UNIT)
+    gl.bindTexture(gl.TEXTURE_2D, this.retouchTexture)
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0)
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+    for (const p of patches) {
+      if (p.x < 0 || p.y < 0 || p.x + p.width > w || p.y + p.height > h) continue
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, p.x, p.y, p.width, p.height, gl.RGBA, gl.UNSIGNED_BYTE, p.data)
+    }
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
+    this.retouchKey = key
+  }
+
   /* ─────────────────────────── drawing ─────────────────────────── */
 
   private draw() {
@@ -391,7 +480,10 @@ export class Renderer {
     this.rtColor.bind()
     gl.useProgram(this.colorProgram)
 
-    this.bindTexture(0, gl.TEXTURE_2D, this.imageTexture)
+    // The before view and a shut retouch eye both hand in no strokes, and see
+    // the picture as it was shot.
+    const retouched = edits.retouch.some((s) => s.enabled) && this.retouchTexture
+    this.bindTexture(0, gl.TEXTURE_2D, retouched ? this.retouchTexture : this.imageTexture)
     this.bindTexture(1, gl.TEXTURE_2D, this.curveTexture)
     this.bindTexture(2, gl.TEXTURE_3D, this.lutTexture)
     this.colorU.i('uImage', 0)
@@ -952,6 +1044,7 @@ export class Renderer {
     if (this.imageTexture) gl.deleteTexture(this.imageTexture)
     if (this.lutTexture) gl.deleteTexture(this.lutTexture)
     if (this.subjectTexture) gl.deleteTexture(this.subjectTexture)
+    if (this.retouchTexture) gl.deleteTexture(this.retouchTexture)
     gl.deleteTexture(this.curveTexture)
     gl.deleteVertexArray(this.quad.vao)
     gl.deleteBuffer(this.quad.buffer)
@@ -999,6 +1092,7 @@ function originalEdits(edits: EditState): EditState {
     curves: identityCurves(),
     dynamicRange: 0,
     masks: [],
+    retouch: [],
     hsl: Object.fromEntries(HSL_BANDS.map((b) => [b, { hue: 0, sat: 0, lum: 0 }])) as EditState['hsl'],
     look: { id: null, strength: 0 },
     clarity: 0,

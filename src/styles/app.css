@@ -2831,3 +2831,48 @@ kbd {
   cursor: pointer;
 }
 .aspect-custom__flip:hover { color: var(--text); border-color: var(--line-soft); }
+
+/* ───────────────────────────── retouch ───────────────────────────── */
+
+/* The whole frame is canvas for the brush while the tool is open. */
+.retouch-overlay__paint {
+  fill: transparent;
+  pointer-events: auto;
+  cursor: none;
+  touch-action: none;
+}
+
+/* A brushed area is shown by its edge alone — see `Outline`. */
+.retouch-overlay__cut { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.retouch-overlay__ring {
+  fill: rgba(242, 234, 220, 0.92);
+  pointer-events: none;
+  filter: drop-shadow(0 0 1.5px rgba(11, 10, 8, 0.85));
+}
+.retouch-overlay__ring[data-source] { fill: var(--accent); }
+
+.retouch-overlay__grab {
+  fill: none;
+  stroke: transparent;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: stroke;
+  cursor: grab;
+  touch-action: none;
+}
+
+.retouch-overlay__cursor { pointer-events: none; }
+
+.retouch__spinner { width: 12px; height: 12px; border-width: 1.5px; }
+.button[data-busy] .retouch__size { color: transparent; }
+.retouch__empty {
+  margin: 0;
+  padding: 28px 12px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  text-wrap: balance;
+}
+.retouch__load { width: 100%; display: inline-flex; justify-content: center; gap: 8px; align-items: baseline; }
+.retouch__size { color: var(--text-dim); font-size: 11px; }

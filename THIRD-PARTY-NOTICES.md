@@ -24,6 +24,7 @@ dependencies — is not covered here. None of it is shipped to the browser.
 | [zustand](https://github.com/pmndrs/zustand) | 4.5.7 | MIT | pmndrs/zustand |
 | [ONNX Runtime Web](https://onnxruntime.ai/) | 1.30.0 | MIT | microsoft/onnxruntime |
 | [U²-Netp](https://github.com/xuebinqin/U-2-Net) weights (`public/models/u2netp.onnx`) | — | **Apache-2.0** | xuebinqin/U-2-Net |
+| [MI-GAN](https://github.com/Picsart-AI-Research/MI-GAN) weights (`public/models/migan.onnx`) | Places2 512 | MIT | Picsart-AI-Research/MI-GAN |
 | [Lensfun](https://lensfun.github.io/) lens database, as JSON (`public/lensdb/`) | see `public/lensdb/ATTRIBUTION.md` | **CC BY-SA 3.0** (data, not code) | lensfun/lensfun |
 
 ### A note on the LibRaw wrapper
@@ -57,6 +58,19 @@ released for non-commercial research use, and could not be distributed from
 this repository at all: MIT grants downstream users commercial rights that
 35mm would not itself hold, and a project cannot pass on what it was never
 given. No amount of the project being unpaid changes that.
+
+### The inpainting model
+
+`public/models/migan.onnx` is MI-GAN, from Sargsyan et al., *MI-GAN: A Simple
+Baseline for Image Inpainting on Mobile Devices* (ICCV 2023), © 2024 Picsart AI
+Research. The code and the weights are both released under **MIT** — the
+weights under their own `LICENSE-WEIGHTS`, which is the MIT text. The ONNX file
+is the authors' own pipeline export, as published at
+[andraniksargsyan/migan](https://huggingface.co/andraniksargsyan/migan).
+
+The change, stated: its large weights are stored as float16 and cast back to
+float32 on load (`scripts/migan-fp16.py`). The graph and its arithmetic are
+otherwise untouched.
 
 The ONNX Runtime WebAssembly is **not** committed. The build emits it from
 `node_modules` as an ordinary hashed asset, so it is reproducible from the
