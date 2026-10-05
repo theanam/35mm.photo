@@ -283,6 +283,20 @@ export const IconSearch = ({ size = 16 }: Props) => (
 )
 
 /** A tilted line brought level: the straighten-by-drawing tool. */
+export const IconLock = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <rect x="3.5" y="7.2" width="9" height="6.3" rx="1.3" />
+    <path d="M5.6 7.2V5.3a2.4 2.4 0 0 1 4.8 0v1.9" />
+  </svg>
+)
+
+export const IconLockOpen = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <rect x="3.5" y="7.2" width="9" height="6.3" rx="1.3" />
+    <path d="M5.6 7.2V5.3a2.4 2.4 0 0 1 4.7-.6" />
+  </svg>
+)
+
 export const IconLevel = ({ size = 16 }: Props) => (
   <svg {...base(size)}>
     <path d="M2.5 11 13.5 5" strokeDasharray="1.6 2" />

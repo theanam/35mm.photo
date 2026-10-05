@@ -56,6 +56,7 @@ import type { CustomPreset } from '../presets/types'
 import type { StoredFramePreset } from '../../storage/indexeddb'
 import type { InputSpace } from '../presets/inputSpace'
 import type { HistogramData } from '../histogram'
+import { guideTurns, loadCropGuide, saveCropGuide, type CropGuide } from './crop-guides'
 import * as db from '../../storage/indexeddb'
 
 export interface Toast {
@@ -65,6 +66,8 @@ export interface Toast {
 }
 
 export type ZoomMode = 'fit' | number
+/** The crop gesture in progress: see `cropDragging`. */
+export type CropDrag = false | 'move' | 'resize' | 'rotate'
 
 /** How a subject crop should be placed, once the subject itself is found. */
 export interface SubjectCropOptions {
@@ -159,11 +162,16 @@ interface EditorState {
    */
   activeMaskId: string | null
   /**
-   * True while a crop handle is under the pointer. The viewport scales itself
-   * to the crop box, and rescaling mid-drag would slide the picture out from
-   * under the finger doing the dragging — so the zoom settles on release.
+   * Which crop gesture is under the pointer, or false. The viewport scales
+   * itself to the crop box, and rescaling mid-drag would slide the picture out
+   * from under the finger doing the dragging — so the zoom settles on release.
+   * Which gesture matters too: a move holds the box still on screen and slides
+   * the picture, a resize holds the picture still and lets the box grow.
    */
-  cropDragging: boolean
+  cropDragging: CropDrag
+  /** The guide drawn inside the crop box, and which way round it is turned. */
+  cropGuide: CropGuide
+  cropGuideTurn: number
   /** The crop overlay is taking a drawn line as the horizon, not a box drag. */
   drawingHorizon: boolean
   /**
@@ -295,7 +303,8 @@ interface EditorState {
   selectMask: (id: string | null) => void
   updateMask: (id: string, patch: Partial<Mask>, coalesceKey?: string) => void
   updateMaskAdjust: (id: string, patch: Partial<MaskAdjust>, coalesceKey?: string) => void
-  setCropDragging: (on: boolean) => void
+  setCropDragging: (on: CropDrag) => void
+  setCropGuide: (guide: CropGuide, turn?: number) => void
   setDrawingHorizon: (on: boolean) => void
   setSheetDragging: (on: boolean) => void
   setMaskOverlay: (on: boolean) => void
@@ -378,6 +387,8 @@ const STAGE_LABELS: Record<DecodeStage, string> = {
 const AUTOSAVE_DELAY = 600
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null
 
+const savedGuide = loadCropGuide()
+
 export const useEditor = create<EditorState>((set, get) => ({
   frames: [],
   activeFrameId: null,
@@ -408,6 +419,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   cropping: false,
   activeMaskId: null,
   cropDragging: false,
+  cropGuide: savedGuide.guide,
+  cropGuideTurn: savedGuide.turn,
   drawingHorizon: false,
   sheetDragging: false,
   maskOverlay: true,
@@ -558,6 +571,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         history: emptyHistory(),
         hidden: [],
         histogram: null,
+        zoom: zoomByFrame.get(id) ?? 'fit',
         // Only a raw, and only one arriving with no edits of its own: a
         // photo somebody has already worked on has an exposure they chose.
         pendingAutoExpose:
@@ -715,6 +729,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       // reopening the photo brings its edits back.
       if (frame.thumbUrl) URL.revokeObjectURL(frame.thumbUrl)
       openedFiles.delete(frame.id)
+      zoomByFrame.delete(frame.id)
     }
 
     const remaining = frames.filter((f) => !drop.has(f.id))
@@ -1229,6 +1244,12 @@ export const useEditor = create<EditorState>((set, get) => ({
     get().update({ masks: replaceMaskAdjust(get().edits.masks, id, patch) }, coalesceKey)
   },
 
+  setCropGuide(guide, turn = 0) {
+    const turns = guideTurns(guide)
+    const wrapped = ((turn % turns) + turns) % turns
+    saveCropGuide(guide, wrapped)
+    set({ cropGuide: guide, cropGuideTurn: wrapped })
+  },
   setCropDragging(on) {
     if (get().cropDragging !== on) set({ cropDragging: on })
   },
@@ -1411,7 +1432,16 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setSplit(on) { set({ splitCompare: on }) },
   setSplitAt(v) { set({ splitAt: Math.min(0.98, Math.max(0.02, v)) }) },
-  setZoom(z) { set({ zoom: z }) },
+  setZoom(z) {
+    // Keyed by the photo on screen, not the active frame: while the next one
+    // is still developing, the zoom being changed is the old photo's.
+    const id = get().photo?.frameId
+    if (id) {
+      if (z === 'fit') zoomByFrame.delete(id)
+      else zoomByFrame.set(id, z)
+    }
+    set({ zoom: z })
+  },
 
   togglePanel(panel, open) {
     const panels = get().openPanels
@@ -1657,6 +1687,14 @@ async function redevelop(get: Getter, set: Setter): Promise<void> {
  * plain data, and keeping them out of state keeps the store serialisable.
  */
 const openedFiles = new Map<string, OpenedFile>()
+
+/**
+ * The zoom each photo was left at, by frame id. A view setting rather than an
+ * edit, so it lives for the session and never reaches a sidecar — but it is the
+ * photo's own: zooming into one frame to check focus must not drag every other
+ * frame in the strip in with it.
+ */
+const zoomByFrame = new Map<string, ZoomMode>()
 
 export function getOpenedFile(id: string): OpenedFile | undefined {
   return openedFiles.get(id)

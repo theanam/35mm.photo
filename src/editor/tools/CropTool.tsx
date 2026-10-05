@@ -3,8 +3,12 @@ import { Slider } from '../../app/ui/Slider'
 import { useEditor } from '../edit-stack/store'
 import { displaySize, outputSize } from '../gpu/transform'
 import { formatAspect, parseAspectRatio } from '../edit-stack/aspect'
-import { IconFlipH, IconFlipV, IconLevel, IconRotateLeft, IconRotateRight, IconSwap } from '../../app/ui/icons'
+import {
+  IconFlipH, IconFlipV, IconLevel, IconLock, IconLockOpen, IconRotateLeft, IconRotateRight, IconSwap,
+} from '../../app/ui/icons'
 import { STRAIGHTEN_LIMIT } from '../edit-stack/horizon'
+import { swapOrientation, toggleAspectLock } from '../edit-stack/crop-drag'
+import { CROP_GUIDES, guideTurns } from '../edit-stack/crop-guides'
 import { isModelCached } from '../../subject/detect'
 
 /** Aspect presets, in the design's order. The ratio comes from the id itself. */
@@ -25,6 +29,9 @@ export function CropTool() {
   const detecting = useEditor((s) => s.detecting)
   const drawingHorizon = useEditor((s) => s.drawingHorizon)
   const setDrawingHorizon = useEditor((s) => s.setDrawingHorizon)
+  const guide = useEditor((s) => s.cropGuide)
+  const guideTurn = useEditor((s) => s.cropGuideTurn)
+  const setCropGuide = useEditor((s) => s.setCropGuide)
 
   /*
    * Offered only once the detector is already here. Cropping is not a reason to
@@ -79,6 +86,25 @@ export function CropTool() {
   const meta = photo?.meta
   const frame = meta ? displaySize(meta.width, meta.height, edits.crop.rotate90) : null
   const out = meta ? outputSize(meta.width, meta.height, edits.crop) : null
+  const locked = Boolean(parseAspectRatio(edits.crop.aspect))
+
+  /** Lightroom's padlock: lock the shape the box has, or let it go. */
+  const toggleLock = () => {
+    if (!frame) return
+    setCustomMode(false)
+    updateCrop(toggleAspectLock(edits.crop, frame), 'crop-aspect')
+  }
+
+  /** Lightroom's X: the box on its side, keeping its centre. */
+  const turnBox = () => {
+    if (!frame) return
+    if (customMode) {
+      const w = customW
+      setCustomW(customH)
+      setCustomH(w)
+    }
+    updateCrop(swapOrientation(edits.crop, frame), 'crop-aspect')
+  }
 
   const chooseAspect = (id: string) => {
     if (!frame) {
@@ -277,7 +303,62 @@ export function CropTool() {
             </div>
           )}
 
-          <p className="tool__hint">Drag the box or its handles directly on the photo.</p>
+          <div className="crop-aspect-tools">
+            <button
+              className="button button--toggle button--sm"
+              data-on={locked || undefined}
+              aria-pressed={locked}
+              onClick={toggleLock}
+              title={locked ? 'Unlock the shape (A)' : 'Lock the shape the box has now (A)'}
+            >
+              {locked ? <IconLock size={14} /> : <IconLockOpen size={14} />}
+              {locked ? 'Locked' : 'Unlocked'}
+            </button>
+            <button
+              className="button button--toggle button--sm"
+              onClick={turnBox}
+              title="Turn the crop on its side (X)"
+            >
+              <IconSwap size={14} />
+              Turn
+            </button>
+          </div>
+
+          <p className="tool__hint">
+            Drag inside the frame to move the photo under it, the handles to reshape it, and
+            outside it to turn the photo. <strong>⌥</strong> resizes from the centre,{' '}
+            <strong>⇧</strong> holds the shape, <strong>⌘</strong>-drag draws a horizon,
+            arrow keys nudge by a pixel, double-click applies.
+          </p>
+        </section>
+
+        <section className="tool__group">
+          <header className="tool__group-head">
+            <span>Guide</span>
+            <span className="tool__note">O cycles · ⇧O turns</span>
+          </header>
+          <div className="chips">
+            {CROP_GUIDES.map((g) => (
+              <button
+                key={g.id}
+                className="chip"
+                data-active={guide === g.id || undefined}
+                aria-pressed={guide === g.id}
+                onClick={() => setCropGuide(g.id, g.id === guide ? guideTurn : 0)}
+              >
+                {g.label}
+              </button>
+            ))}
+            {guideTurns(guide) > 1 && (
+              <button
+                className="chip chip--mode"
+                onClick={() => setCropGuide(guide, guideTurn + 1)}
+                title="Turn the guide the other way (⇧O)"
+              >
+                Turn ↻
+              </button>
+            )}
+          </div>
         </section>
 
         <section className="tool__group">

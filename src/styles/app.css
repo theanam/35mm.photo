@@ -669,8 +669,11 @@
 .viewport__stage[data-pannable] .crop__box,
 .viewport__stage[data-pannable] .crop__handle,
 .viewport__stage[data-pannable] .viewport__split-handle { cursor: inherit; }
-.viewport__stage[data-pannable] .crop__box { cursor: move; }
 .viewport__stage[data-pannable] .viewport__split-handle { cursor: ew-resize; }
+/* Space held while cropping: the stage pans and the overlay steps aside. */
+.viewport__stage[data-space] { cursor: grab; }
+.viewport__stage[data-space][data-panning] { cursor: grabbing; }
+.viewport__stage[data-space] .crop { pointer-events: none; }
 
 .viewport__frame {
   position: relative;
@@ -721,7 +724,13 @@
 
 /* crop overlay */
 
-.crop { position: absolute; inset: 0; }
+.crop {
+  position: absolute;
+  inset: 0;
+  /* Outside the frame a drag turns the picture: Lightroom's curved arrows. */
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'><g fill='none' stroke-linecap='round' stroke-linejoin='round'><path d='M5 13.5A6.5 6.5 0 0 1 16.3 7.2M17 8.5A6.5 6.5 0 0 1 5.7 14.8M16.6 3.7L16.3 7.2L12.9 6.3M5.4 18.3L5.7 14.8L9.1 15.7' stroke='black' stroke-width='3.4'/><path d='M5 13.5A6.5 6.5 0 0 1 16.3 7.2M17 8.5A6.5 6.5 0 0 1 5.7 14.8M16.6 3.7L16.3 7.2L12.9 6.3M5.4 18.3L5.7 14.8L9.1 15.7' stroke='white' stroke-width='1.6'/></g></svg>") 11 11, crosshair;
+  touch-action: none;
+}
 .crop__shade { position: absolute; background: rgba(11, 10, 8, 0.62); pointer-events: none; }
 
 /* Drawing a horizon: the whole frame takes the line, above the box. */
@@ -749,20 +758,51 @@
 .crop__box {
   position: absolute;
   border: 1px solid rgba(236, 231, 222, 0.9);
-  cursor: move;
+  /* The frame is what is aimed; the picture moves under it. The hand says so. */
+  cursor: grab;
   touch-action: none;
 }
+.crop[data-drag="move"] .crop__box { cursor: grabbing; }
+/* Mid-gesture the whole overlay keeps the gesture's cursor, wherever the pointer strays. */
+.crop[data-drag="move"], .crop[data-drag="move"] .crop__handle { cursor: grabbing; }
 
-.crop__thirds {
+/* The guide inside the frame. Drawn at the box's pixel size; the strokes stay
+   a pixel wide however the box is scaled. */
+.crop__guides {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  background:
-    linear-gradient(to right, transparent calc(33.333% - 0.5px), rgba(236,231,222,.3) calc(33.333% - 0.5px) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px)),
-    linear-gradient(to right, transparent calc(66.666% - 0.5px), rgba(236,231,222,.3) calc(66.666% - 0.5px) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px)),
-    linear-gradient(to bottom, transparent calc(33.333% - 0.5px), rgba(236,231,222,.3) calc(33.333% - 0.5px) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px)),
-    linear-gradient(to bottom, transparent calc(66.666% - 0.5px), rgba(236,231,222,.3) calc(66.666% - 0.5px) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px));
+  overflow: visible;
 }
+.crop__guides line,
+.crop__guides path {
+  fill: none;
+  stroke: rgba(236, 231, 222, 0.38);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.crop__guides .crop__guides-faint { stroke: rgba(236, 231, 222, 0.16); }
+.crop__guides--turning line { stroke: rgba(236, 231, 222, 0.3); }
+
+/* The angle a turn has reached, beside the pointer. */
+.crop__readout {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--text);
+  background: rgba(11, 10, 8, 0.75);
+  white-space: nowrap;
+}
+
+/* The padlock and the turn, under the aspect chips. */
+.crop-aspect-tools { display: flex; gap: 7px; }
+.crop-aspect-tools .button { display: inline-flex; align-items: center; gap: 6px; }
 
 .crop__handle {
   position: absolute;

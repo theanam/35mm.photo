@@ -1,24 +1,38 @@
 import { useEffect, useRef, useState } from 'react'
-import { useEditor } from '../editor/edit-stack/store'
+import { useEditor, type CropDrag } from '../editor/edit-stack/store'
 import { parseAspectRatio } from '../editor/edit-stack/aspect'
 import { horizonAngle } from '../editor/edit-stack/horizon'
+import { moveCrop, resizeCrop, rotationAngle, type Handle } from '../editor/edit-stack/crop-drag'
 import { displaySize, effectiveCrop } from '../editor/gpu/transform'
-
-type Handle = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w' | 'move'
+import { CropGuides } from './CropGuides'
 
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 
-/** Interactive crop box drawn over the full, uncropped frame. */
+/**
+ * The crop box, drawn over the full, uncropped frame.
+ *
+ * It works the way Lightroom's does. The frame is the thing being aimed and
+ * the picture is what moves: a drag inside the frame slides the photo under
+ * it, the handles reshape it, and a drag anywhere outside it turns the photo,
+ * with a fine grid up while it turns. ⌥ resizes from the centre, ⇧ holds the
+ * shape, ⌘-drag draws a horizon, a double-click applies.
+ */
 export function CropOverlay({ width, height }: { width: number; height: number }) {
   const stored = useEditor((s) => s.edits.crop)
   const photo = useEditor((s) => s.photo)
   const updateCrop = useEditor((s) => s.updateCrop)
+  const applyTool = useEditor((s) => s.applyTool)
+  const cropDragging = useEditor((s) => s.cropDragging)
   const setCropDragging = useEditor((s) => s.setCropDragging)
   const drawingHorizon = useEditor((s) => s.drawingHorizon)
   const setDrawingHorizon = useEditor((s) => s.setDrawingHorizon)
+  const guide = useEditor((s) => s.cropGuide)
+  const guideTurn = useEditor((s) => s.cropGuideTurn)
   const rootRef = useRef<HTMLDivElement>(null)
   /** The line being drawn, in pixels from the overlay's top-left. */
   const [line, setLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  /** The angle a turn has reached, shown beside the pointer. */
+  const [turning, setTurning] = useState<{ x: number; y: number; angle: number } | null>(null)
 
   // Escape backs out of drawing before the tool sees it, so it cancels the
   // line rather than the whole crop. Capture, to get there first.
@@ -39,7 +53,6 @@ export function CropOverlay({ width, height }: { width: number; height: number }
   // the stored rect held inside the rotated frame, and handles that sat on the
   // stored rect instead would be offset from the picture they appear to cut.
   const crop = photo ? effectiveCrop(photo.meta.width, photo.meta.height, stored) : stored
-  const dragRef = useRef<{ handle: Handle; startX: number; startY: number; start: typeof crop } | null>(null)
 
   const frame = photo ? displaySize(photo.meta.width, photo.meta.height, crop.rotate90) : null
   // Ratio expressed in normalised units, so the maths stays in 0..1 space.
@@ -92,47 +105,116 @@ export function CropOverlay({ width, height }: { width: number; height: number }
     target.addEventListener('lostpointercapture', cancel)
   }
 
-  const onPointerDown = (handle: Handle) => (event: React.PointerEvent) => {
+  /**
+   * The plumbing every gesture shares: capture the pointer, follow it from
+   * the window, and let go on any of the three ways a drag can end.
+   *
+   * `pointerup` alone is enough for a mouse. A touch has two other exits: the
+   * OS can claim the gesture and send `pointercancel` instead, and a capture
+   * can be lost without either firing. Any of them left unhandled would leave
+   * `cropDragging` stuck, which freezes the viewport's crop fit and kills crop
+   * zoom for the rest of the session.
+   */
+  const beginDrag = (
+    event: React.PointerEvent,
+    kind: Exclude<CropDrag, false>,
+    onMove: (e: PointerEvent) => void,
+    onEnd?: () => void,
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setCropDragging(kind)
+    const target = event.currentTarget as Element
+    try {
+      target.setPointerCapture(event.pointerId)
+    } catch {
+      // Best-effort; the window listeners carry the gesture regardless.
+    }
+    const up = () => {
+      setCropDragging(false)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      target.removeEventListener('lostpointercapture', up)
+      onEnd?.()
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    target.addEventListener('lostpointercapture', up)
+  }
+
+  const isPrimary = (event: React.PointerEvent) =>
+    event.pointerType !== 'mouse' || event.button === 0
+
+  /** Inside the frame: the picture slides under it, with the pointer. */
+  const onBoxPointerDown = (event: React.PointerEvent) => {
     if (event.metaKey || event.ctrlKey) {
       startHorizon(event)
       return
     }
-    event.preventDefault()
-    event.stopPropagation()
-    dragRef.current = { handle, startX: event.clientX, startY: event.clientY, start: { ...crop } }
-    setCropDragging(true)
-    const target = event.currentTarget as Element
-    target.setPointerCapture(event.pointerId)
+    if (!isPrimary(event)) return
+    const start = { ...crop }
+    const sx = event.clientX
+    const sy = event.clientY
+    beginDrag(event, 'move', (e) => {
+      updateCrop(moveCrop(start, (e.clientX - sx) / width, (e.clientY - sy) / height), 'crop-drag')
+    })
+  }
 
-    const move = (e: PointerEvent) => {
-      const drag = dragRef.current
-      if (!drag) return
-      const dx = (e.clientX - drag.startX) / width
-      const dy = (e.clientY - drag.startY) / height
-      updateCrop(resolve(drag.handle, drag.start, dx, dy, lockedRatio), 'crop-drag')
+  /** A handle: the frame reshapes, the picture stays put. Modifiers are read live, so ⌥ and ⇧ can be pressed mid-drag. */
+  const onHandlePointerDown = (handle: Handle) => (event: React.PointerEvent) => {
+    if (event.metaKey || event.ctrlKey) {
+      startHorizon(event)
+      return
     }
-    /*
-     * Three ways a drag can end, not one.
-     *
-     * `pointerup` alone is enough for a mouse. A touch has two other exits: the
-     * OS can claim the gesture and send `pointercancel` instead, and a capture
-     * can be lost without either firing. Both used to leave `dragRef` set, the
-     * window listeners attached, and — worse — `cropDragging` stuck true, which
-     * freezes `settledCropFit` in the viewport and kills crop zoom for the rest
-     * of the session.
-     */
-    const up = () => {
-      dragRef.current = null
-      setCropDragging(false)
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', up)
-      target.removeEventListener('lostpointercapture', up)
+    if (!isPrimary(event)) return
+    const start = { ...crop }
+    const sx = event.clientX
+    const sy = event.clientY
+    beginDrag(event, 'resize', (e) => {
+      // ⇧ on a free box holds the shape it has; a locked box is held anyway.
+      const ratio = lockedRatio ?? (e.shiftKey ? start.w / start.h : null)
+      updateCrop(
+        resizeCrop(handle, start, (e.clientX - sx) / width, (e.clientY - sy) / height, {
+          ratio,
+          fromCentre: e.altKey,
+        }),
+        'crop-drag',
+      )
+    })
+  }
+
+  /** Outside the frame: the picture turns about the frame's centre, following the pointer round. */
+  const onRootPointerDown = (event: React.PointerEvent) => {
+    // The box, the handles and the horizon layer take their own pointer.
+    if (event.target !== event.currentTarget) return
+    if (event.metaKey || event.ctrlKey) {
+      startHorizon(event)
+      return
     }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', up)
-    target.addEventListener('lostpointercapture', up)
+    if (!isPrimary(event)) return
+    const root = rootRef.current
+    if (!root) return
+    const rect = root.getBoundingClientRect()
+    const centre = {
+      x: rect.left + (crop.x + crop.w / 2) * width,
+      y: rect.top + (crop.y + crop.h / 2) * height,
+    }
+    const from = { x: event.clientX, y: event.clientY }
+    const startAngle = stored.angle
+    setTurning({ x: from.x - rect.left, y: from.y - rect.top, angle: startAngle })
+    beginDrag(
+      event,
+      'rotate',
+      (e) => {
+        const angle = rotationAngle(startAngle, centre, from, { x: e.clientX, y: e.clientY })
+        const now = root.getBoundingClientRect()
+        setTurning({ x: e.clientX - now.left, y: e.clientY - now.top, angle })
+        if (angle !== useEditor.getState().edits.crop.angle) updateCrop({ angle }, 'straighten-drag')
+      },
+      () => setTurning(null),
+    )
   }
 
   const box = {
@@ -146,9 +228,8 @@ export function CropOverlay({ width, height }: { width: number; height: number }
     <div
       className="crop"
       ref={rootRef}
-      onPointerDown={(event) => {
-        if (event.metaKey || event.ctrlKey) startHorizon(event)
-      }}
+      data-drag={cropDragging || undefined}
+      onPointerDown={onRootPointerDown}
     >
       {/* Four shades rather than one box-shadow: the mask stays crisp at any size. */}
       <div className="crop__shade" style={{ left: 0, top: 0, right: 0, height: box.top }} />
@@ -159,13 +240,24 @@ export function CropOverlay({ width, height }: { width: number; height: number }
         style={{ left: `${(crop.x + crop.w) * 100}%`, top: box.top, right: 0, height: box.height }}
       />
 
-      <div className="crop__box" style={box} onPointerDown={onPointerDown('move')}>
-        <div className="crop__thirds" aria-hidden />
+      <div
+        className="crop__box"
+        style={box}
+        onPointerDown={onBoxPointerDown}
+        onDoubleClick={() => applyTool()}
+      >
+        <CropGuides
+          guide={guide}
+          turn={guideTurn}
+          width={crop.w * width}
+          height={crop.h * height}
+          turning={cropDragging === 'rotate'}
+        />
         {HANDLES.map((h) => (
           <span
             key={h}
             className={`crop__handle crop__handle--${h}`}
-            onPointerDown={onPointerDown(h)}
+            onPointerDown={onHandlePointerDown(h)}
             role="button"
             aria-label={`Resize crop ${h}`}
           />
@@ -176,8 +268,17 @@ export function CropOverlay({ width, height }: { width: number; height: number }
         <div className="crop__horizon" onPointerDown={startHorizon} aria-label="Draw along the horizon" />
       )}
       {line && <HorizonLine {...line} current={stored.angle} />}
+      {turning && (
+        <span className="crop__readout mono" style={{ left: turning.x + 14, top: turning.y - 26 }}>
+          {formatAngle(turning.angle)}
+        </span>
+      )}
     </div>
   )
+}
+
+function formatAngle(angle: number) {
+  return `${angle > 0 ? '+' : angle < 0 ? '−' : ''}${Math.abs(angle).toFixed(1)}°`
 }
 
 /** The line as it is drawn, and the angle letting go would set. */
@@ -191,92 +292,9 @@ function HorizonLine({ x1, y1, x2, y2, current }: { x1: number; y1: number; x2: 
       <circle cx={x2} cy={y2} r={3} />
       {angle !== null && (
         <text x={x2 + 10} y={y2 - 10} className="mono">
-          {`${angle > 0 ? '+' : angle < 0 ? '−' : ''}${Math.abs(angle).toFixed(1)}°`}
+          {formatAngle(angle)}
         </text>
       )}
     </svg>
   )
-}
-
-const MIN = 0.05
-
-/** Resolve a drag into a new crop rect, honouring an aspect lock if one is set. */
-function resolve(
-  handle: Handle,
-  start: { x: number; y: number; w: number; h: number },
-  dx: number,
-  dy: number,
-  ratio: number | null,
-) {
-  if (handle === 'move') {
-    return {
-      x: clamp(start.x + dx, 0, 1 - start.w),
-      y: clamp(start.y + dy, 0, 1 - start.h),
-    }
-  }
-
-  let { x, y, w, h } = start
-  const right = start.x + start.w
-  const bottom = start.y + start.h
-
-  if (handle.includes('w')) {
-    x = clamp(start.x + dx, 0, right - MIN)
-    w = right - x
-  }
-  if (handle.includes('e')) {
-    w = clamp(start.w + dx, MIN, 1 - start.x)
-  }
-  if (handle.includes('n')) {
-    y = clamp(start.y + dy, 0, bottom - MIN)
-    h = bottom - y
-  }
-  if (handle.includes('s')) {
-    h = clamp(start.h + dy, MIN, 1 - start.y)
-  }
-
-  if (ratio) {
-    // Drive the secondary axis from whichever one the handle actually moved.
-    const drivenByWidth = handle === 'e' || handle === 'w' || handle.length === 2
-    if (drivenByWidth) {
-      h = w / ratio
-      if (handle.includes('n')) y = bottom - h
-    } else {
-      w = h * ratio
-      if (handle.includes('w')) x = right - w
-    }
-
-    // Clamping after the ratio step keeps the box inside the frame; the axis
-    // that hit the wall wins and the other follows it back.
-    if (y + h > 1) {
-      h = 1 - y
-      w = h * ratio
-      if (handle.includes('w')) x = right - w
-    }
-    if (x + w > 1) {
-      w = 1 - x
-      h = w / ratio
-      if (handle.includes('n')) y = bottom - h
-    }
-    if (y < 0) {
-      h += y
-      y = 0
-      w = h * ratio
-    }
-    if (x < 0) {
-      w += x
-      x = 0
-      h = w / ratio
-    }
-  }
-
-  return {
-    x: clamp(x, 0, 1 - MIN),
-    y: clamp(y, 0, 1 - MIN),
-    w: clamp(w, MIN, 1 - x),
-    h: clamp(h, MIN, 1 - y),
-  }
-}
-
-function clamp(v: number, lo: number, hi: number) {
-  return Math.min(Math.max(v, lo), Math.max(lo, hi))
 }

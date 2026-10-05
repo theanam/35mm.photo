@@ -91,8 +91,12 @@ and detail controls.
 
 ### Crop and straighten that stay anchored
 
-Draw the horizon to level a photo, lock an aspect, rotate and flip — and fix
-converging verticals in Optics. Masks and retouch spots are pinned to the picture itself,
+The crop works the way Lightroom's does: drag inside the frame to move the
+photo under it, the handles to reshape it, outside the frame to turn it — with
+a fine grid up while it turns — or draw the horizon to level it. Lock an aspect,
+turn the box on its side, pick a guide from thirds to the golden spiral, nudge
+by a pixel with the arrows, and zoom in while you do it. Fix converging
+verticals in Optics. Masks and retouch spots are pinned to the picture itself,
 not the frame, so re-cropping afterwards never knocks them off what they were
 placed on.
 
@@ -187,6 +191,10 @@ in WebAssembly — fetched only on a browser that needs it.
 | `Delete` | remove the selected spot, in retouch |
 | `F` / `1` | fit / 100% |
 | `←` `→` | previous / next photo |
+| `O` / `⇧O` | next guide / turn it, in crop |
+| `X` / `A` | turn the box on its side / lock its shape, in crop |
+| `← → ↑ ↓` | nudge the box a pixel (`⇧` ten), in crop |
+| `space` | hold to pan a zoomed view, in crop |
 
 Sliders reset on double-click or alt-click, and their numbers can be typed.
 Zoom with `ctrl`/`cmd` + scroll or a pinch; drag to pan.

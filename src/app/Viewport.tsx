@@ -3,8 +3,9 @@ import { storedSize } from '../lens/resolve'
 import { IDENTITY_LENS, lensUniforms } from '../lens/uniforms'
 import { useEditor, useRenderEdits } from '../editor/edit-stack/store'
 import { neutralFrame } from '../editor/edit-stack/defaults'
+import { parseAspectRatio } from '../editor/edit-stack/aspect'
 import { Renderer } from '../editor/gpu/renderer'
-import { frameLayout, outputSize } from '../editor/gpu/transform'
+import { effectiveCrop, frameLayout, outputSize } from '../editor/gpu/transform'
 import { getLut, peekLut } from '../editor/presets/lutCache'
 import { getLook } from '../editor/presets/catalogue'
 import { subjectMapsFor } from '../subject/detect'
@@ -27,6 +28,8 @@ const CROP_FIT_MARGIN = 0.82
 
 /** Ceiling on the crop-driven zoom, as a multiple of the whole-frame fit. */
 const MAX_CROP_ZOOM = 12
+/** Share of the visible area a crop opened on a zoomed photo takes, leaving the handles room. */
+const VISIBLE_CROP_INSET = 0.92
 
 /** Wheel delta → zoom factor. Exponential so each notch feels the same. */
 const WHEEL_SENSITIVITY = 0.0015
@@ -60,6 +63,7 @@ export function Viewport() {
   const setHistogram = useEditor((s) => s.setHistogram)
   const setViewScale = useEditor((s) => s.setViewScale)
   const setZoom = useEditor((s) => s.setZoom)
+  const updateCrop = useEditor((s) => s.updateCrop)
   const toast = useEditor((s) => s.toast)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -76,6 +80,8 @@ export function Viewport() {
   /** Bumped when new retouch patches reach the GPU, which the edit stack cannot say. */
   const [retouchAt, setRetouchAt] = useState(0)
   const [panning, setPanning] = useState(false)
+  /** Space held while cropping: the stage pans and the overlay steps aside, as in Lightroom. */
+  const [spaceHeld, setSpaceHeld] = useState(false)
 
   /** Live pointers on the stage, so one finger pans and two pinch. */
   const pointersRef = useRef(new Map<number, { x: number; y: number }>())
@@ -382,27 +388,193 @@ export function Viewport() {
     fitScaleRef.current = fitScale
   }, [fitScale])
 
+
   /**
-   * Keep the crop box in the middle of the stage.
-   *
-   * Once the scale follows the box, the frame is larger than the stage and the
-   * box can be anywhere in it — so without this, dragging one toward a corner
-   * walks it straight off the screen. Following during the drag as well as
-   * after it means the box stays put and the picture slides underneath, which
-   * is how every crop on a phone behaves and is far less disorienting than the
-   * box wandering away.
-   *
-   * The drag maths is all client-space deltas from a snapshot taken on pointer
-   * down, so scrolling underneath it changes nothing about where the box lands.
+   * The part of the photo on screen, in normalised photo coordinates, kept up
+   * to date while not cropping. It has to be taken before the crop opens: by
+   * the time the crop's first render lands the mat has gone and the frame has
+   * been resized under the scroll position, so the stage no longer shows it.
    */
-  useEffect(() => {
-    if (!cropping) return
+  const visibleRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+  const measureVisible = useCallback(() => {
+    const el = stageRef.current
+    const frameEl = frameElRef.current
+    if (!el || !frameEl || cropping) return
+    const stageRect = el.getBoundingClientRect()
+    const frameRect = frameEl.getBoundingClientRect()
+    const left = frameRect.left + cssFrame.inset.left
+    const top = frameRect.top + cssFrame.inset.top
+    const viewLeft = stageRect.left + el.clientLeft
+    const viewTop = stageRect.top + el.clientTop
+    visibleRef.current = {
+      x0: clamp01((viewLeft - left) / cssPhotoWidth),
+      y0: clamp01((viewTop - top) / cssPhotoHeight),
+      x1: clamp01((viewLeft + el.clientWidth - left) / cssPhotoWidth),
+      y1: clamp01((viewTop + el.clientHeight - top) / cssPhotoHeight),
+    }
+  }, [cropping, cssFrame.inset.left, cssFrame.inset.top, cssPhotoWidth, cssPhotoHeight])
+
+  useLayoutEffect(() => {
+    measureVisible()
     const el = stageRef.current
     if (!el) return
-    const box = edits.crop
-    el.scrollLeft = (box.x + box.w / 2) * cssWidth - el.clientWidth / 2
-    el.scrollTop = (box.y + box.h / 2) * cssHeight - el.clientHeight / 2
-  }, [cropping, edits.crop, cssWidth, cssHeight])
+    el.addEventListener('scroll', measureVisible, { passive: true })
+    return () => el.removeEventListener('scroll', measureVisible)
+  }, [measureVisible, stage])
+
+  /**
+   * Opening the crop leaves the zoom where it is and makes sure the box can be
+   * seen at it. An uncropped photo zoomed in to a detail starts its crop on that
+   * detail — what is on screen is what is being looked at, and a box around
+   * the whole frame would have its handles far off the edges. A photo that is
+   * already cropped keeps its box, and zooms out only as far as it takes to
+   * get all of it on screen.
+   */
+  const wasCroppingRef = useRef(cropping)
+  useLayoutEffect(() => {
+    const opened = cropping && !wasCroppingRef.current
+    const closed = !cropping && wasCroppingRef.current
+    wasCroppingRef.current = cropping
+
+    if (closed) {
+      // A zoom-out to show the box can leave the cropped photo smaller than
+      // its own fit, which is just fit by another name.
+      const z = useEditor.getState().zoom
+      if (z !== 'fit' && z <= wholeFit * 1.01) setZoom('fit')
+      return
+    }
+    if (!opened || zoom === 'fit' || !output.width || !stage.width) return
+
+    const box = useEditor.getState().edits.crop
+    const uncropped = box.x <= 0.001 && box.y <= 0.001 && box.w >= 0.999 && box.h >= 0.999
+
+    if (!uncropped) {
+      const w = box.w * output.width * zoom
+      const h = box.h * output.height * zoom
+      if (w <= stage.width && h <= stage.height) return
+      const toBox =
+        Math.min(stage.width / (box.w * output.width), stage.height / (box.h * output.height)) *
+        CROP_FIT_MARGIN
+      setZoom(toBox)
+      return
+    }
+
+    const seen = visibleRef.current
+    if (!seen) return
+    let w = (seen.x1 - seen.x0) * VISIBLE_CROP_INSET
+    let h = (seen.y1 - seen.y0) * VISIBLE_CROP_INSET
+    // Nothing is out of view, so there is nothing to narrow the box to.
+    if (seen.x1 - seen.x0 >= 0.999 && seen.y1 - seen.y0 >= 0.999) return
+
+    // An aspect lock holds: the largest box of that shape inside what is seen.
+    const ratio = parseAspectRatio(box.aspect)
+    if (ratio) {
+      const normalised = ratio / (output.width / output.height)
+      if (w / h > normalised) w = h * normalised
+      else h = w / normalised
+    }
+    const cx = (seen.x0 + seen.x1) / 2
+    const cy = (seen.y0 + seen.y1) / 2
+    updateCrop({
+      x: Math.min(Math.max(cx - w / 2, 0), 1 - w),
+      y: Math.min(Math.max(cy - h / 2, 0), 1 - h),
+      w,
+      h,
+    }, 'crop-visible')
+  }, [cropping, zoom, output, stage, wholeFit, setZoom, updateCrop])
+
+  /**
+   * How the stage scrolls while cropping. Three rules, one per thing that can
+   * change:
+   *
+   * A move holds the frame still on screen and slides the picture under it —
+   * the box's screen position is noted as the drag begins and restored after
+   * every change, which, since the box moved against the picture, is the
+   * picture moving with the pointer. A resize or a turn leaves the scroll
+   * alone: the picture holds still and the handle follows the pointer.
+   *
+   * When the crop opens, or the scale changes under it (the fit re-settling
+   * after a resize), the box is centred. Otherwise — a handle let go, an
+   * aspect chosen, a nudge — the stage scrolls only as far as it takes to show
+   * the whole box, and a box larger than the view is centred instead. A wheel
+   * zoom keeps its own anchor under the cursor and is left to it.
+   *
+   * The crop is read live rather than from the render, so that the opening
+   * effect above, which can set a fresh box, is centred on that box and not on
+   * the one it replaced.
+   */
+  const cropViewRef = useRef<{ width: number; height: number } | null>(null)
+  const holdRef = useRef<{ left: number; top: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!cropping) {
+      cropViewRef.current = null
+      holdRef.current = null
+      return
+    }
+    const el = stageRef.current
+    const frameEl = frameElRef.current
+    if (!el || !frameEl) return
+
+    const live = useEditor.getState().edits.crop
+    const box = photo ? effectiveCrop(photo.meta.width, photo.meta.height, live) : live
+    const stageRect = el.getBoundingClientRect()
+    const frameRect = frameEl.getBoundingClientRect()
+    // The box on screen, measured from the stage's scrolling viewport.
+    const left = frameRect.left - stageRect.left - el.clientLeft + box.x * cssWidth
+    const top = frameRect.top - stageRect.top - el.clientTop + box.y * cssHeight
+    const bw = box.w * cssWidth
+    const bh = box.h * cssHeight
+
+    const last = cropViewRef.current
+    const rescaled = !last || last.width !== cssWidth || last.height !== cssHeight
+    cropViewRef.current = { width: cssWidth, height: cssHeight }
+
+    if (cropDragging === 'move') {
+      const hold = holdRef.current ?? (holdRef.current = { left, top })
+      el.scrollLeft += left - hold.left
+      el.scrollTop += top - hold.top
+      return
+    }
+    holdRef.current = null
+    if (cropDragging) return
+
+    if (rescaled) {
+      if (correctionDueRef.current) return
+      el.scrollLeft += left + bw / 2 - el.clientWidth / 2
+      el.scrollTop += top + bh / 2 - el.clientHeight / 2
+      return
+    }
+    el.scrollLeft += reveal(left, left + bw, el.clientWidth)
+    el.scrollTop += reveal(top, top + bh, el.clientHeight)
+  }, [cropping, cropDragging, edits.crop, cssWidth, cssHeight, photo])
+
+  /* ── space: pan the zoomed view while cropping ── */
+
+  useEffect(() => {
+    if (!cropping) {
+      setSpaceHeld(false)
+      return
+    }
+    const typing = (target: EventTarget | null) =>
+      target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')
+    const down = (e: KeyboardEvent) => {
+      if (e.key !== ' ' || e.repeat || typing(e.target)) return
+      e.preventDefault()
+      setSpaceHeld(true)
+    }
+    const up = (e: KeyboardEvent) => {
+      if (e.key === ' ') setSpaceHeld(false)
+    }
+    const blur = () => setSpaceHeld(false)
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', blur)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', blur)
+    }
+  }, [cropping])
 
   /* ── zoom plumbing ── */
 
@@ -518,9 +690,12 @@ export function Viewport() {
 
   /* ── pointer gestures: one finger pans, two pinch ── */
 
+  // While cropping the frame carries a margin of half the stage on every side,
+  // so it always overflows: that is what gives the scroll room for the crop
+  // box to hold its place on screen wherever on the picture it sits.
   const overflows =
-    cssWidth > Math.ceil(stage.width) + 1 || cssHeight > Math.ceil(stage.height) + 1
-  const pannable = overflows && !cropping
+    cropping || cssWidth > Math.ceil(stage.width) + 1 || cssHeight > Math.ceil(stage.height) + 1
+  const pannable = overflows && (!cropping || spaceHeld)
 
   /*
    * Swipe to the next photo, in the slot the pan gesture leaves empty.
@@ -557,7 +732,7 @@ export function Viewport() {
 
     // The split handle and the crop box own their own drags.
     const target = event.target as Element
-    if (target.closest('.viewport__split-handle') || target.closest('.crop')) return
+    if (target.closest('.viewport__split-handle') || (target.closest('.crop') && !spaceHeld)) return
 
     // A mouse only pans with the left button; touch and pen have no such notion.
     if (event.pointerType === 'mouse' && event.button !== 0) return
@@ -863,12 +1038,21 @@ export function Viewport() {
         data-cropping={cropping || undefined}
         data-pannable={pannable || undefined}
         data-panning={panning || undefined}
+        data-space={(cropping && spaceHeld) || undefined}
         onPointerDown={onStagePointerDown}
         onPointerMove={onStagePointerMove}
         onPointerUp={onStagePointerUp}
         onPointerCancel={onStagePointerUp}
       >
-        <div ref={frameElRef} className="viewport__frame" style={{ width: cssWidth, height: cssHeight }}>
+        <div
+          ref={frameElRef}
+          className="viewport__frame"
+          style={{
+            width: cssWidth,
+            height: cssHeight,
+            margin: cropping ? `${stage.height / 2}px ${stage.width / 2}px` : undefined,
+          }}
+        >
           <canvas ref={canvasRef} className="viewport__canvas" />
 
           {splitCompare && !cropping && (
@@ -913,4 +1097,16 @@ export function Viewport() {
 
 function clamp01(v: number) {
   return Math.min(1, Math.max(0, v))
+}
+
+/**
+ * How far to scroll along one axis so that [start, end] (measured from the
+ * viewport's edge) is in view: not at all if it already is, just enough if it
+ * is not, and to the middle if it is bigger than the view.
+ */
+function reveal(start: number, end: number, view: number): number {
+  if (end - start > view) return (start + end) / 2 - view / 2
+  if (start < 0) return start
+  if (end > view) return end - view
+  return 0
 }
