@@ -42,6 +42,26 @@ export function GrainTool() {
 
         <section className="tool__group">
           <header className="tool__group-head">
+            <span>Glow</span>
+          </header>
+          <Slider
+            label="Amount"
+            value={edits.glow}
+            min={0}
+            max={100}
+            origin={0}
+            resetTo={0}
+            format={(v) => formatPlain(v)}
+            onChange={(v) => update({ glow: v }, 'glow')}
+          />
+          <p className="tool__hint">
+            A soft, dreamy bloom over the whole picture, like a mist filter on the
+            lens. Light spills from the bright areas while the shadows keep their depth.
+          </p>
+        </section>
+
+        <section className="tool__group">
+          <header className="tool__group-head">
             <span>Halation</span>
           </header>
           <Slider

@@ -117,6 +117,7 @@ export class Renderer {
   private rtMid: RenderTarget
   private rtTight: RenderTarget
   private rtHalo: RenderTarget
+  private rtGlow: RenderTarget
   private rtSoftNear: RenderTarget
   private rtSoft: RenderTarget
   private rtDetail: RenderTarget
@@ -196,6 +197,7 @@ export class Renderer {
     this.rtMid = mk()
     this.rtTight = mk()
     this.rtHalo = mk()
+    this.rtGlow = mk()
     this.rtSoftNear = mk()
     this.rtSoft = mk()
     this.rtDetail = mk()
@@ -803,6 +805,13 @@ export class Renderer {
         Math.max(6, Math.min(width, height) / 45),
       )
     }
+    // Glow wants a wider, smoother spread than halation: a second, finer pass
+    // over the first fills in the gaps the widely spaced taps leave behind.
+    if (edits.glow > 0) {
+      const radius = Math.max(8, Math.min(width, height) / 40)
+      this.blurInto(this.rtGlow, source.texture, width, height, radius)
+      this.blurInto(this.rtGlow, this.rtGlow.texture, width, height, radius * 0.45)
+    }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, destFramebuffer)
     if (scissor) {
@@ -816,6 +825,9 @@ export class Renderer {
     this.bindTexture(1, gl.TEXTURE_2D, this.rtHalo.texture)
     this.finishU.i('uImage', 0)
     this.finishU.i('uHaloBlur', 1)
+    this.bindTexture(2, gl.TEXTURE_2D, this.rtGlow.texture)
+    this.finishU.i('uGlowBlur', 2)
+    this.finishU.f('uGlow', edits.glow / 100)
     this.finishU.v2('uResolution', width, height)
     this.finishU.f('uHalation', edits.halation / 100)
     this.finishU.f('uGrain', edits.grain / 100)
@@ -883,7 +895,7 @@ export class Renderer {
    *
    * `width` and `height` are the *framed* output. Everything up to and including
    * the finish pass runs at the picture's own size, so `uResolution`, the grain
-   * scale, the vignette and the halation radius all keep meaning what they meant
+   * scale, the vignette and the halation and glow radii all keep meaning what they meant
    * before a mat could exist; only the last draw is larger.
    */
   private runChain(
@@ -1030,7 +1042,7 @@ export class Renderer {
 
     for (const rt of [
       this.rtColor, this.rtLocal, this.rtPing, this.rtWide, this.rtTone, this.rtMid,
-      this.rtTight, this.rtHalo, this.rtSoftNear, this.rtSoft, this.rtDetail, this.rtFramed,
+      this.rtTight, this.rtHalo, this.rtGlow, this.rtSoftNear, this.rtSoft, this.rtDetail, this.rtFramed,
       this.rtRead,
     ]) {
       rt.dispose()

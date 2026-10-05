@@ -455,6 +455,8 @@ export interface EditState {
   /* Finishing */
   /** Warm bloom of bright areas into their surroundings, as film does. */
   halation: number // 0..100
+  /** Soft diffusion glow over the whole picture, like a mist filter on the lens. */
+  glow: number // 0..100
   grain: number // 0..100
   grainSize: number // 0..100
   vignette: number // −100..100

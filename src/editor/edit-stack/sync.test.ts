@@ -44,6 +44,7 @@ function edited(): EditState {
   e.denoiseLuma = 20
   e.denoiseChroma = 30
   e.halation = 35
+  e.glow = 40
   e.grain = 40
   e.grainSize = 70
   e.vignette = -30
@@ -153,6 +154,7 @@ describe('resetSyncScope', () => {
     expect(out.contrast).toBe(0)
     expect(out.grain).toBe(0)
     expect(out.halation).toBe(0)
+    expect(out.glow).toBe(0)
     // Outside the chosen groups, the edit survives.
     expect(out.temperature).toBe(7200)
     expect(out.look.id).toBe('chrome')
@@ -190,6 +192,7 @@ describe('sync coverage', () => {
       denoiseLuma: 15,
       denoiseChroma: 25,
       halation: 30,
+      glow: 45,
       grain: 20,
       grainSize: 70,
       vignette: -25,

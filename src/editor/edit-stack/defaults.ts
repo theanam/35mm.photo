@@ -128,6 +128,7 @@ export function defaultEdits(): EditState {
     denoiseChroma: 0,
 
     halation: 0,
+    glow: 0,
     grain: 0,
     grainSize: 50,
     vignette: 0,

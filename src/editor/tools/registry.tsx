@@ -186,11 +186,11 @@ export const TOOLS: ToolDef[] = [
   {
     id: 'grain',
     label: 'Grain',
-    hint: 'halation, grain and vignette',
+    hint: 'glow, halation, grain and vignette',
     Icon: IconGrain,
     Content: GrainTool,
     isDirty: hasFinishEdits,
-    reset: () => ({ grain: 0, grainSize: 50, vignette: 0, halation: 0 }),
+    reset: () => ({ grain: 0, grainSize: 50, vignette: 0, halation: 0, glow: 0 }),
   },
   {
     id: 'frame',

@@ -2,7 +2,7 @@ import { GLSL_COMMON } from './common.glsl'
 import { GLSL_MASK } from './mask.glsl'
 
 /**
- * Grain then vignette, the last two stages of spec §6. Grain is generated
+ * Glow, halation, grain then vignette, the last stages of spec §6. Grain is generated
  * rather than sampled from a texture so its size tracks the look and the export
  * resolution without a second asset to ship.
  *
@@ -20,8 +20,10 @@ out vec4 fragColor;
 
 uniform sampler2D uImage;
 uniform sampler2D uHaloBlur;
+uniform sampler2D uGlowBlur;
 uniform vec2  uResolution;
 uniform float uHalation;     // 0..1
+uniform float uGlow;         // 0..1
 uniform float uGrain;        // 0..1
 uniform float uGrainSize;    // pixels per grain cell
 uniform float uGrainShadowBias; // 0..1
@@ -54,6 +56,23 @@ float valueNoise(vec2 p) {
 void main() {
   vec4 src = texture(uImage, vUv);
   vec3 c = src.rgb;
+
+  /*
+   * Glow. What a mist or diffusion filter does on the lens: light from the
+   * bright areas spills softly over everything near it, lifting the picture
+   * and taking the edge off contrast without blurring the detail away.
+   *
+   * A blurred copy screen-blended back in, weighted towards the brighter parts
+   * so the shadows keep their depth, plus a little of the blur itself for the
+   * dreamy softness.
+   */
+  if (uGlow > 0.0) {
+    vec3 soft = texture(uGlowBlur, vUv).rgb;
+    vec3 screened = 1.0 - (1.0 - c) * (1.0 - soft);
+    float weight = 0.35 + 0.65 * smoothstep(0.15, 0.9, luma(soft));
+    c = mix(c, screened, uGlow * weight * 0.75);
+    c = mix(c, soft, uGlow * 0.18);
+  }
 
   /*
    * Halation. On film the bright parts of an image scatter through the emulsion

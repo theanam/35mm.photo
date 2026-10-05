@@ -146,7 +146,9 @@ export function rawSummary(edits: EditState): string {
 }
 
 export function hasFinishEdits(edits: EditState): boolean {
-  return edits.grain !== 0 || edits.vignette !== 0 || edits.halation !== 0
+  return (
+    edits.grain !== 0 || edits.vignette !== 0 || edits.halation !== 0 || edits.glow !== 0
+  )
 }
 
 /**
@@ -369,13 +371,15 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
         ? `grain ${Math.round(edits.grain)}`
         : edits.halation !== 0
           ? `halation ${Math.round(edits.halation)}`
-          : `vignette ${signed(edits.vignette)}`
+          : edits.glow !== 0
+            ? `glow ${Math.round(edits.glow)}`
+            : `vignette ${signed(edits.vignette)}`
     chips.push({
       id: 'grain',
       label: 'Grain & vignette',
       value,
       panel: 'grain',
-      off: () => ({ grain: 0, vignette: 0, halation: 0 }),
+      off: () => ({ grain: 0, vignette: 0, halation: 0, glow: 0 }),
     })
   }
 
