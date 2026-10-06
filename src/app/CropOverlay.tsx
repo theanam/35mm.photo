@@ -33,6 +33,37 @@ export function CropOverlay({ width, height }: { width: number; height: number }
   const [line, setLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   /** The angle a turn has reached, shown beside the pointer. */
   const [turning, setTurning] = useState<{ x: number; y: number; angle: number } | null>(null)
+  /** The gesture in progress, and how to abandon it. */
+  const gestureRef = useRef<{ id: number; cancel: () => void } | null>(null)
+  /** Every pointer currently down anywhere, so a second finger is known for what it is. */
+  const downRef = useRef(new Set<number>())
+
+  /*
+   * Two fingers are a pinch, never two gestures.
+   *
+   * Watched from the window, in the capture phase, so this runs before any
+   * handler below: the moment another pointer goes down while a gesture is
+   * under way, the gesture is abandoned and the crop put back where it
+   * started, and the stage — which counts the same fingers — pinches with
+   * both. The handlers below also refuse to start on a pointer that is not
+   * alone.
+   */
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      downRef.current.add(e.pointerId)
+      const gesture = gestureRef.current
+      if (gesture && e.pointerId !== gesture.id) gesture.cancel()
+    }
+    const up = (e: PointerEvent) => downRef.current.delete(e.pointerId)
+    window.addEventListener('pointerdown', down, true)
+    window.addEventListener('pointerup', up, true)
+    window.addEventListener('pointercancel', up, true)
+    return () => {
+      window.removeEventListener('pointerdown', down, true)
+      window.removeEventListener('pointerup', up, true)
+      window.removeEventListener('pointercancel', up, true)
+    }
+  }, [])
 
   // Escape backs out of drawing before the tool sees it, so it cancels the
   // line rather than the whole crop. Capture, to get there first.
@@ -114,34 +145,54 @@ export function CropOverlay({ width, height }: { width: number; height: number }
    * can be lost without either firing. Any of them left unhandled would leave
    * `cropDragging` stuck, which freezes the viewport's crop fit and kills crop
    * zoom for the rest of the session.
+   *
+   * The event is not stopped: the stage counts touches on the overlay too, so
+   * that a second finger can pinch. `restore` puts the crop back as it was,
+   * for when that happens mid-gesture.
    */
   const beginDrag = (
     event: React.PointerEvent,
     kind: Exclude<CropDrag, false>,
     onMove: (e: PointerEvent) => void,
+    restore: () => void,
     onEnd?: () => void,
   ) => {
     event.preventDefault()
-    event.stopPropagation()
+    // Not alone: a second finger is a pinch, not a second gesture.
+    if (gestureRef.current || downRef.current.size > 1) return
+    const id = event.pointerId
     setCropDragging(kind)
     const target = event.currentTarget as Element
     try {
-      target.setPointerCapture(event.pointerId)
+      target.setPointerCapture(id)
     } catch {
       // Best-effort; the window listeners carry the gesture regardless.
     }
-    const up = () => {
+    const move = (e: PointerEvent) => {
+      if (e.pointerId === id) onMove(e)
+    }
+    const finish = () => {
+      gestureRef.current = null
       setCropDragging(false)
-      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
-      target.removeEventListener('lostpointercapture', up)
+      target.removeEventListener('lostpointercapture', lost)
       onEnd?.()
     }
-    window.addEventListener('pointermove', onMove)
+    const up = (e: PointerEvent) => {
+      if (e.pointerId === id) finish()
+    }
+    const lost = (e: Event) => up(e as PointerEvent)
+    const cancel = () => {
+      restore()
+      finish()
+    }
+    window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', up)
-    target.addEventListener('lostpointercapture', up)
+    target.addEventListener('lostpointercapture', lost)
+    gestureRef.current = { id, cancel }
   }
 
   const isPrimary = (event: React.PointerEvent) =>
@@ -157,9 +208,12 @@ export function CropOverlay({ width, height }: { width: number; height: number }
     const start = { ...crop }
     const sx = event.clientX
     const sy = event.clientY
-    beginDrag(event, 'move', (e) => {
-      updateCrop(moveCrop(start, (e.clientX - sx) / width, (e.clientY - sy) / height), 'crop-drag')
-    })
+    beginDrag(
+      event,
+      'move',
+      (e) => updateCrop(moveCrop(start, (e.clientX - sx) / width, (e.clientY - sy) / height), 'crop-drag'),
+      () => updateCrop({ x: start.x, y: start.y }, 'crop-drag'),
+    )
   }
 
   /** A handle: the frame reshapes, the picture stays put. Modifiers are read live, so ⌥ and ⇧ can be pressed mid-drag. */
@@ -172,17 +226,22 @@ export function CropOverlay({ width, height }: { width: number; height: number }
     const start = { ...crop }
     const sx = event.clientX
     const sy = event.clientY
-    beginDrag(event, 'resize', (e) => {
-      // ⇧ on a free box holds the shape it has; a locked box is held anyway.
-      const ratio = lockedRatio ?? (e.shiftKey ? start.w / start.h : null)
-      updateCrop(
-        resizeCrop(handle, start, (e.clientX - sx) / width, (e.clientY - sy) / height, {
-          ratio,
-          fromCentre: e.altKey,
-        }),
-        'crop-drag',
-      )
-    })
+    beginDrag(
+      event,
+      'resize',
+      (e) => {
+        // ⇧ on a free box holds the shape it has; a locked box is held anyway.
+        const ratio = lockedRatio ?? (e.shiftKey ? start.w / start.h : null)
+        updateCrop(
+          resizeCrop(handle, start, (e.clientX - sx) / width, (e.clientY - sy) / height, {
+            ratio,
+            fromCentre: e.altKey,
+          }),
+          'crop-drag',
+        )
+      },
+      () => updateCrop({ x: start.x, y: start.y, w: start.w, h: start.h }, 'crop-drag'),
+    )
   }
 
   /** Outside the frame: the picture turns about the frame's centre, following the pointer round. */
@@ -213,6 +272,7 @@ export function CropOverlay({ width, height }: { width: number; height: number }
         setTurning({ x: e.clientX - now.left, y: e.clientY - now.top, angle })
         if (angle !== useEditor.getState().edits.crop.angle) updateCrop({ angle }, 'straighten-drag')
       },
+      () => updateCrop({ angle: startAngle }, 'straighten-drag'),
       () => setTurning(null),
     )
   }

@@ -730,18 +730,30 @@ export function Viewport() {
     const el = stageRef.current
     if (!el || !useEditor.getState().photo) return
 
-    // The split handle and the crop box own their own drags.
+    // The split handle owns its own drag.
     const target = event.target as Element
-    if (target.closest('.viewport__split-handle') || (target.closest('.crop') && !spaceHeld)) return
+    if (target.closest('.viewport__split-handle')) return
+
+    /*
+     * The crop overlay owns a lone pointer on it. A mouse there is left to it
+     * entirely. A touch is still counted here — without taking it over, which
+     * would pull the capture out from under the overlay — so that a second
+     * finger makes a pinch: the overlay drops its own gesture the moment
+     * another pointer goes down, and both fingers are the stage's.
+     */
+    const onCrop = Boolean(target.closest('.crop')) && !spaceHeld
+    if (onCrop && event.pointerType === 'mouse') return
 
     // A mouse only pans with the left button; touch and pen have no such notion.
     if (event.pointerType === 'mouse' && event.button !== 0) return
 
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
-    try {
-      el.setPointerCapture(event.pointerId)
-    } catch {
-      // Capture is best-effort; the pointer map still tracks the gesture.
+    if (!onCrop) {
+      try {
+        el.setPointerCapture(event.pointerId)
+      } catch {
+        // Capture is best-effort; the pointer map still tracks the gesture.
+      }
     }
 
     const points = [...pointersRef.current.values()]
@@ -760,13 +772,26 @@ export function Viewport() {
       return
     }
 
+    if (onCrop) {
+      swipeRef.current = null
+      return
+    }
+
+    /*
+     * While cropping, a lone finger outside the frame pans the view — on a
+     * phone, the one way to reach a handle the zoom has pushed off screen.
+     * Never a swipe: with the frame's margin around it there is a lot of stage
+     * to land on, and a swipe would apply the crop and leave.
+     */
+    const canPan = pannable || cropping
+
     // Only a lone finger on a picture that has nowhere to pan can be a swipe.
     swipeRef.current =
-      points.length === 1 && !pannable && event.pointerType !== 'mouse'
+      points.length === 1 && !canPan && event.pointerType !== 'mouse'
         ? { x: event.clientX, y: event.clientY, at: performance.now() }
         : null
 
-    if (points.length === 1 && pannable) {
+    if (points.length === 1 && canPan) {
       anchorRef.current = null
       panRef.current = {
         pointerId: event.pointerId,
@@ -851,7 +876,7 @@ export function Viewport() {
       }
     }
 
-    if (points.length === 1 && el && pannable) {
+    if (points.length === 1 && el && (pannable || cropping)) {
       // Lifting one finger of a pinch hands the gesture to the other.
       const [pointerId, point] = points[0]
       panRef.current = {
