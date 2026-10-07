@@ -297,6 +297,13 @@ export const IconLockOpen = ({ size = 16 }: Props) => (
   </svg>
 )
 
+export const IconUpscale = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <rect x="2.5" y="7" width="6.5" height="6.5" rx="1" />
+    <path d="M9.5 2.5h4v4M13.3 2.7 8.6 7.4" />
+  </svg>
+)
+
 export const IconLevel = ({ size = 16 }: Props) => (
   <svg {...base(size)}>
     <path d="M2.5 11 13.5 5" strokeDasharray="1.6 2" />

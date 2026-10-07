@@ -465,6 +465,12 @@ export interface EditState {
 
   /* Raw development — ignored for a file that is not raw */
   raw: RawDevelopState
+  /**
+   * Super-resolution, the last stage of the stack: run on the cropped picture
+   * — so a small crop of a large photo can be upscaled too — as soon as it is
+   * set, and shown in the viewport. See `upscale/inline.ts`.
+   */
+  upscale: UpscaleFactor
 
   /* Local adjustments */
   masks: Mask[]
@@ -479,6 +485,9 @@ export interface EditState {
 }
 
 /** Metadata about the opened file. Never edited, only displayed. */
+/** How many times larger than the file the developed picture is: 1 for as it is. */
+export type UpscaleFactor = 1 | 2 | 4
+
 export interface ImageMeta {
   name: string
   /** Lowercase extension without the dot. */

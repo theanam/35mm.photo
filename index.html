@@ -99,6 +99,73 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!--
+      Three ways a browser can fail to show the editor, caught in plain script
+      that any browser runs, because the app itself is a modern module and a
+      browser that cannot run one would otherwise show a blank page.
+
+      The nomodule block is only run by browsers with no module support at
+      all, which is the one deterministic test for "too old". The watchdog
+      catches the app's own startup failing — a module this browser can fetch
+      but not parse, a missing API at load — and says so, with the error, in
+      place of the blank page. It never fires once the app has mounted, and
+      the app removes it if it mounts anyway, so a slow network can only ever
+      cost a flash of it, never the editor.
+    -->
+    <noscript>
+      <div style="font: 16px/1.5 system-ui, sans-serif; color: #ece7de; background: #141312; min-height: 100vh; padding: 48px 24px; box-sizing: border-box;">
+        <h1 style="font-size: 22px; font-weight: 600; margin: 0 0 12px;">35mm needs JavaScript</h1>
+        <p style="max-width: 36em; margin: 0; color: #b8b2a8;">The whole editor runs in your browser tab, so there is nothing to show without it.</p>
+      </div>
+    </noscript>
+    <script nomodule>
+      document.getElementById('root').innerHTML =
+        '<div style="font: 16px/1.5 system-ui, sans-serif; color: #ece7de; background: #141312; min-height: 100vh; padding: 48px 24px; box-sizing: border-box;">' +
+        '<h1 style="font-size: 22px; font-weight: 600; margin: 0 0 12px;">35mm needs a newer browser</h1>' +
+        '<p style="max-width: 36em; margin: 0 0 12px; color: #b8b2a8;">It develops, grades and exports photos on your own machine, using parts of the web platform this browser does not have. The current Chrome, Edge, Firefox or Safari all work, and updating this one may be enough.</p>' +
+        '<p style="max-width: 36em; margin: 0; color: #b8b2a8;">If you are reading this inside another app &mdash; a link opened from Facebook, Instagram or a mail app &mdash; try opening the page in your browser instead.</p>' +
+        '</div>'
+    </script>
+    <script>
+      ;(function () {
+        var ready = false
+        var shown = false
+        window.__35mm = {
+          ready: function () {
+            ready = true
+            var note = document.getElementById('startup-failed')
+            if (note && note.parentNode) note.parentNode.removeChild(note)
+          },
+        }
+        window.addEventListener(
+          'error',
+          function (event) {
+            if (ready || shown) return
+            // Only the app's own files: an extension's script throwing says
+            // nothing about this browser, and a cross-origin error has no
+            // message to show anyway.
+            var file = event && event.filename ? String(event.filename) : ''
+            var message = event && event.message ? String(event.message) : ''
+            if (!file || file.indexOf(window.location.origin) !== 0 || !message || message === 'Script error.') return
+            shown = true
+            var note = document.createElement('div')
+            note.id = 'startup-failed'
+            note.setAttribute('style', 'position: fixed; inset: 0; z-index: 100; font: 16px/1.5 system-ui, sans-serif; color: #ece7de; background: #141312; padding: 48px 24px; box-sizing: border-box; overflow: auto;')
+            note.innerHTML =
+              '<h1 style="font-size: 22px; font-weight: 600; margin: 0 0 12px;">35mm could not start in this browser</h1>' +
+              '<p style="max-width: 36em; margin: 0 0 12px; color: #b8b2a8;">Its code loaded but could not run, which usually means the browser is a few years behind. The current Chrome, Edge, Firefox or Safari all work, and updating this one may be enough.</p>' +
+              '<p style="max-width: 36em; margin: 0 0 18px; color: #b8b2a8;">If you are inside another app, try opening the page in your browser instead.</p>' +
+              '<pre style="max-width: 36em; margin: 0 0 18px; padding: 12px; font: 12px/1.5 ui-monospace, monospace; color: #b8b2a8; background: #1d1b18; border-radius: 6px; white-space: pre-wrap; word-break: break-word;"></pre>' +
+              '<button type="button" style="font: inherit; color: #141312; background: #c9a227; border: 0; border-radius: 6px; padding: 10px 16px; cursor: pointer;">Try again</button>'
+            note.querySelector('pre').textContent = message
+            note.querySelector('button').onclick = function () { window.location.reload() }
+            document.body.appendChild(note)
+          },
+          true
+        )
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

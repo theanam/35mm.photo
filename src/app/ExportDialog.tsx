@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
+import { factorsFor } from '../upscale/tiles'
+import { upscaleBackend } from '../upscale/upscale'
 import { useEditor, useRenderEdits } from '../editor/edit-stack/store'
 import {
   canOverwriteOriginal,
   exportFilename,
   exportImage,
+  exportLayoutFor,
   formatOfFile,
   type ExportFormat,
 } from '../io/export'
-import { exportLayout } from '../editor/gpu/transform'
+import { outputSize } from '../editor/gpu/transform'
 import { edgeForHeight, edgeForWidth } from '../io/export-size'
 import { useIsPhone } from './phone/useLayoutMode'
 
@@ -83,6 +86,7 @@ export function ExportDialog() {
   const settings = useEditor((s) => s.exportSettings)
   const setSettings = useEditor((s) => s.setExportSettings)
   const photo = useEditor((s) => s.photo)
+  const update = useEditor((s) => s.update)
   // A phone has no save dialog and a downloads folder nobody visits, so the
   // share sheet is what "save" means there.
   const phone = useIsPhone()
@@ -105,21 +109,21 @@ export function ExportDialog() {
 
   if (!open || !photo) return null
 
+  // The factors the cropped picture can take: the upscale is the last stage,
+  // so it is the crop that the model is handed.
+  const cropped = outputSize(photo.meta.width, photo.meta.height, edits.crop)
+  const upscaleChoices = factorsFor(cropped.width, cropped.height, upscaleBackend())
+  if (edits.upscale > 1 && !upscaleChoices.includes(edits.upscale)) upscaleChoices.push(edits.upscale)
+
   // The numbers the file will actually have, mat included.
-  const layout = exportLayout(
-    photo.meta.width,
-    photo.meta.height,
-    edits.crop,
-    edits.frame,
-    settings.maxEdge,
-  )
+  const layout = exportLayoutFor(photo.meta, edits, settings.maxEdge)
   const width = layout.width
   const height = layout.height
 
   // The file at full size, which is what a custom width or height is measured
   // against — and the size Custom starts from, so choosing it changes nothing
   // until a number is typed.
-  const natural = exportLayout(photo.meta.width, photo.meta.height, edits.crop, edits.frame, null)
+  const natural = exportLayoutFor(photo.meta, edits, null)
   const custom = settings.maxEdge !== null && !SIZES.some((s) => s.maxEdge === settings.maxEdge)
 
   // Writing back in place is only offered when the file's own extension names
@@ -147,8 +151,18 @@ export function ExportDialog() {
         return
       }
 
+      // The upscaled view, built if it is not already — the file is drawn
+      // from it, as the viewport was.
+      const view = edits.upscale > 1 ? await useEditor.getState().refreshUpscale() : null
+      if (edits.upscale > 1 && !view) {
+        setBusy(null)
+        return
+      }
+
       const result = await exportImage({
-        source,
+        source: view?.source ?? source,
+        native: source,
+        region: view?.region,
         meta: photo.meta,
         edits,
         settings,
@@ -221,6 +235,28 @@ export function ExportDialog() {
                 value={settings.quality}
                 onChange={(e) => setSettings({ quality: Number(e.target.value) })}
               />
+            </div>
+          )}
+
+          {upscaleChoices.length > 1 && (
+            <div className="field">
+              <span className="field__label">Upscale</span>
+              <div className="chips">
+                {upscaleChoices.map((f) => (
+                  <button
+                    key={f}
+                    className="chip"
+                    data-active={edits.upscale === f || undefined}
+                    onClick={() => update({ upscale: f }, 'upscale')}
+                  >
+                    {f === 1 ? 'None' : `×${f}`}
+                  </button>
+                ))}
+              </div>
+              <p className="field__note">
+                Super-resolution on the cropped picture, as the viewport shows it. Saved with the
+                photo.
+              </p>
             </div>
           )}
 

@@ -26,6 +26,7 @@ export const SYNC_GROUPS = [
   'finish',
   'look',
   'raw',
+  'size',
   'masks',
   'retouch',
   'crop',
@@ -44,6 +45,7 @@ export const SYNC_GROUP_LABEL: Record<SyncGroup, string> = {
   finish: 'Glow, halation, grain & vignette',
   look: 'Look',
   raw: 'RAW development',
+  size: 'Upscaling',
   masks: 'Masks & local adjustments',
   retouch: 'Spot removal',
   crop: 'Crop & rotation',
@@ -59,7 +61,7 @@ export const SYNC_GROUP_LABEL: Record<SyncGroup, string> = {
  * it is the first thing to turn off when the set is not.
  */
 export const DEFAULT_SYNC_GROUPS: SyncGroup[] = SYNC_GROUPS.filter(
-  (g) => g !== 'crop' && g !== 'masks' && g !== 'retouch',
+  (g) => g !== 'crop' && g !== 'masks' && g !== 'retouch' && g !== 'size',
 )
 
 /** Fields carried by each group, so the mapping is stated once. */
@@ -74,6 +76,7 @@ const FIELDS: Record<SyncGroup, (keyof EditState)[]> = {
   finish: ['halation', 'glow', 'grain', 'grainSize', 'vignette', 'frame'],
   look: ['look'],
   raw: ['raw'],
+  size: ['upscale'],
   masks: ['masks'],
   retouch: ['retouch'],
   crop: ['crop'],

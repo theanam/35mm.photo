@@ -45,6 +45,7 @@ function edited(): EditState {
   e.denoiseChroma = 30
   e.halation = 35
   e.glow = 40
+  e.upscale = 2
   e.grain = 40
   e.grainSize = 70
   e.vignette = -30
@@ -193,6 +194,7 @@ describe('sync coverage', () => {
       denoiseChroma: 25,
       halation: 30,
       glow: 45,
+      upscale: 2,
       grain: 20,
       grainSize: 70,
       vignette: -25,

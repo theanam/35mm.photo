@@ -26,6 +26,7 @@ export function LoadingOverlay() {
   const loading = useEditor((s) => s.loading)
   const label = useEditor((s) => s.loadingLabel)
   const name = useEditor((s) => s.loadingName)
+  const progress = useEditor((s) => s.loadingProgress)
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -42,13 +43,23 @@ export function LoadingOverlay() {
   return (
     <div className="loading" role="status" aria-live="polite">
       <div className="loading__card">
-        {/* Indeterminate: LibRaw reports no progress, so a percentage here
-            would be a number we made up. */}
-        <div className="loading__bar" aria-hidden>
-          <span />
-        </div>
+        {/* Indeterminate unless a stage can count: LibRaw reports no
+            progress, so a percentage there would be a number we made up. The
+            upscaler counts tiles, and shows them. */}
+        {progress === null ? (
+          <div className="loading__bar" aria-hidden>
+            <span />
+          </div>
+        ) : (
+          <div className="loading__bar loading__bar--known" aria-hidden>
+            <span style={{ width: `${Math.round(progress * 100)}%` }} />
+          </div>
+        )}
         <div className="loading__text">
-          <p className="loading__label">{label || 'Opening'}…</p>
+          <p className="loading__label">
+            {label || 'Opening'}
+            {progress === null ? '…' : ` ${Math.round(progress * 100)}%`}
+          </p>
           {name && <p className="loading__name mono">{name}</p>}
         </div>
       </div>

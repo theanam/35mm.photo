@@ -26,6 +26,7 @@ export type PanelId =
   | 'detail'
   | 'grain'
   | 'frame'
+  | 'upscale'
   | 'masks'
   | 'retouch'
   | 'raw'
@@ -35,7 +36,8 @@ export interface StackChip {
   label: string
   /** Right-hand value, rendered in the mono face. */
   value: string
-  panel: PanelId
+  /** Where a click goes. Null for an edit with no panel of its own. */
+  panel: PanelId | null
   /** The look chip is tinted in the design. */
   accent?: boolean
   /**
@@ -172,6 +174,7 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
   if (meta?.isRaw) {
     chips.push({ id: 'raw', label: 'RAW develop', value: rawSummary(edits), panel: 'raw' })
   }
+
 
   // First after the develop, because that is where it happens: the strokes
   // change the picture every other adjustment then works on.
@@ -381,6 +384,12 @@ export function buildStack(edits: EditState, meta: ImageMeta | null): StackChip[
       panel: 'grain',
       off: () => ({ grain: 0, vignette: 0, halation: 0, glow: 0 }),
     })
+  }
+
+  // Last of all, as it runs: on the cropped picture, at export. No eye,
+  // because the preview never shows it; the panel clears it.
+  if (edits.upscale > 1) {
+    chips.push({ id: 'upscale', label: 'Upscale', value: `×${edits.upscale}`, panel: 'upscale' })
   }
 
   if (hasFrameEdits(edits)) {

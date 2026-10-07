@@ -25,6 +25,7 @@ dependencies — is not covered here. None of it is shipped to the browser.
 | [ONNX Runtime Web](https://onnxruntime.ai/) | 1.30.0 | MIT | microsoft/onnxruntime |
 | [U²-Netp](https://github.com/xuebinqin/U-2-Net) weights (`public/models/u2netp.onnx`) | — | **Apache-2.0** | xuebinqin/U-2-Net |
 | [MI-GAN](https://github.com/Picsart-AI-Research/MI-GAN) weights (`public/models/migan.onnx`) | Places2 512 | MIT | Picsart-AI-Research/MI-GAN |
+| [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) general x4 v3 weights (`public/models/realesr-general-x4v3.onnx`) | v0.2.5.0 | BSD-3-Clause | xinntao/Real-ESRGAN |
 | [Lensfun](https://lensfun.github.io/) lens database, as JSON (`public/lensdb/`) | see `public/lensdb/ATTRIBUTION.md` | **CC BY-SA 3.0** (data, not code) | lensfun/lensfun |
 
 ### A note on the LibRaw wrapper
@@ -79,6 +80,49 @@ version pinned in `package-lock.json` and 13.6 MB never enters the history.
 35mm imports the `onnxruntime-web/wasm` entry point rather than the default
 one. The default carries the WebGPU build as well, at 28 MB against this one's
 13.6 MB, for a backend nothing here asks for.
+
+### The upscaling model
+
+`public/models/realesr-general-x4v3.onnx` is the compact "general" model
+from Wang et al., *Real-ESRGAN: Training Real-World Blind Super-Resolution
+with Pure Synthetic Data* (ICCVW 2021), released under **BSD-3-Clause**. It
+is the SRVGGNetCompact architecture — a plain stack of 3×3 convolutions, 1.2 M
+parameters — which is what makes it small enough to ship and fast enough to
+run in a browser. The ONNX conversion is
+[skillsafe-ai/realesr-general-x4v3](https://huggingface.co/skillsafe-ai/realesr-general-x4v3)
+(`model.onnx`, float32, SHA-256
+`a946f7a9397021b9b6b7e71df3d2821b04cc09ff244423b7ca79cb191ce4a00e`), a
+reproducible export of the upstream `realesr-general-x4v3.pth`, used
+unaltered.
+
+BSD-3-Clause asks that the copyright notice and the licence travel with the
+work, and that the authors' names not be used to endorse it. The notice is
+reproduced below; nothing here is endorsed by anyone.
+
+> Copyright (c) 2021, Xintao Wang. All rights reserved.
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are met:
+> 1. Redistributions of source code must retain the above copyright notice,
+> this list of conditions and the following disclaimer. 2. Redistributions in
+> binary form must reproduce the above copyright notice, this list of
+> conditions and the following disclaimer in the documentation and/or other
+> materials provided with the distribution. 3. Neither the name of the
+> copyright holder nor the names of its contributors may be used to endorse or
+> promote products derived from this software without specific prior written
+> permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+> AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+> IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+> ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+> LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+> CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+> SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+> INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+> CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+> ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+> POSSIBILITY OF SUCH DAMAGE.
 
 ### What is *not* shipped
 

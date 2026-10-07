@@ -25,7 +25,7 @@ import {
 } from '../edit-stack/summary'
 import {
   IconCrop, IconCurves, IconDetail, IconGrade, IconGrain, IconLens, IconLight, IconLooks,
-  IconFrame, IconHeal, IconMask, IconMixer, IconRaw,
+  IconFrame, IconHeal, IconMask, IconMixer, IconRaw, IconUpscale,
 } from '../../app/ui/icons'
 import { LooksTool } from './LooksTool'
 import { LightTool } from './LightTool'
@@ -39,6 +39,7 @@ import { RetouchTool } from './RetouchTool'
 import { DetailTool } from './DetailTool'
 import { GrainTool } from './GrainTool'
 import { FrameTool } from './FrameTool'
+import { UpscaleTool } from './UpscaleTool'
 import { RawTool } from './RawTool'
 
 export type ToolId = PanelId
@@ -191,6 +192,15 @@ export const TOOLS: ToolDef[] = [
     Content: GrainTool,
     isDirty: hasFinishEdits,
     reset: () => ({ grain: 0, grainSize: 50, vignette: 0, halation: 0, glow: 0 }),
+  },
+  {
+    id: 'upscale',
+    label: 'Upscale',
+    hint: 'super-resolution on export, after the crop',
+    Icon: IconUpscale,
+    Content: UpscaleTool,
+    isDirty: (e) => e.upscale > 1,
+    reset: () => ({ upscale: 1 }),
   },
   {
     id: 'frame',

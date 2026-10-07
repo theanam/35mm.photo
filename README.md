@@ -171,6 +171,15 @@ are in [public/models/README.md](public/models/README.md).
 | **Camera profiles** | `.dcp` — hue/saturation warps and tone curve, baked into a look |
 | **Export** | JPEG, PNG and WebP, at full size or any long edge, with the camera's EXIF carried across |
 
+### Upscaling, for the small ones
+
+Open a photo under 2000 px on its long edge and 35mm offers to upscale it —
+×2 or ×4, with Real-ESRGAN's compact model, on your own GPU, and shows you the
+result. It is the last stage of the stack, run on the cropped picture, so a
+small crop of a large photo can be upscaled too; the Upscale panel sets it,
+the stack shows it, ⌘Z undoes it. The model is fetched the first time, like
+the subject detector.
+
 HEIC is the iPhone's default and the one format most browsers cannot open, so
 35mm carries its own decoder — [libheif](https://github.com/strukturag/libheif)
 in WebAssembly — fetched only on a browser that needs it.

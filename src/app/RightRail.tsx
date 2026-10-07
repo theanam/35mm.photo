@@ -9,6 +9,7 @@ import { LensTool } from '../editor/tools/LensTool'
 import { DetailTool } from '../editor/tools/DetailTool'
 import { GrainTool } from '../editor/tools/GrainTool'
 import { FrameTool } from '../editor/tools/FrameTool'
+import { UpscaleTool } from '../editor/tools/UpscaleTool'
 import { RawTool } from '../editor/tools/RawTool'
 import { useEditor } from '../editor/edit-stack/store'
 import { getTool } from '../editor/tools/registry'
@@ -98,6 +99,12 @@ export function RightRail() {
 
       <Panel id="grain" action={reset('grain')} title="Grain & vignette" collapsible active={dirty('grain')}>
         <GrainTool />
+      </Panel>
+
+      {/* After everything that touches the picture, because that is when it
+          runs: on the cropped, graded picture, as the export is written. */}
+      <Panel id="upscale" action={reset('upscale')} title="Upscale" collapsible active={dirty('upscale')}>
+        <UpscaleTool />
       </Panel>
 
       {/* Last, because it is the last thing the render does: the mat goes on

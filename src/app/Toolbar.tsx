@@ -74,7 +74,11 @@ export function Toolbar() {
               <button
                 className="stack-chip__pick"
                 // A chip jumps to wherever its control actually lives.
-                onClick={() => (isToolbarTool(chip.panel) ? openTool(chip.panel) : focusPanel(chip.panel))}
+                onClick={() => {
+                  if (!chip.panel) return
+                  if (isToolbarTool(chip.panel)) openTool(chip.panel)
+                  else focusPanel(chip.panel)
+                }}
                 title={`${chip.label} — open this control`}
               >
                 <span>{chip.label}</span>

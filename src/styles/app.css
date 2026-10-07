@@ -2916,3 +2916,73 @@ kbd {
 }
 .retouch__load { width: 100%; display: inline-flex; justify-content: center; gap: 8px; align-items: baseline; }
 .retouch__size { color: var(--text-dim); font-size: 11px; }
+
+/* ─────────────────── browser support: the gate and the hint ─────────────────── */
+
+/* In place of the editor, when the browser cannot run it. Plain and calm: it
+   is a notice, not an error screen. */
+.unsupported {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  box-sizing: border-box;
+  background: var(--bg-app);
+  color: var(--text);
+}
+.unsupported__panel { max-width: 520px; display: flex; flex-direction: column; gap: 14px; }
+.unsupported__panel h1 { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; text-wrap: balance; }
+.unsupported__panel p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--text-dim); text-wrap: pretty; }
+.unsupported__panel ul { margin: 0; padding-left: 20px; font-size: 15px; line-height: 1.5; color: var(--text); }
+.unsupported__fine { font-size: 13px !important; color: var(--text-muted) !important; }
+.unsupported__actions { display: flex; gap: 10px; margin-top: 6px; }
+
+.inapp__steps { margin: 0; padding-left: 22px; font-size: 14px; line-height: 1.6; color: var(--text); }
+.inapp__steps strong { color: var(--text); font-weight: 700; }
+.inapp__copy { display: flex; flex-direction: column; gap: 8px; }
+.inapp__address {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-app);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+.modal__footer a.button { text-decoration: none; display: inline-flex; align-items: center; }
+
+/* ───────────────────────────── upscaling ───────────────────────────── */
+
+/* The offer, at the foot of the frame. A card like the loading one, so the
+   two read as the same voice. */
+.viewport { position: relative; }
+.upscale-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 16px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.upscale-banner__text { margin: 0; font-size: 13px; line-height: 1.45; color: var(--text-dim); text-wrap: pretty; max-width: 46em; }
+.upscale-banner__text strong { color: var(--text); font-weight: 500; }
+.upscale-banner__note { color: var(--text-muted); }
+.upscale-banner__actions { display: flex; gap: 7px; flex: none; }
+
+/* A stage that can count shows how far it has got. */
+.loading__bar--known span { width: 0; animation: none; transition: width 160ms ease; }
+
+.field__note { margin: 6px 0 0; font-size: 12px; line-height: 1.45; color: var(--text-muted); text-wrap: pretty; }

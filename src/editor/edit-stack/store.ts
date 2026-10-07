@@ -37,8 +37,9 @@ import {
 import { planStroke, prepareFillModel } from '../../retouch/retouch'
 import { loadFillReady, loadSmartFill, saveSmartFill } from '../../retouch/preference'
 import { DEFAULT_BRUSH_SIZE } from '../../retouch/brush'
-import { MAX_PREVIEW_EDGE, decodeFile, makeThumbnail } from '../../io/decode'
+import { MAX_PREVIEW_EDGE, decodeFile, makeThumbnail, previewBitmap } from '../../io/decode'
 import { developFor, developFullSource } from '../../io/develop'
+import { prepareUpscale, upscaleSignature, type UpscaledView } from '../../upscale/inline'
 import type { DecodeStage } from '../../io/decode'
 import { extensionOf, isRawFile } from '../../io/formats'
 import type { OpenedFile } from '../../io/file-system'
@@ -92,6 +93,13 @@ export interface OpenPhoto {
    * for them before it writes anything.
    */
   sourceIsPreview?: boolean
+  /**
+   * The crop's region of the picture, upscaled — see `upscale/inline.ts`.
+   * Drawn in place of the picture by everything but the crop and retouch
+   * tools, which show the picture as shot. Null until built, or when the
+   * upscale is off.
+   */
+  upscaled?: UpscaledView | null
   /** The file itself, for readers that want the bytes rather than the pixels. */
   file: File
   handle?: FileSystemFileHandle
@@ -138,6 +146,8 @@ interface EditorState {
   /* UI */
   loading: boolean
   loadingLabel: string
+  /** 0..1 while a stage can count its work — only the upscaler can — else null. */
+  loadingProgress: number | null
   /** File the loader names, so a slow open says which photo it is waiting on. */
   loadingName: string
   splitCompare: boolean
@@ -290,6 +300,12 @@ interface EditorState {
   updateRawDevelop: (patch: Partial<EditState['raw']>) => void
   /** Full-resolution pixels, developing them first if this open came from cache. */
   ensureFullSource: () => Promise<ImageBitmap | null>
+  /**
+   * Build the upscaled view for the edits as they stand, or drop it when the
+   * upscale is off. Returns the view, which is at full resolution, or null
+   * when there is none or the photo changed underneath.
+   */
+  refreshUpscale: () => Promise<UpscaledView | null>
   addMask: (kind: MaskKind) => void
   /** Run the detector for a subject mask, or re-run it after a model change. */
   detectSubjectMask: (id: string) => Promise<void>
@@ -408,11 +424,12 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   loading: false,
   loadingLabel: '',
+  loadingProgress: null,
   loadingName: '',
   splitCompare: false,
   splitAt: 0.38,
   zoom: 'fit',
-  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, lens: false, detail: false, grain: false, frame: false, masks: false, retouch: false, raw: false },
+  openPanels: { light: true, crop: true, looks: true, curves: false, mixer: false, grade: false, lens: false, detail: false, grain: false, frame: false, upscale: false, masks: false, retouch: false, raw: false },
   focusedPanel: null,
   activeTool: null,
   toolSnapshot: null,
@@ -554,6 +571,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       if (previous && previous.frameId !== id) {
         previous.source.close()
         if (previous.preview !== previous.source) previous.preview.close()
+        dropUpscaled(previous)
       }
 
       set({
@@ -564,6 +582,7 @@ export const useEditor = create<EditorState>((set, get) => ({
           source,
           preview,
           sourceIsPreview,
+          upscaled: null,
           file: opened.file,
           handle: opened.handle,
         },
@@ -606,6 +625,8 @@ export const useEditor = create<EditorState>((set, get) => ({
       // whatever was found before; find the rest, if that costs no download.
       void get().autoDetectSubjects()
       void get().resolveLensProfile()
+      // A photo saved with an upscale opens upscaled, with the bar to show for it.
+      if (edits.upscale > 1) void get().refreshUpscale()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not open that file'
       set({
@@ -836,6 +857,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       forgetSubjects(photo.frameId)
       photo.source.close()
       if (photo.preview !== photo.source) photo.preview.close()
+      dropUpscaled(photo)
     }
     set({
       photo: null,
@@ -967,7 +989,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     const { edits, history } = get()
     const next = { ...edits, ...patch }
     if (editsEqual(next, edits)) return
-    const beforeRaw = edits.raw
+    const before = edits
 
     const now = Date.now()
     const nextHistory = shouldPush(history, coalesceKey ?? null, now)
@@ -982,8 +1004,9 @@ export const useEditor = create<EditorState>((set, get) => ({
       // decision about this photo, and the lift must not land on top of it.
       pendingAutoExpose: coalesceKey === 'auto-expose' ? get().pendingAutoExpose : null,
     })
-    maybeRedevelop(beforeRaw, get, set)
+    maybeRedevelop(before, get, set)
     maybeReresolveLens(edits, get)
+    maybeReupscale(get)
     scheduleAutosave(get, set)
   },
 
@@ -1095,7 +1118,60 @@ export const useEditor = create<EditorState>((set, get) => ({
       set({ photo: { ...current, source, sourceIsPreview: false } })
       return source
     } finally {
-      set({ loading: false, loadingLabel: '', loadingName: '' })
+      set({ loading: false, loadingLabel: '', loadingProgress: null, loadingName: '' })
+    }
+  },
+
+  async refreshUpscale() {
+    const photo = get().photo
+    if (!photo) return null
+    const edits = get().edits
+    if (edits.upscale === 1) {
+      if (photo.upscaled) {
+        dropUpscaled(photo)
+        set({ photo: { ...photo, upscaled: null }, histogram: null })
+      }
+      return null
+    }
+    const sig = upscaleSignature(edits)
+    if (photo.upscaled?.sig === sig) return photo.upscaled
+
+    const generation = ++upscaleGeneration
+    // Always from the full-resolution pixels: a photo restored from the
+    // develop cache holds a preview, and a model run on that would invent
+    // detail for a picture that was never there.
+    const native = await get().ensureFullSource()
+    if (!native || upscaleGeneration !== generation || get().photo?.frameId !== photo.frameId) return null
+
+    set({ loading: true, loadingLabel: 'Upscaling', loadingProgress: 0, loadingName: photo.meta.name })
+    try {
+      const prepared = await prepareUpscale(native, photo.meta, get().edits, photo.frameId, (fraction) => {
+        if (upscaleGeneration === generation) set({ loadingProgress: fraction })
+      })
+      const current = get().photo
+      if (upscaleGeneration !== generation || !current || current.frameId !== photo.frameId) {
+        prepared.source.close()
+        return null
+      }
+      const preview = await previewBitmap(prepared.source)
+      const view: UpscaledView = {
+        source: prepared.source,
+        preview,
+        region: prepared.region,
+        factor: prepared.factor,
+        sig,
+        from: { width: native.width, height: native.height },
+      }
+      if (current.upscaled) dropUpscaled(current)
+      set({ photo: { ...current, upscaled: view }, histogram: null })
+      return view
+    } catch (err) {
+      get().toast(err instanceof Error ? `Could not upscale — ${err.message}` : 'Could not upscale', 'error')
+      return null
+    } finally {
+      if (upscaleGeneration === generation) {
+        set({ loading: false, loadingLabel: '', loadingProgress: null, loadingName: '' })
+      }
     }
   },
 
@@ -1357,8 +1433,9 @@ export const useEditor = create<EditorState>((set, get) => ({
       history: pushHistory(get().history, cloneEdits(current), coalesceKey ?? null, now),
       hidden: hiddenAfter(get, current, edits),
     })
-    maybeRedevelop(current.raw, get, set)
+    maybeRedevelop(current, get, set)
     maybeReresolveLens(current, get)
+    maybeReupscale(get)
     scheduleAutosave(get, set)
   },
 
@@ -1366,7 +1443,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     const { history, edits } = get()
     const previous = history.past.at(-1)
     if (!previous) return
-    const beforeRaw = edits.raw
+    const before = edits
     set({
       edits: previous,
       history: {
@@ -1377,7 +1454,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       },
       hidden: hiddenAfter(get, edits, previous),
     })
-    maybeRedevelop(beforeRaw, get, set)
+    maybeRedevelop(before, get, set)
     maybeReresolveLens(edits, get)
     scheduleAutosave(get, set)
   },
@@ -1386,7 +1463,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     const { history, edits } = get()
     const next = history.future[0]
     if (!next) return
-    const beforeRaw = edits.raw
+    const before = edits
     set({
       edits: next,
       history: {
@@ -1397,7 +1474,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       },
       hidden: hiddenAfter(get, edits, next),
     })
-    maybeRedevelop(beforeRaw, get, set)
+    maybeRedevelop(before, get, set)
     maybeReresolveLens(edits, get)
     scheduleAutosave(get, set)
   },
@@ -1487,6 +1564,9 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   closeTool() {
     set({ activeTool: null, toolSnapshot: null, cropping: false, drawingHorizon: false })
+    // The crop and retouch tools showed the picture as shot; the view they
+    // may have changed is built again now that they are closed.
+    maybeReupscale(get)
   },
 
   applyTool() {
@@ -1633,9 +1713,45 @@ export function useRenderEdits(): EditState {
   return useMemo(() => withHidden(edits, hidden, meta), [edits, hidden, meta])
 }
 
-function maybeRedevelop(before: EditState['raw'], get: Getter, set: Setter): void {
+let upscaleGeneration = 0
+let upscaleTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Let the view's bitmaps go. The record is left to the caller to replace. */
+function dropUpscaled(photo: OpenPhoto): void {
+  const view = photo.upscaled
+  if (!view) return
+  view.source.close()
+  if (view.preview !== view.source) view.preview.close()
+}
+
+/**
+ * The upscaled view is built for a particular geometry; when that moves, or
+ * the factor does, it is built again — a moment after the last change, so a
+ * slider does not run the model on every notch. Not while the crop or
+ * retouch tool is open: those show the picture as shot, and `closeTool`
+ * comes back here when they are done.
+ */
+function maybeReupscale(get: Getter): void {
+  const { photo, edits, activeTool, cropping } = get()
+  if (!photo) return
+  const wanted = edits.upscale > 1
+  if (!wanted && !photo.upscaled) return
+  if (wanted && photo.upscaled?.sig === upscaleSignature(edits)) return
+  if (cropping || activeTool === 'crop' || activeTool === 'retouch') return
+  if (upscaleTimer) clearTimeout(upscaleTimer)
+  upscaleTimer = setTimeout(
+    () => {
+      upscaleTimer = null
+      void get().refreshUpscale()
+    },
+    wanted && !photo.upscaled ? 0 : 250,
+  )
+}
+
+/** The raw settings changed, so the pixels everything else works on have to be made again. */
+function maybeRedevelop(before: EditState, get: Getter, set: Setter): void {
   if (!get().photo?.meta.isRaw) return
-  if (JSON.stringify(before) === JSON.stringify(get().edits.raw)) return
+  if (JSON.stringify(before.raw) === JSON.stringify(get().edits.raw)) return
   void redevelop(get, set)
 }
 
@@ -1661,6 +1777,8 @@ async function redevelop(get: Getter, set: Setter): Promise<void> {
 
     current.source.close()
     if (current.preview !== current.source) current.preview.close()
+    // Built from the pixels that were just replaced.
+    dropUpscaled(current)
 
     set({
       photo: {
@@ -1669,15 +1787,17 @@ async function redevelop(get: Getter, set: Setter): Promise<void> {
         source: developed.source,
         preview: developed.preview,
         sourceIsPreview: developed.sourceIsPreview,
+        upscaled: null,
       },
       histogram: null,
     })
+    maybeReupscale(get)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Could not develop that file'
     get().toast(message, 'error')
   } finally {
     if (developGeneration === generation) {
-      set({ loading: false, loadingLabel: '', loadingName: '' })
+      set({ loading: false, loadingLabel: '', loadingProgress: null, loadingName: '' })
     }
   }
 }

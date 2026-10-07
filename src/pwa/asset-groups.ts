@@ -14,6 +14,10 @@
  *   fill     ~14 MB    the retouch fill model and its worker, fetched only
  *                      once smart fill has been switched on; the runtime is
  *                      the detector's, and shared
+ *   upscale  ~32 MB    the super-resolution model, its worker, and the WebGPU
+ *                      build of the runtime (`asyncify`, or `jspi` on a browser
+ *                      that has it) — a different binary from the detector's,
+ *                      fetched the first time a photo is upscaled
  *
  * ## Why this matches names, and why that is guarded
  *
@@ -40,7 +44,16 @@ export interface AssetGroups {
   heic: string[]
   subject: string[]
   fill: string[]
+  upscale: string[]
 }
+
+/**
+ * Super-resolution. Its runtime is ONNX Runtime's WebGPU build — the
+ * `asyncify` or `jspi` variant, or `jsep` in older releases — which the
+ * detector's pattern would otherwise claim by the `ort-wasm` prefix, so this
+ * is checked first. The weights are named for the model.
+ */
+const UPSCALE = /(^|\/)upscale-worker-|\.(asyncify|jspi|jsep)-|(^|\/)realesr[^/]*\.onnx$/
 
 /**
  * The salient object detector. Its ONNX Runtime is compiled into the worker
@@ -75,11 +88,12 @@ const RAW = /(^|\/)(libraw|decode-raw|preview-worker|worker)-/
 const NEVER = /(^|\/)(sw\.js|precache\.json|sitemap\.xml|chunks\.json)$/
 
 export function groupAssets(files: string[]): AssetGroups {
-  const groups: AssetGroups = { shell: [], raw: [], heic: [], subject: [], fill: [] }
+  const groups: AssetGroups = { shell: [], raw: [], heic: [], subject: [], fill: [], upscale: [] }
 
   for (const file of files) {
     if (NEVER.test(file)) continue
-    if (FILL.test(file)) groups.fill.push(file)
+    if (UPSCALE.test(file)) groups.upscale.push(file)
+    else if (FILL.test(file)) groups.fill.push(file)
     else if (SUBJECT.test(file)) groups.subject.push(file)
     else if (HEIC.test(file)) groups.heic.push(file)
     else if (RAW.test(file)) groups.raw.push(file)
@@ -112,7 +126,7 @@ export function verifyGroups(groups: AssetGroups): string[] {
     }
   }
 
-  for (const key of ['shell', 'raw', 'heic', 'subject', 'fill'] as const) {
+  for (const key of ['shell', 'raw', 'heic', 'subject', 'fill', 'upscale'] as const) {
     if (!groups[key].length) {
       problems.push(
         `the "${key}" group is empty, which means its files were renamed and are ` +

@@ -67,3 +67,29 @@ single-threaded, whatever the size of the crop.
 Chosen for size: it is the smallest of the usual inpainters by a distance —
 LaMa's published export is about 200 MB, AOT-GAN's about 60 MB. It is only
 asked to fill what a heal cannot; everything else never reaches it.
+
+## `realesr-general-x4v3.onnx`
+
+Real-ESRGAN "general" x4 v3 — super-resolution, the model behind the upscale
+offer and the export dialog's Upscale row. 4.9 MB. Takes an RGB picture as
+float32 NCHW in 0..1 at any size and returns it four times larger on each
+edge; ×2 is the same pass halved on the way out.
+
+| | |
+| --- | --- |
+| Licence | BSD-3-Clause |
+| Paper | Wang et al., *Real-ESRGAN: Training Real-World Blind Super-Resolution with Pure Synthetic Data*, ICCVW 2021 |
+| Source | https://github.com/xinntao/Real-ESRGAN (release v0.2.5.0, `realesr-general-x4v3.pth`) |
+| ONNX export | https://huggingface.co/skillsafe-ai/realesr-general-x4v3 (`model.onnx`, float32) |
+| Architecture | SRVGGNetCompact: 32 3×3 convolutions at 64 channels, PReLU, pixel shuffle |
+
+Float32, unaltered. The float16 export halves the file, but the download is
+dwarfed by the runtime it needs: this model runs on ONNX Runtime's WebGPU
+build, which is 27 MB against the detector's 14, and is fetched separately
+the first time a photo is upscaled.
+
+Run tiled — 256 px tiles with 16 px of overlap on WebGPU, 128 px on the CPU —
+because the model's memory grows with the picture. Measured on an Apple
+M-series laptop: about a quarter of a second per 512² of input on WebGPU, and
+thirteen seconds on the CPU, which is why the CPU is only offered a small
+picture.

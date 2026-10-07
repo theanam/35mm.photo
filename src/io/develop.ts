@@ -1,4 +1,4 @@
-import { MAX_PREVIEW_EDGE, decodeFile, previewBitmap, type OnStage } from './decode'
+import { MAX_PREVIEW_EDGE, decodeFile, previewBitmap, type DecodedImage, type OnStage } from './decode'
 import { isRawFile } from './formats'
 import { developFingerprint } from '../raw/develop-settings'
 import type { ImageMeta, RawDevelopState } from '../editor/edit-stack/types'
@@ -30,6 +30,15 @@ export interface Developed {
 /** `<file>@<settings>`: the same file developed two ways is two entries. */
 function cacheKey(file: File, raw: RawDevelopState): string {
   return `${db.fileKey(file)}@${developFingerprint(raw)}`
+}
+
+/** The file as the photo was set up to be developed, with its raw settings. */
+export async function developSource(
+  file: File,
+  raw: RawDevelopState,
+  onStage?: OnStage,
+): Promise<DecodedImage> {
+  return decodeFile(file, onStage, raw)
 }
 
 export async function developFor(
@@ -64,7 +73,7 @@ export async function developFor(
     }
   }
 
-  const decoded = await decodeFile(file, onStage, raw)
+  const decoded = await developSource(file, raw, onStage)
   const preview = await previewBitmap(decoded.bitmap)
 
   // Written behind the photo appearing, not in front of it: encoding is a
@@ -84,8 +93,7 @@ export async function developFullSource(
   raw: RawDevelopState,
   onStage?: OnStage,
 ): Promise<ImageBitmap> {
-  const decoded = await decodeFile(file, onStage, raw)
-  return decoded.bitmap
+  return (await developSource(file, raw, onStage)).bitmap
 }
 
 async function storeDevelop(key: string, preview: ImageBitmap, meta: ImageMeta): Promise<void> {

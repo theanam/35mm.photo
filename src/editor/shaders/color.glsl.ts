@@ -20,6 +20,8 @@ in vec3 vUvH;
 out vec4 fragColor;
 
 uniform sampler2D uImage;
+/** Where the texture sits in the picture: xy its origin, zw its size, as fractions. (0,0,1,1) is the whole picture. */
+uniform vec4  uRegion;
 uniform sampler2D uCurves;   // 256 x 4 : row 0 rgb, 1 r, 2 g, 3 b
 uniform sampler3D uLut;
 
@@ -177,6 +179,13 @@ float coverage(vec2 p) {
   return inside.x * inside.y;
 }
 
+/**
+ * From a position in the picture to the same position in the texture, which
+ * may hold only a region of it — the upscaled crop. Everything above works
+ * in the picture's own frame; only the fetch needs to know.
+ */
+vec2 inRegion(vec2 uv) { return clamp((uv - uRegion.xy) / uRegion.zw, 0.0, 1.0); }
+
 void main() {
   // The divide the vertex shader deliberately did not do. Without a keystone
   // vUvH.z is 1 and this costs nothing.
@@ -201,13 +210,13 @@ void main() {
     vec2 uvR = clamp(tcaSample(hs, rs, uTcaR), vec2(0.0), vec2(1.0));
     vec2 uvB = clamp(tcaSample(hs, rs, uTcaB), vec2(0.0), vec2(1.0));
     src = vec4(
-      texture(uImage, uvR).r,
-      texture(uImage, uv).g,
-      texture(uImage, uvB).b,
-      texture(uImage, uv).a
+      texture(uImage, inRegion(uvR)).r,
+      texture(uImage, inRegion(uv)).g,
+      texture(uImage, inRegion(uvB)).b,
+      texture(uImage, inRegion(uv)).a
     );
   } else {
-    src = texture(uImage, uv);
+    src = texture(uImage, inRegion(uv));
   }
 
   // White balance and exposure are scene-referred operations — do them in

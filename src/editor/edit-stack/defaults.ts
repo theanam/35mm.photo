@@ -135,6 +135,7 @@ export function defaultEdits(): EditState {
     frame: neutralFrame(),
 
     raw: defaultRawDevelop(),
+    upscale: 1,
     masks: [],
     retouch: [],
 

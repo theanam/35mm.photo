@@ -1,6 +1,7 @@
 import { Renderer } from '../editor/gpu/renderer'
 import { resolveLensUniforms } from '../lens/resolve'
 import { exportLayout, type FrameLayout } from '../editor/gpu/transform'
+import type { Region } from '../upscale/region'
 import { getLut } from '../editor/presets/lutCache'
 import { getLook } from '../editor/presets/catalogue'
 import type { EditState, ImageMeta } from '../editor/edit-stack/types'
@@ -67,8 +68,12 @@ export function canOverwriteOriginal(name: string, format: ExportFormat): boolea
 }
 
 export interface ExportRequest {
-  /** The original full-resolution decode, not the preview. */
+  /** The pixels to draw from at full resolution: the picture, or its upscaled region. */
   source: ImageBitmap
+  /** The picture as shot, when `source` is a region of it; the subject detector reads this. */
+  native?: ImageBitmap
+  /** Where `source` sits in the picture, when it is a region — the upscaled view. */
+  region?: Region
   meta: ImageMeta
   edits: EditState
   settings: ExportSettings
@@ -86,6 +91,20 @@ export interface ExportRequest {
    */
   preferShare?: boolean
   onProgress?: (stage: string) => void
+}
+
+/**
+ * What the file will measure, mat included. The upscale is the last stage, so
+ * it is applied to the picture that leaves the crop — which is why the layout
+ * is asked for with the photo's dimensions already multiplied: a crop's share
+ * of a picture four times the size is the same crop, four times the size.
+ */
+export function exportLayoutFor(
+  meta: Pick<ImageMeta, 'width' | 'height'>,
+  edits: EditState,
+  maxEdge?: number | null,
+): FrameLayout {
+  return exportLayout(meta.width * edits.upscale, meta.height * edits.upscale, edits.crop, edits.frame, maxEdge)
 }
 
 export interface ExportResult {
@@ -118,12 +137,14 @@ export async function exportImage(request: ExportRequest): Promise<ExportResult>
 
   onProgress?.('Preparing')
   // Includes the mat, because the mat is part of the file.
-  const layout = exportLayout(meta.width, meta.height, edits.crop, edits.frame, settings.maxEdge)
+  const layout = exportLayoutFor(meta, edits, settings.maxEdge)
   const width = layout.width
   const height = layout.height
 
   const { blob } = await renderToBlob({
     source,
+    native: request.native,
+    region: request.region,
     meta,
     edits,
     frame: layout,
@@ -156,6 +177,9 @@ export async function exportImage(request: ExportRequest): Promise<ExportResult>
 
 export interface RenderRequest {
   source: ImageBitmap
+  /** See `ExportRequest`. */
+  native?: ImageBitmap
+  region?: Region
   meta: ImageMeta
   edits: EditState
   settings: ExportSettings
@@ -215,7 +239,7 @@ export async function renderToBlob(
     if (edits.masks.some((m) => m.kind === 'subject')) {
       onProgress?.('Finding the subject')
       renderer.setSubjectMaps(
-        await ensureSubjectMaps(edits.masks, request.frameId ?? meta.name, source),
+        await ensureSubjectMaps(edits.masks, request.frameId ?? meta.name, request.native ?? source),
       )
     } else {
       renderer.setSubjectMaps([])
@@ -226,12 +250,22 @@ export async function renderToBlob(
     renderer.setLens(await resolveLensUniforms(meta, edits.lens))
 
     onProgress?.('Rendering')
-    renderer.setImage(source, meta.orientation)
+    renderer.setImage(
+      source,
+      meta.orientation,
+      request.region
+        ? {
+            region: request.region,
+            upright: { width: meta.width * edits.upscale, height: meta.height * edits.upscale },
+          }
+        : undefined,
+    )
 
     // Healed here, at the resolution being written, from the same strokes the
-    // preview healed — never the preview's pixels scaled up.
+    // preview healed — never the preview's pixels scaled up. An upscaled
+    // region arrives with its heals already in it.
     const strokes = edits.retouch.filter((s) => s.enabled)
-    if (strokes.length) {
+    if (strokes.length && !request.region) {
       onProgress?.('Retouching')
       const healed = await retouchPatches(
         source,

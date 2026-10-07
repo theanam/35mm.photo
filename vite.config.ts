@@ -69,6 +69,7 @@ function precache(): Plugin {
         'favicon.svg',
         'models/u2netp.onnx',
         'models/migan.onnx',
+        'models/realesr-general-x4v3.onnx',
         // The lens index, so a photo matches offline; shards are cached as used.
         'lensdb/index.json',
       ]

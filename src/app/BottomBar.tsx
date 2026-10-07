@@ -1,5 +1,5 @@
 import { useEditor, useRenderEdits } from '../editor/edit-stack/store'
-import { exportLayout } from '../editor/gpu/transform'
+import { exportLayoutFor } from '../io/export'
 import { IconCamera, IconLens, IconMinus, IconPlus, IconSplit } from './ui/icons'
 
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.66, 1, 1.5, 2, 3, 4]
@@ -26,7 +26,8 @@ export function BottomBar({ scale, fitScale }: { scale: number; fitScale: number
    * one. Every other reading in the app is about a part of it: the crop tool
    * reports the crop, the frame panel reports the frame.
    */
-  const size = meta ? exportLayout(meta.width, meta.height, edits.crop, edits.frame, null) : null
+  // The file's size: the crop, the upscale, the mat.
+  const size = meta ? exportLayoutFor(meta, edits, null) : null
 
   const step = (direction: 1 | -1) => {
     const current = zoom === 'fit' ? fitScale : zoom

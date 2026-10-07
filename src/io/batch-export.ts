@@ -1,8 +1,8 @@
 import { Renderer } from '../editor/gpu/renderer'
-import { exportLayout } from '../editor/gpu/transform'
 import type { EditState, ImageMeta } from '../editor/edit-stack/types'
-import { decodeFile } from './decode'
-import { exportFilename, renderToBlob, type ExportSettings } from './export'
+import { developSource } from './develop'
+import { prepareUpscale, type PreparedUpscale } from '../upscale/inline'
+import { exportFilename, renderToBlob, type ExportSettings, exportLayoutFor } from './export'
 import type { OpenedFile } from './file-system'
 
 /**
@@ -146,20 +146,28 @@ export async function runBatchExport(request: BatchRequest): Promise<BatchResult
       async (item) => {
         onProgress({ frameId: item.frameId, status: 'working', stage: 'Opening' })
         let bitmap: ImageBitmap | null = null
+        let prepared: PreparedUpscale | null = null
         try {
-          const decoded = await decodeFile(item.file.file)
+          // Developed with the photo's own raw settings, so a batch writes
+          // what the viewport showed.
+          const decoded = await developSource(item.file.file, item.edits.raw)
           bitmap = decoded.bitmap
 
-          const layout = exportLayout(
-            decoded.meta.width,
-            decoded.meta.height,
-            item.edits.crop,
-            item.edits.frame,
-            settings.maxEdge,
-          )
+          // The upscaled view, built here as the viewport would have built
+          // it: the crop's region, heals in, through the model.
+          if (item.edits.upscale > 1) {
+            onProgress({ frameId: item.frameId, status: 'working', stage: 'Upscaling' })
+            prepared = await prepareUpscale(bitmap, decoded.meta, item.edits, item.frameId, (fraction) =>
+              onProgress({ frameId: item.frameId, status: 'working', stage: `Upscaling ${Math.round(fraction * 100)}%` }),
+            )
+          }
+
+          const layout = exportLayoutFor(decoded.meta, item.edits, settings.maxEdge)
 
           const { blob } = await renderToBlob({
-            source: bitmap,
+            source: prepared?.source ?? bitmap,
+            native: bitmap,
+            region: prepared?.region,
             meta: decoded.meta,
             edits: item.edits,
             settings,
@@ -185,6 +193,7 @@ export async function runBatchExport(request: BatchRequest): Promise<BatchResult
           // Release before the next decode rather than after the loop: holding
           // every frame would be gigabytes by the end of a folder.
           bitmap?.close()
+          prepared?.source.close()
         }
       },
       onProgress,

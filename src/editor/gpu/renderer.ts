@@ -30,6 +30,7 @@ import { swapsAxes, type Orientation } from '../../io/exif'
 import { IDENTITY_LENS, type LensUniforms } from '../../lens/uniforms'
 import { whiteBalanceGain } from './whitebalance'
 import type { RetouchPatch } from '../../retouch/retouch'
+import type { Region } from '../../upscale/region'
 
 /**
  * Where the defocused copy a mask's blur reads from is bound. The detail pass
@@ -146,6 +147,8 @@ export class Renderer {
   /** Dimensions of the image the right way up — what the transform works in. */
   private uprightWidth = 0
   private uprightHeight = 0
+  /** Set when the image texture holds a region of the picture rather than all of it. */
+  private region: Region | null = null
   private orientation: Orientation = 1
   private disposed = false
 
@@ -218,9 +221,16 @@ export class Renderer {
 
   /* ─────────────────────────── resources ─────────────────────────── */
 
+  /**
+   * `view` says the texture is only a region of the picture — the upscaled
+   * crop — and gives the picture's own upright size, which is what every
+   * geometry uniform is measured against. Without it the texture is the
+   * picture, and the size is read off it.
+   */
   setImage(
     source: ImageBitmap | HTMLImageElement | HTMLCanvasElement,
     orientation: Orientation = 1,
+    view?: { region: Region; upright: { width: number; height: number } },
   ) {
     const gl = this.gl
     if (this.imageTexture) gl.deleteTexture(this.imageTexture)
@@ -249,9 +259,10 @@ export class Renderer {
     this.retouchTexture = null
     this.retouchKey = ''
 
-    const upright = uprightSize(source.width, source.height, orientation)
+    const upright = view?.upright ?? uprightSize(source.width, source.height, orientation)
     this.uprightWidth = upright.width
     this.uprightHeight = upright.height
+    this.region = view?.region ?? null
   }
 
   setLut(lut: Lut3D | null) {
@@ -491,6 +502,8 @@ export class Renderer {
     this.colorU.i('uImage', 0)
     this.colorU.i('uCurves', 1)
     this.colorU.i('uLut', 2)
+    const region = this.region
+    this.colorU.v4('uRegion', region?.x ?? 0, region?.y ?? 0, region?.w ?? 1, region?.h ?? 1)
 
     this.colorU.mat3(
       'uUvTransform',

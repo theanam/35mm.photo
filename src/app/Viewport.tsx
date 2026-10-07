@@ -14,6 +14,7 @@ import { detectCapabilities } from '../editor/gpu/caps'
 import { CropOverlay } from './CropOverlay'
 import { MaskOverlay } from './MaskOverlay'
 import { RetouchOverlay } from './RetouchOverlay'
+import { UpscaleBanner } from './UpscaleBanner'
 import { onFillFallback, retouchPatches } from '../retouch/retouch'
 
 /** Histogram readback size — enough bins to be representative, cheap to read. */
@@ -55,6 +56,15 @@ export function Viewport() {
   const activeMaskId = useEditor((s) => s.activeMaskId)
   const maskOverlay = useEditor((s) => s.maskOverlay)
   const cropDragging = useEditor((s) => s.cropDragging)
+  // The upscaled view stands in for the picture, except while a tool that
+  // works on the picture as shot is open.
+  const upscaled = photo?.upscaled ?? null
+  const showUpscaled = Boolean(upscaled) && !cropping && !retouching
+  const viewMeta = useMemo(() => {
+    if (!photo) return null
+    if (!showUpscaled || !upscaled) return photo.meta
+    return { ...photo.meta, width: photo.meta.width * upscaled.factor, height: photo.meta.height * upscaled.factor }
+  }, [photo, showUpscaled, upscaled])
   const sheetDragging = useEditor((s) => s.sheetDragging)
   const activeFrameId = useEditor((s) => s.activeFrameId)
   // Derived coverage maps change without the edit stack changing, so the draw
@@ -168,11 +178,18 @@ export function Viewport() {
     const renderer = rendererRef.current
     if (!renderer || !photo) return
     try {
-      renderer.setImage(photo.preview, photo.meta.orientation)
+      if (showUpscaled && upscaled && viewMeta) {
+        renderer.setImage(upscaled.preview, photo.meta.orientation, {
+          region: upscaled.region,
+          upright: { width: viewMeta.width, height: viewMeta.height },
+        })
+      } else {
+        renderer.setImage(photo.preview, photo.meta.orientation)
+      }
     } catch (err) {
       setGlError(err instanceof Error ? err.message : 'Could not upload the photo to the GPU')
     }
-  }, [photo])
+  }, [photo, showUpscaled, upscaled, viewMeta])
 
   /* ── look LUT ── */
 
@@ -282,7 +299,8 @@ export function Viewport() {
     const renderer = rendererRef.current
     if (!renderer || !photo || !activeFrameId) return
     const strokes = renderEdits.retouch.filter((s) => s.enabled)
-    if (!strokes.length) {
+    // The upscaled view has its heals baked in; see `prepareUpscale`.
+    if (!strokes.length || showUpscaled) {
       renderer.setRetouch(null, '')
       setRetouchAt((n) => n + 1)
       return
@@ -301,16 +319,16 @@ export function Viewport() {
     return () => {
       live = false
     }
-  }, [photo, activeFrameId, renderEdits.retouch, smartFill, toast])
+  }, [photo, activeFrameId, renderEdits.retouch, smartFill, toast, showUpscaled])
 
   useEffect(() => {
     onFillFallback(() => toast('Smart fill could not run, so that spot was healed instead', 'error'))
   }, [toast])
 
   const output = useMemo(() => {
-    if (!photo) return { width: 0, height: 0 }
-    return outputSize(photo.meta.width, photo.meta.height, renderEdits.crop)
-  }, [photo, renderEdits.crop])
+    if (!viewMeta) return { width: 0, height: 0 }
+    return outputSize(viewMeta.width, viewMeta.height, renderEdits.crop)
+  }, [viewMeta, renderEdits.crop])
 
   /**
    * The picture plus its mat — what the stage has to find room for, what the
@@ -1116,6 +1134,7 @@ export function Viewport() {
         </div>
       </div>
 
+      {!cropping && !masking && !retouching && <UpscaleBanner />}
     </div>
   )
 }
