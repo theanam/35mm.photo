@@ -299,10 +299,14 @@ export function Viewport() {
     const renderer = rendererRef.current
     if (!renderer || !photo || !activeFrameId) return
     const strokes = renderEdits.retouch.filter((s) => s.enabled)
+    // The open waits on this: the photo is drawn without its heals until they
+    // land, and the card says so meanwhile.
+    const settle = () => useEditor.getState().settleRestore('retouch', photo.frameId)
     // The upscaled view has its heals baked in; see `prepareUpscale`.
     if (!strokes.length || showUpscaled) {
       renderer.setRetouch(null, '')
       setRetouchAt((n) => n + 1)
+      settle()
       return
     }
 
@@ -312,9 +316,11 @@ export function Viewport() {
         if (!live || rendererRef.current !== renderer) return
         renderer.setRetouch(result.patches, result.key)
         setRetouchAt((n) => n + 1)
+        settle()
       })
       .catch((err) => {
         if (live) toast(err instanceof Error ? `Could not heal — ${err.message}` : 'Could not heal', 'error')
+        settle()
       })
     return () => {
       live = false

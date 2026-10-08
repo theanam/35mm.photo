@@ -27,18 +27,25 @@ export function LoadingOverlay() {
   const label = useEditor((s) => s.loadingLabel)
   const name = useEditor((s) => s.loadingName)
   const progress = useEditor((s) => s.loadingProgress)
+  // A photo whose heals or subject maps are still being made good after an
+  // open: shown as a stage of its own, so it is never taken for finished.
+  const restoring = useEditor((s) => s.restoring !== null)
+  const photoName = useEditor((s) => s.photo?.meta.name ?? '')
+  const active = loading || restoring
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
-    if (!loading) {
+    if (!active) {
       setVisible(false)
       return
     }
     const timer = setTimeout(() => setVisible(true), APPEAR_AFTER_MS)
     return () => clearTimeout(timer)
-  }, [loading])
+  }, [active])
 
   if (!visible) return null
+  const shownLabel = loading ? label || 'Opening' : 'Applying edits'
+  const shownName = loading ? name : photoName
 
   return (
     <div className="loading" role="status" aria-live="polite">
@@ -57,10 +64,10 @@ export function LoadingOverlay() {
         )}
         <div className="loading__text">
           <p className="loading__label">
-            {label || 'Opening'}
-            {progress === null ? '…' : ` ${Math.round(progress * 100)}%`}
+            {shownLabel}
+            {progress === null || !loading ? '…' : ` ${Math.round(progress * 100)}%`}
           </p>
-          {name && <p className="loading__name mono">{name}</p>}
+          {shownName && <p className="loading__name mono">{shownName}</p>}
         </div>
       </div>
     </div>

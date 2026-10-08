@@ -19,6 +19,7 @@ import {
   refineFor,
   restoreSubjects,
   subjectFor,
+  subjectMapsFor,
 } from '../../subject/detect'
 import { fitAspect, offsetBounds, subjectBounds } from '../../subject/bounds'
 import { displaySize } from '../gpu/transform'
@@ -148,6 +149,13 @@ interface EditorState {
   loadingLabel: string
   /** 0..1 while a stage can count its work — only the upscaler can — else null. */
   loadingProgress: number | null
+  /**
+   * Edits of the photo just opened that are still being made good: heals
+   * computing in their worker, subject maps being restored and re-cut. The
+   * viewport shows "Applying edits" until both have landed, so a photo is
+   * never mistaken for finished while it is only half drawn.
+   */
+  restoring: { key: string; retouch: boolean; subjects: boolean } | null
   /** File the loader names, so a slow open says which photo it is waiting on. */
   loadingName: string
   splitCompare: boolean
@@ -306,6 +314,8 @@ interface EditorState {
    * when there is none or the photo changed underneath.
    */
   refreshUpscale: () => Promise<UpscaledView | null>
+  /** One part of the restore has landed for the photo with this key. */
+  settleRestore: (part: 'retouch' | 'subjects', key: string) => void
   addMask: (kind: MaskKind) => void
   /** Run the detector for a subject mask, or re-run it after a model change. */
   detectSubjectMask: (id: string) => Promise<void>
@@ -425,6 +435,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   loading: false,
   loadingLabel: '',
   loadingProgress: null,
+  restoring: null,
   loadingName: '',
   splitCompare: false,
   splitAt: 0.38,
@@ -590,6 +601,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         history: emptyHistory(),
         hidden: [],
         histogram: null,
+        restoring: restoreNeeded(edits, id),
         zoom: zoomByFrame.get(id) ?? 'fit',
         // Only a raw, and only one arriving with no edits of its own: a
         // photo somebody has already worked on has an exposure they chose.
@@ -627,6 +639,12 @@ export const useEditor = create<EditorState>((set, get) => ({
       void get().resolveLensProfile()
       // A photo saved with an upscale opens upscaled, with the bar to show for it.
       if (edits.upscale > 1) void get().refreshUpscale()
+      // A restore that never reports back must not leave the card up for good.
+      if (get().restoring?.key === id) {
+        setTimeout(() => {
+          if (get().restoring?.key === id) set({ restoring: null })
+        }, RESTORE_TIMEOUT_MS)
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not open that file'
       set({
@@ -862,6 +880,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({
       photo: null,
       activeFrameId: null,
+      restoring: null,
       edits: defaultEdits(),
       history: emptyHistory(),
       hidden: [],
@@ -1122,6 +1141,13 @@ export const useEditor = create<EditorState>((set, get) => ({
     }
   },
 
+  settleRestore(part, key) {
+    const r = get().restoring
+    if (!r || r.key !== key || !r[part]) return
+    const next = { ...r, [part]: false }
+    set({ restoring: next.retouch || next.subjects ? next : null })
+  },
+
   async refreshUpscale() {
     const photo = get().photo
     if (!photo) return null
@@ -1212,22 +1238,41 @@ export const useEditor = create<EditorState>((set, get) => ({
    */
   async autoDetectSubjects() {
     const { edits, activeFrameId } = get()
+    if (!activeFrameId) return
     const subjects = edits.masks.filter((m) => m.kind === 'subject')
-    if (!subjects.length || !activeFrameId) return
+    if (!subjects.length) {
+      get().settleRestore('subjects', activeFrameId)
+      return
+    }
 
     const { restored, missing } = await restoreSubjects(subjects, activeFrameId)
     if (get().activeFrameId !== activeFrameId) return
     // What came back is the model's coarse answer; the mask draws once it has
-    // been re-cut along the picture, and the listener below redraws for that.
+    // been re-cut along the picture, and the listener below redraws for that
+    // — and settles the restore once every mask can draw.
     if (restored) {
       const photo = get().photo
       if (photo) primeSubjects(subjects, activeFrameId, photo.preview)
     }
 
     const pending = missing.filter((m) => m.enabled && m.amount > 0)
-    if (!pending.length) return
-    if (!modelIsWarm() && !(await isModelCached())) return
-    for (const mask of pending) await get().detectSubjectMask(mask.id)
+    if (pending.length) {
+      if (modelIsWarm() || (await isModelCached())) {
+        for (const mask of pending) await get().detectSubjectMask(mask.id)
+      } else {
+        // Nothing can draw these without the model, and fetching eight
+        // megabytes is the user's call. Said once, here, rather than left as
+        // a mask that quietly does nothing.
+        get().toast(
+          'A subject mask on this photo needs the detector, which is not on this machine. Open Masks to fetch it (8 MB).',
+          'warn',
+        )
+      }
+      // Detected, or explained: either way the open is no longer waiting.
+      if (get().activeFrameId === activeFrameId) get().settleRestore('subjects', activeFrameId)
+      return
+    }
+    settleSubjectsIfReady(get)
   },
 
   async detectSubjectMask(id) {
@@ -1635,7 +1680,30 @@ export const useEditor = create<EditorState>((set, get) => ({
 
 // A refined map landing is not an edit, so it cannot reach the viewport through
 // the edit stack. It nudges the same counter a finished detection does.
-onSubjectMapsChanged(() => useEditor.setState({ maskMapsAt: Date.now() }))
+onSubjectMapsChanged(() => {
+  useEditor.setState({ maskMapsAt: Date.now() })
+  settleSubjectsIfReady(useEditor.getState)
+})
+
+/** Generous: a slow machine re-cutting several masks, or healing a raw. */
+const RESTORE_TIMEOUT_MS = 45_000
+
+/** What a just-opened photo's edits still need before it is fully drawn. */
+function restoreNeeded(edits: EditState, key: string): EditorState['restoring'] {
+  const retouch = edits.retouch.some((s) => s.enabled)
+  const subjects = edits.masks.some((m) => m.kind === 'subject' && m.enabled && m.amount > 0)
+  return retouch || subjects ? { key, retouch, subjects } : null
+}
+
+/** The subject half of a restore is done once every drawing mask has a map to draw. */
+function settleSubjectsIfReady(get: Getter): void {
+  const { restoring, edits, activeFrameId } = get()
+  if (!restoring?.subjects || !activeFrameId || restoring.key !== activeFrameId) return
+  const wanted = edits.masks.filter((m) => m.kind === 'subject' && m.enabled && m.amount > 0)
+  if (subjectMapsFor(wanted, activeFrameId).every((m) => m !== null)) {
+    get().settleRestore('subjects', activeFrameId)
+  }
+}
 
 /* ─────────────────────────── module-local helpers ─────────────────────────── */
 
