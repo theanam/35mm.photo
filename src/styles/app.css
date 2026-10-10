@@ -2334,6 +2334,18 @@ kbd {
   .frame-tip { animation: none; }
 }
 
+.save-menu { position: relative; display: flex; }
+/* Right padding matches the caret's own left padding, so it sits centred between the hairline and the edge. */
+.save-menu > .button { padding-right: 9px; }
+/* The caret sits behind a hairline, as on any button that opens a menu. */
+.save-menu__caret {
+  margin-left: 10px;
+  padding-left: 9px;
+  border-left: 1px solid var(--line-strong);
+  font-size: 11px;
+  line-height: 1;
+  align-self: center;
+}
 .export-split { position: relative; display: flex; }
 /*
  * One control split in two: square off the inner edges so it reads as a single

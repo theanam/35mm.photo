@@ -44,6 +44,7 @@ import { prepareUpscale, upscaleSignature, type UpscaledView } from '../../upsca
 import type { DecodeStage } from '../../io/decode'
 import { extensionOf, isRawFile } from '../../io/formats'
 import type { OpenedFile } from '../../io/file-system'
+import { isProjectFile, parseProject } from '../../io/project'
 import { DEFAULT_EXPORT, type ExportSettings } from '../../io/export'
 import {
   canBatchExport,
@@ -484,7 +485,39 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   /* ─────────────────────────── library ─────────────────────────── */
 
-  async openFiles(files, options) {
+  async openFiles(incoming, options) {
+    if (!incoming.length) return
+
+    // A .35mm project holds a photo and the edits made to it. Unpack it into
+    // the photo, filing the edits where an ordinary open will find them.
+    const files: OpenedFile[] = []
+    for (const entry of incoming) {
+      if (!isProjectFile(entry.file.name)) {
+        files.push(entry)
+        continue
+      }
+      try {
+        const { photo, edits } = await parseProject(entry.file)
+        await db.saveEdits({
+          key: db.fileKey(photo),
+          meta: {
+            name: photo.name,
+            ext: extensionOf(photo.name),
+            isRaw: isRawFile(photo.name),
+            width: 0,
+            height: 0,
+            orientation: 1,
+            bytes: photo.size,
+          },
+          edits: migrate(edits),
+          editCount: countEdits(migrate(edits)),
+          updatedAt: Date.now(),
+        })
+        files.push({ file: photo })
+      } catch (err) {
+        get().toast(err instanceof Error ? err.message : 'Could not open that project', 'error')
+      }
+    }
     if (!files.length) return
 
     // Opening a folder makes the strip that folder. The rail is labelled FOLDER

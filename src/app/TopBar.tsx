@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useEditor } from '../editor/edit-stack/store'
 import { Mark } from './Mark'
 import { saveSidecar } from '../io/export'
+import { saveProject } from '../io/project'
 import { IconGitHub, IconHelp, IconInfo } from './ui/icons'
 import { REPO_URL } from './AboutDialog'
 
@@ -20,12 +21,30 @@ export function TopBar() {
   const batch = useEditor((s) => s.batch)
 
   const [menuOpen, setMenuOpen] = useState(false)
+  const [saveOpen, setSaveOpen] = useState(false)
+  const saveRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const editedIds = frames.filter((f) => (f.editCount ?? 0) > 0).map((f) => f.id)
   // The plain Export button already covers the open photo, so the menu only
   // earns its place once there is a second thing to export.
   const batchOptions = selection.length > 1 || editedIds.length > 1
+
+  useEffect(() => {
+    if (!saveOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (!saveRef.current?.contains(e.target as Node)) setSaveOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSaveOpen(false)
+    }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [saveOpen])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -47,7 +66,17 @@ export function TopBar() {
 
   const meta = photo?.meta
 
+  const onSaveProject = async () => {
+    setSaveOpen(false)
+    if (!meta || !photo) return
+    const outcome = await saveProject(photo.file, edits, meta)
+    if (outcome === 'cancelled') return
+    markSidecarSaved()
+    toast(outcome === 'saved' ? 'Project saved' : 'Project downloaded')
+  }
+
   const onSaveEdits = async () => {
+    setSaveOpen(false)
     if (!meta) return
     const outcome = await saveSidecar(meta, edits)
     if (outcome === 'cancelled') return
@@ -125,9 +154,27 @@ export function TopBar() {
           <button className="button" onClick={closePhoto}>
             Close
           </button>
-          <button className="button" onClick={onSaveEdits}>
-            Save edits
-          </button>
+          <div className="save-menu" ref={saveRef}>
+            <button
+              className="button"
+              onClick={() => setSaveOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={saveOpen}
+            >
+              Save edits
+              <span className="save-menu__caret" aria-hidden="true">▾</span>
+            </button>
+            {saveOpen && (
+              <div className="menu" role="menu">
+                <button className="menu__item" role="menuitem" onClick={() => void onSaveProject()}>
+                  Project (.35mm) — photo and edits
+                </button>
+                <button className="menu__item" role="menuitem" onClick={() => void onSaveEdits()}>
+                  Edits only (.json)
+                </button>
+              </div>
+            )}
+          </div>
           <div className="export-split" data-split={batchOptions || undefined} ref={menuRef}>
             <button
               className="button button--accent export-split__main"

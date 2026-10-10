@@ -57,12 +57,13 @@ export function isHeifFile(name: string): boolean {
 export function isSupportedFile(name: string): boolean {
   const ext = extensionOf(name)
   return (
+    ext === '35mm' ||
     (NATIVE_EXTENSIONS as readonly string[]).includes(ext) ||
     (HEIF_EXTENSIONS as readonly string[]).includes(ext) ||
     (RAW_EXTENSIONS as readonly string[]).includes(ext)
   )
 }
 
-export const ACCEPT_ATTRIBUTE = [...NATIVE_EXTENSIONS, ...HEIF_EXTENSIONS, ...RAW_EXTENSIONS]
+export const ACCEPT_ATTRIBUTE = ['35mm', ...NATIVE_EXTENSIONS, ...HEIF_EXTENSIONS, ...RAW_EXTENSIONS]
   .map((e) => `.${e}`)
   .join(',')

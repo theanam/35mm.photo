@@ -124,7 +124,8 @@ export function AboutDialog() {
                 your own looks and presets.
               </li>
               <li>
-                <strong>Save edits</strong> writes a sidecar beside the photo;{' '}
+                <strong>Save edits</strong> writes a <code>.35mm</code> project (photo and edits
+                together, to reopen later) or just the edits as JSON;{' '}
                 <strong>Export</strong> renders a new image.
               </li>
             </ul>

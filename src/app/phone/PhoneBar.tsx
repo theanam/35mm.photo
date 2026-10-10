@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEditor } from '../../editor/edit-stack/store'
 import { saveSidecar } from '../../io/export'
+import { saveProject } from '../../io/project'
 import { pickFiles } from '../../io/file-system'
 import { IconCross, IconDownload, IconMore, IconRedo, IconUndo } from '../ui/icons'
 import { PhoneLibrary } from './PhoneLibrary'
@@ -54,6 +55,15 @@ export function PhoneBar() {
   const run = (fn: () => void) => () => {
     setMenuOpen(false)
     fn()
+  }
+
+  const onSaveProject = async () => {
+    setMenuOpen(false)
+    if (!meta || !photo) return
+    const outcome = await saveProject(photo.file, edits, meta)
+    if (outcome === 'cancelled') return
+    markSidecarSaved()
+    toast(outcome === 'saved' ? 'Project saved' : 'Project downloaded')
   }
 
   const onSaveEdits = async () => {
@@ -114,8 +124,11 @@ export function PhoneBar() {
             </button>
             {photo && (
               <>
+                <button className="menu__item" onClick={() => void onSaveProject()}>
+                  Save project (.35mm)
+                </button>
                 <button className="menu__item" onClick={() => void onSaveEdits()}>
-                  Save edits
+                  Save edits only (.json)
                 </button>
                 <button className="menu__item" onClick={run(() => setExifOpen(true))}>
                   Photo info
